@@ -71,6 +71,7 @@
          fetch 讀取本地檔案會被 CORS 擋下，script 標籤則不受限制 -->
     <script src="./config.js"></script>
     <script src="./pokemon_heights.js"></script>
+    <script src="./pokemon_types.js"></script>
 
     <script>
         // ---------------------------------------------------------
@@ -158,10 +159,15 @@
                 this.el = document.createElement('div');
                 this.el.className = 'pokemon-container';
                 
-                // 陰影（保留參考，跳起來時要縮小它），寬度隨體型調整
+                // 陰影（保留參考，跳起來時要縮小它），寬度隨體型調整。
+                // 顏色依主屬性染色（暗色系），查不到屬性就用預設黑影
                 this.shadow = document.createElement('div');
                 this.shadow.className = 'shadow';
                 this.shadow.style.width = `${Math.round(48 * sizeScale + 8)}px`;
+                const primaryType = window.POKE_TYPES ? window.POKE_TYPES[id] : undefined;
+                this.shadow.style.background =
+                    CONFIG.typeShadowColors?.[primaryType] || CONFIG.typeShadowColors?.default
+                    || 'rgba(0, 0, 0, 0.2)';
                 this.el.appendChild(this.shadow);
 
                 // 圖片：高度依體型分級縮放（寬度 auto，會等比例跟著縮）
