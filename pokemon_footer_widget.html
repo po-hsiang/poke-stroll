@@ -188,11 +188,12 @@
                     this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${this.id}.png`;
                 };
 
-                // 圖片載入後把影子寬度對齊實際顯示寬度
+                // 圖片載入後把影子寬度對齊「實際顯示寬度 × shadowWidthRatio」
                 // （換成備援圖時 load 會再觸發一次，寬度自動跟著重算）
                 this.img.addEventListener('load', () => {
                     if (this.img.offsetWidth) {
-                        this.shadow.style.width = `${this.img.offsetWidth}px`;
+                        const ratio = CONFIG.shadowWidthRatio ?? 0.9;
+                        this.shadow.style.width = `${Math.round(this.img.offsetWidth * ratio)}px`;
                     }
                 });
 
