@@ -39,10 +39,12 @@
             will-change: transform;
         }
 
-        /* 簡單的陰影，增加立體感 */
+        /* 簡單的陰影，增加立體感。
+           bottom: 0 讓橢圓最低點貼齊頁面底邊（站立狀態）；
+           跳躍時影子用 scale 縮小、會離開底邊，那是預期效果 */
         .shadow {
             position: absolute;
-            bottom: 5px;
+            bottom: 0;
             left: 50%;
             transform: translateX(-50%);
             width: 40px;
@@ -56,6 +58,7 @@
             display: block;
             height: 64px; /* 預設高度，實際會由 JS 依體型分級覆寫 */
             width: auto;
+            margin-bottom: 1px; /* 腳底抬離底邊 1px，視覺上站進貼底的影子裡 */
             /* 預設寶可夢通常是面向左下方的，這裡不需要額外調整，JS 會控制方向 */
             transform-origin: center bottom; /* 鏡像與跳躍都以腳底為基準 */
             will-change: transform;
@@ -159,7 +162,9 @@
                 this.el = document.createElement('div');
                 this.el.className = 'pokemon-container';
                 
-                // 陰影（保留參考，跳起來時要縮小它），寬度隨體型調整。
+                // 陰影（保留參考，跳起來時要縮小它）。
+                // 寬度以「圖片實際顯示寬度」為準，讓影子跟寶可夢差不多寬；
+                // 圖片載入前先用體型估一個過渡值。
                 // 顏色依主屬性染色（暗色系），查不到屬性就用預設黑影
                 this.shadow = document.createElement('div');
                 this.shadow.className = 'shadow';
@@ -182,6 +187,14 @@
                     // 如果動圖失敗，退回使用一般靜態圖，或是皮卡丘當作 fallback
                     this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${this.id}.png`;
                 };
+
+                // 圖片載入後把影子寬度對齊實際顯示寬度
+                // （換成備援圖時 load 會再觸發一次，寬度自動跟著重算）
+                this.img.addEventListener('load', () => {
+                    if (this.img.offsetWidth) {
+                        this.shadow.style.width = `${this.img.offsetWidth}px`;
+                    }
+                });
 
                 this.el.appendChild(this.img);
                 this.container.appendChild(this.el);

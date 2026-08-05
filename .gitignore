@@ -2,3 +2,6 @@ Thumbs.db
 Desktop.ini
 *.log
 .DS_Store
+
+# 螢幕截圖（回饋討論用，不進版控）
+Snipaste_*.png
