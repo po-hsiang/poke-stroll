@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PokéFooter Widget</title>
+    <style>
+        /* 設定背景為透明，這是為了讓您可以嵌入到其他網頁中 
+        */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* 防止出現卷軸 */
+            background-color: transparent; 
+        }
+
+        #app {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 150px; /* 寶可夢活動區域的高度 */
+            pointer-events: none; /* 讓滑鼠點擊穿透，不會擋住背後的內容 */
+        }
+
+        .pokemon-container {
+            position: absolute;
+            bottom: 0;
+            /* 讓圖片呈現像素風格，比較復古可愛 */
+            image-rendering: pixelated; 
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            /* 注意：這裡「不能」對 transform 掛 transition！
+               位置每一幀都在更新，若套上緩動會永遠追不上目標，
+               看起來就像在冰上飄移；轉向的鏡像也會經過 scaleX(0) 被壓扁成一條線 */
+            cursor: pointer;
+            pointer-events: auto; /* 讓寶可夢本身可以被互動（如果有的話） */
+            will-change: transform;
+        }
+
+        /* 簡單的陰影，增加立體感 */
+        .shadow {
+            position: absolute;
+            bottom: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 50%;
+            z-index: -1;
+        }
+
+        .sprite {
+            display: block;
+            height: 64px; /* 預設高度，實際會由 JS 依體型分級覆寫 */
+            width: auto;
+            /* 預設寶可夢通常是面向左下方的，這裡不需要額外調整，JS 會控制方向 */
+            transform-origin: center bottom; /* 鏡像與跳躍都以腳底為基準 */
+            will-change: transform;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app"></div>
+
+    <!-- 設定檔與靜態身高對照表（必須和本 HTML 放在同一個資料夾）
+         用 <script src> 而不是 fetch()：OBS / file:// 直接開檔時，
+         fetch 讀取本地檔案會被 CORS 擋下，script 標籤則不受限制 -->
+    <script src="./config.js"></script>
+    <script src="./pokemon_heights.js"></script>
+
+    <script>
+        // ---------------------------------------------------------
+        // 配置區
+        // 所有可調參數都在 config.js，身高對照表在 pokemon_heights.js
+        // ---------------------------------------------------------
+        const CONFIG = window.POKE_CONFIG;
+
+        // ---------------------------------------------------------
+        // 工具函式 (Utils)
+        // ---------------------------------------------------------
+        
+        // 產生範圍內的隨機整數
+        function randomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        // 產生不重複的隨機 ID 陣列
+        function getUniqueRandomIds(count, min, max) {
+            const ids = new Set();
+            while(ids.size < count) {
+                ids.add(randomInt(min, max));
+            }
+            return Array.from(ids);
+        }
+
+        // 依身高換算成大中小的縮放比例：
+        // 優先查本地靜態對照表（pokemon_heights.js，離線可用、不打 API），
+        // 查不到才退回 PokéAPI，再失敗就當中型
+        async function getSizeScale(id) {
+            let deciMeters = window.POKE_HEIGHTS ? window.POKE_HEIGHTS[id] : undefined;
+
+            if (deciMeters === undefined) {
+                try {
+                    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
+                    const data = await res.json();
+                    deciMeters = data.height; // API 的 height 單位是分米 (0.1 公尺)
+                } catch (e) {
+                    return 2 / 3;
+                }
+            }
+
+            const meters = deciMeters / 10;
+            const tier = CONFIG.sizeTiers.find(t => meters < t.maxMeters);
+            return tier ? tier.scale : 2 / 3;
+        }
+
+        // ---------------------------------------------------------
+        // 寶可夢類別 (Pokemon Class)
+        // 這就像是用 Golang 定義一個 Struct，包含狀態與行為
+        // ---------------------------------------------------------
+        class Pokemon {
+            constructor(id, container, sizeScale, laneIndex) {
+                this.id = id;
+                this.container = container;
+                this.sizeScale = sizeScale;
+
+                // 狀態屬性
+                // 出生點：把「允許活動範圍」(bounds) 分成 count 條跑道，
+                // 每隻在自己的跑道內隨機取點。
+                // 純均勻隨機容易一開場就好幾隻擠在同一區，分跑道能保證起始分散
+                const roamMin = window.innerWidth * CONFIG.bounds.min;
+                const roamWidth = window.innerWidth * (CONFIG.bounds.max - CONFIG.bounds.min);
+                const laneWidth = roamWidth / CONFIG.count;
+                this.x = roamMin + laneIndex * laneWidth + Math.random() * laneWidth;
+                this.direction = Math.random() > 0.5 ? 1 : -1; // 1: 向右, -1: 向左
+                this.state = 'WALKING'; // WALKING | IDLE
+                this.speed = CONFIG.baseSpeed + Math.random() * CONFIG.speedVariance; // 隨機速度差異
+                this.idleTimer = 0;
+                this.avoidCooldown = 0; // 因避讓而掉頭後的冷卻時間
+
+                // 走路跳步動畫（GIF 本身只有原地待機動畫，沒有腳步，
+                // 補上垂直的小跳躍才不會像滑行）
+                this.walkPhase = Math.random() * Math.PI * 2; // 隨機起始相位，避免大家同步跳
+                // 每隻跳的高度略有不同，體型越小跳得越低
+                this.hopHeight = (CONFIG.hopHeight + Math.random() * CONFIG.hopVariance)
+                                 * (0.6 + sizeScale * 0.6);
+                this.bobY = 0; // 目前離地高度
+
+                // DOM 元素建立
+                this.el = document.createElement('div');
+                this.el.className = 'pokemon-container';
+                
+                // 陰影（保留參考，跳起來時要縮小它），寬度隨體型調整
+                this.shadow = document.createElement('div');
+                this.shadow.className = 'shadow';
+                this.shadow.style.width = `${Math.round(48 * sizeScale + 8)}px`;
+                this.el.appendChild(this.shadow);
+
+                // 圖片：高度依體型分級縮放（寬度 auto，會等比例跟著縮）
+                this.img = document.createElement('img');
+                this.img.className = 'sprite';
+                this.img.style.height = `${Math.round(CONFIG.baseSize * sizeScale)}px`;
+                // 使用 PokéAPI 的 GitHub Raw 資源庫，這是第五世代的動態 GIF，非常可愛
+                this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${this.id}.gif`;
+                
+                // 載入失敗處理 (有些稀有 ID 可能沒有動圖)
+                this.img.onerror = () => {
+                    // 如果動圖失敗，退回使用一般靜態圖，或是皮卡丘當作 fallback
+                    this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${this.id}.png`;
+                };
+
+                this.el.appendChild(this.img);
+                this.container.appendChild(this.el);
+
+                // 初始化渲染
+                this.updateDOM();
+            }
+
+            // 每一幀的邏輯更新 (Update Loop)
+            update(deltaTime, others) {
+                if (this.avoidCooldown > 0) this.avoidCooldown -= deltaTime;
+
+                if (this.state === 'WALKING') {
+                    this.walk(deltaTime);
+                    this.avoidCrowding(others);
+                } else if (this.state === 'IDLE') {
+                    this.idle(deltaTime);
+                }
+
+                // 邊界檢查：只能在 bounds 指定的 X 軸比例區間內活動。
+                // 每一幀都用「當下的」視窗寬度計算，所以視窗縮放時會自動修正
+                const width = this.img.offsetWidth || CONFIG.baseSize * this.sizeScale;
+                const minX = window.innerWidth * CONFIG.bounds.min;
+                const maxX = window.innerWidth * CONFIG.bounds.max - width; // 扣掉自身寬度，右緣不超線
+                if (this.x < minX) {
+                    this.x = minX;
+                    this.direction = 1; // 撞到左邊界回頭
+                } else if (this.x > maxX) {
+                    this.x = maxX;
+                    this.direction = -1; // 撞到右邊界回頭
+                }
+
+                this.updateDOM();
+            }
+
+            walk(deltaTime) {
+                // 以 60fps 為基準做時間校正，移動速度不受螢幕更新率影響
+                const dt = deltaTime / (1000 / 60);
+                this.x += this.speed * this.direction * dt;
+
+                // 用 |sin| 波模擬小跳步，速度越快的跳越頻繁
+                this.walkPhase += deltaTime * CONFIG.hopFrequency * (this.speed / CONFIG.baseSpeed);
+                this.bobY = Math.abs(Math.sin(this.walkPhase)) * this.hopHeight;
+
+                // 隨機決定是否停下來看鏡頭
+                if (Math.random() < CONFIG.idleChance) {
+                    this.state = 'IDLE';
+                    // 設定發呆時間
+                    this.idleTimer = randomInt(CONFIG.lookTime.min, CONFIG.lookTime.max);
+                }
+            }
+
+            // 行進方向的前方太近有同伴就掉頭；掉頭後進入冷卻，
+            // 避免在牆角或人群中來回抖動
+            avoidCrowding(others) {
+                if (this.avoidCooldown > 0) return;
+                for (const other of others) {
+                    if (other === this) continue;
+                    const dx = other.x - this.x;
+                    if (Math.abs(dx) < CONFIG.personalSpace && Math.sign(dx) === this.direction) {
+                        this.direction *= -1;
+                        this.avoidCooldown = randomInt(1500, 3000);
+                        break;
+                    }
+                }
+            }
+
+            idle(deltaTime) {
+                // 發呆時緩緩落回地面，不要硬生生定格在半空中
+                this.bobY *= 0.8;
+                if (this.bobY < 0.1) this.bobY = 0;
+
+                this.idleTimer -= deltaTime;
+                if (this.idleTimer <= 0) {
+                    this.state = 'WALKING';
+                    // 隨機決定是否轉向
+                    if (Math.random() > 0.5) {
+                        this.direction *= -1;
+                    }
+                }
+            }
+
+            updateDOM() {
+                // 位置（container）與翻面（sprite 圖片）分開處理：
+                // - 位置每一幀都在變，直接設定、不套緩動，才不會有飄移感
+                // - 翻面用「瞬間鏡像」，補間 scaleX 會經過 0 導致被壓扁成一條線
+                //   （2D 像素遊戲的角色轉向本來就是瞬間翻面，這樣反而最自然）
+                this.el.style.transform = `translate3d(${this.x}px, 0, 0)`;
+
+                // 原圖面向左邊：direction 1 (向右) -> scaleX(-1) 鏡像
+                const scale = this.direction === 1 ? -1 : 1;
+                this.img.style.transform = `scaleX(${scale}) translateY(${-this.bobY}px)`;
+
+                // 跳起來時影子縮小、變淡，強化離地的感覺
+                const airRatio = Math.min(this.bobY / this.hopHeight, 1);
+                this.shadow.style.transform = `translateX(-50%) scale(${1 - airRatio * 0.3})`;
+                this.shadow.style.opacity = 1 - airRatio * 0.4;
+
+                // 調整 Z-index 根據 X 軸位置（避免負值造成排序問題）
+                this.el.style.zIndex = Math.max(0, Math.floor(this.x));
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 主程式邏輯 (Main)
+        // ---------------------------------------------------------
+        const app = document.getElementById('app');
+        const pokemons = [];
+        let lastTime = 0;
+
+        async function init() {
+            // 取得隨機 ID
+            const ids = getUniqueRandomIds(CONFIG.count, CONFIG.minId, CONFIG.maxId);
+
+            // 先向 PokéAPI 查每隻的身高，決定體型分級（並行查詢）
+            const scales = await Promise.all(ids.map(getSizeScale));
+
+            // 實例化 Pokemon（index 同時當作出生跑道編號）
+            ids.forEach((id, i) => {
+                pokemons.push(new Pokemon(id, app, scales[i], i));
+            });
+
+            // 啟動動畫迴圈
+            requestAnimationFrame(gameLoop);
+        }
+
+        function gameLoop(timestamp) {
+            // 限制 deltaTime 上限：避免切換分頁再回來時瞬間跳一大步
+            const deltaTime = Math.min(timestamp - lastTime, 100);
+            lastTime = timestamp;
+
+            pokemons.forEach(p => p.update(deltaTime, pokemons));
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 視窗大小改變不需要另外監聽：
+        // update() 的邊界檢查每一幀都會用當下的視窗寬度重新計算
+
+        // 啟動！（找不到設定檔就不啟動，並在主控台提示）
+        if (CONFIG) {
+            init();
+        } else {
+            console.error('[PokéFooter] 找不到 window.POKE_CONFIG，請確認 config.js 與本 HTML 放在同一個資料夾。');
+        }
+
+    </script>
+</body>
+</html>
