@@ -109,13 +109,13 @@
                     const data = await res.json();
                     deciMeters = data.height; // API 的 height 單位是分米 (0.1 公尺)
                 } catch (e) {
-                    return 2 / 3;
+                    return 0.75; // 查不到身高就當中型
                 }
             }
 
             const meters = deciMeters / 10;
             const tier = CONFIG.sizeTiers.find(t => meters < t.maxMeters);
-            return tier ? tier.scale : 2 / 3;
+            return tier ? tier.scale : 0.75;
         }
 
         // ---------------------------------------------------------

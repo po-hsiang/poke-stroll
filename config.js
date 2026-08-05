@@ -32,10 +32,10 @@ window.POKE_CONFIG = {
 
     // ---- 體型分級 ----
     // 用官方圖鑑身高(公尺)分成大、中、小，資料來自 pokemon_heights.js
-    baseSize: 96, // 「大」體型的顯示高度 px（中 = 2/3、小 = 1/3）
+    baseSize: 96, // 「大」體型的顯示高度 px（中 = 0.75、小 = 0.5）
     sizeTiers: [
-        { maxMeters: 0.8,      scale: 1 / 3 }, // 小：身高 < 0.8m
-        { maxMeters: 1.5,      scale: 2 / 3 }, // 中：0.8m ~ 1.5m
-        { maxMeters: Infinity, scale: 1 },     // 大：>= 1.5m
+        { maxMeters: 0.8,      scale: 0.5 },  // 小：身高 < 0.8m
+        { maxMeters: 1.5,      scale: 0.75 }, // 中：0.8m ~ 1.5m
+        { maxMeters: Infinity, scale: 1 },    // 大：>= 1.5m
     ],
 };
