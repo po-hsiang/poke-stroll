@@ -130,12 +130,16 @@
 
                 // 狀態屬性
                 // 出生點：把「允許活動範圍」(bounds) 分成 count 條跑道，
-                // 每隻在自己的跑道內隨機取點。
-                // 純均勻隨機容易一開場就好幾隻擠在同一區，分跑道能保證起始分散
+                // 每隻站在自己跑道的中心點，再加 ±20% 跑道寬的小抖動。
+                // 相鄰間距至少保有 60% 跑道寬，出生時絕不重疊；
+                // 抖動則避免完美等距的「閱兵感」。
+                // （取跑道中心而非頭尾等分點：count = 1 不會除以零，
+                //   頭尾兩隻也不會貼著邊界出生、下一幀就觸發撞牆掉頭）
                 const roamMin = window.innerWidth * CONFIG.bounds.min;
                 const roamWidth = window.innerWidth * (CONFIG.bounds.max - CONFIG.bounds.min);
                 const laneWidth = roamWidth / CONFIG.count;
-                this.x = roamMin + laneIndex * laneWidth + Math.random() * laneWidth;
+                const jitter = (Math.random() - 0.5) * laneWidth * 0.4;
+                this.x = roamMin + (laneIndex + 0.5) * laneWidth + jitter;
                 this.direction = Math.random() > 0.5 ? 1 : -1; // 1: 向右, -1: 向左
                 this.state = 'WALKING'; // WALKING | IDLE
                 this.speed = CONFIG.baseSpeed + Math.random() * CONFIG.speedVariance; // 隨機速度差異
