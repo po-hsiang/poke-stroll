@@ -151,26 +151,24 @@
             'u': '#4a6fd8', // 問號藍
         };
 
-        // 對話框外框 20x17：圓角方框 + 底部中央尖尾巴
-        const BUBBLE_FRAME = [
-            '..################..',
-            '.#wwwwwwwwwwwwwwww#.',
-            '#wwwwwwwwwwwwwwwwww#',
-            '#wwwwwwwwwwwwwwwwww#',
-            '#wwwwwwwwwwwwwwwwww#',
-            '#wwwwwwwwwwwwwwwwww#',
-            '#wwwwwwwwwwwwwwwwww#',
-            '#wwwwwwwwwwwwwwwwww#',
-            '#wwwwwwwwwwwwwwwwww#',
-            '#wwwwwwwwwwwwwwwwww#',
-            '#wwwwwwwwwwwwwwwwww#',
-            '#wwwwwwwwwwwwwwwwww#',
-            '.#wwwwwwwwwwwwwwww#.',
-            '..######ww########..',
-            '.......#ww#.........',
-            '........#w#.........',
-            '.........#..........',
-        ];
+        // 對話框外框產生器：給定總寬度，組出「圓角方框 + 底部尖尾巴」，
+        // 高度固定 17。概念上等同遊戲 UI 的 9-slice：四角樣式固定，
+        // 邊框依內容的 bounding box 伸縮 —— 窄內容（如驚嘆號）配瘦框
+        function buildBubbleFrame(width) {
+            const tail = Math.floor(width / 2) - 2; // 尾巴開口左緣（保持在框的中央）
+            const rows = [];
+            rows.push('..' + '#'.repeat(width - 4) + '..');
+            rows.push('.#' + 'w'.repeat(width - 4) + '#.');
+            for (let i = 0; i < 10; i++) {
+                rows.push('#' + 'w'.repeat(width - 2) + '#');
+            }
+            rows.push('.#' + 'w'.repeat(width - 4) + '#.');
+            rows.push('..' + '#'.repeat(tail - 2) + 'ww' + '#'.repeat(width - tail - 4) + '..');
+            rows.push('.'.repeat(tail - 1) + '#ww#' + '.'.repeat(width - tail - 3));
+            rows.push('.'.repeat(tail) + '#w#' + '.'.repeat(width - tail - 3));
+            rows.push('.'.repeat(tail + 1) + '#' + '.'.repeat(width - tail - 2));
+            return rows;
+        }
 
         // 四種心情圖示（'.' 代表透明、沿用底下對話框的底色），
         // top/left 是貼進外框的位置（已置中對齊）。
@@ -216,32 +214,32 @@
                 'bbbbbbbbbb',
                 '.BBBBBBBB.',
             ]},
-            zzz: { top: 3, left: 4, art: [     // Zzz（大中小三個 Z 斜排）
+            zzz: { top: 3, left: 4, art: [     // Zzz（大 Z 在上、中小 Z 在下，彼此留足空隙）
                 '......######',
                 '.........##.',
                 '.......##...',
                 '......######',
-                '..####......',
-                '....#...###.',
-                '...#.....#..',
-                '..####..###.',
+                '............',
+                '.####..###..',
+                '...#....#...',
+                '.####..###..',
             ]},
-            exclaim: { top: 3, left: 8, art: [ // 驚嘆號（紅色，上寬下窄 + 圓點）
-                'rrrr',
-                'rrrr',
-                '.rr.',
-                '.rr.',
-                '.rr.',
-                '....',
-                '.rr.',
-                '.rr.',
+            exclaim: { top: 3, left: 3, frameWidth: 12, art: [ // 驚嘆號（紅色，6→4→2 線性收窄 + 圓點）
+                '######',
+                '.####.',
+                '.####.',
+                '..##..',
+                '..##..',
+                '......',
+                '..##..',
+                '..##..',
             ]},
-            question: { top: 3, left: 6, art: [ // 問號（藍色）
+            question: { top: 3, left: 3, frameWidth: 14, art: [ // 問號（藍色，粗筆畫圓頂）
                 '.uuuuu..',
-                'uu...uu.',
-                '.....uu.',
-                '....uu..',
-                '...uu...',
+                'uuuuuuu.',
+                'uu...uuu',
+                '.....uuu',
+                '...uuuu.',
                 '...uu...',
                 '........',
                 '...uu...',
@@ -253,7 +251,7 @@
         function getEmoteURI(name) {
             if (emoteCache[name]) return emoteCache[name];
             const icon = EMOTE_ICONS[name];
-            const rows = BUBBLE_FRAME.map((row, r) => {
+            const rows = buildBubbleFrame(icon.frameWidth ?? 20).map((row, r) => {
                 const overlay = icon.art[r - icon.top];
                 if (!overlay) return row;
                 const patched = [...overlay].map((ch, i) => ch === '.' ? row[icon.left + i] : ch).join('');
@@ -348,10 +346,11 @@
                 });
 
                 // 心情對話框（發呆時隨機冒出）。
-                // 放大倍率取整數，像素才不會被非整數縮放糊掉：小體型 2x、大體型 3x
+                // 放大倍率取整數，像素才不會被非整數縮放糊掉：小體型 2x、大體型 3x。
+                // 顯示寬度依各圖案的框寬而定，在 maybeShowEmote 時才設定
+                this.bubbleScale = Math.max(2, Math.round(sizeScale * 3));
                 this.bubble = document.createElement('img');
                 this.bubble.className = 'bubble';
-                this.bubble.style.width = `${20 * Math.max(2, Math.round(sizeScale * 3))}px`;
                 this.bubble.style.display = 'none';
                 this.el.appendChild(this.bubble);
 
@@ -411,7 +410,10 @@
             maybeShowEmote() {
                 if (Math.random() >= (CONFIG.bubbleChance ?? 0.5)) return;
                 const names = Object.keys(EMOTE_ICONS);
-                this.bubble.src = getEmoteURI(names[randomInt(0, names.length - 1)]);
+                const name = names[randomInt(0, names.length - 1)];
+                this.bubble.src = getEmoteURI(name);
+                // 寬度 = 該圖案的框寬 × 整數倍率（框寬依內容而不同，如驚嘆號是瘦框）
+                this.bubble.style.width = `${(EMOTE_ICONS[name].frameWidth ?? 20) * this.bubbleScale}px`;
                 this.bubble.style.display = 'block';
             }
 
