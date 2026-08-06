@@ -54,6 +54,19 @@
             z-index: -1;
         }
 
+        /* 發呆時的心情對話框，浮在頭頂正上方。
+           圖是 canvas 畫的小尺寸點陣圖，靠 pixelated 整數倍放大維持鋸齒感 */
+        .bubble {
+            position: absolute;
+            bottom: calc(100% + 2px);
+            left: 50%;
+            transform: translateX(-50%);
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            pointer-events: none;
+        }
+
         .sprite {
             display: block;
             height: 64px; /* 預設高度，實際會由 JS 依體型分級覆寫 */
@@ -120,6 +133,106 @@
             const meters = deciMeters / 10;
             const tier = CONFIG.sizeTiers.find(t => meters < t.maxMeters);
             return tier ? tier.scale : 0.75;
+        }
+
+        // ---------------------------------------------------------
+        // 發呆心情對話框 (Emote Bubble)
+        // 對話框與圖示都是手繪的字元畫像素圖：
+        // 字元畫 → canvas 逐格上色 → dataURL 當 <img> 用，
+        // 顯示時整數倍放大 + image-rendering: pixelated 維持點陣風格。
+        // 不依賴任何外部圖檔，離線也能用。
+        // ---------------------------------------------------------
+        const EMOTE_PALETTE = {
+            '#': '#2b2b2b', // 外框黑 / 線條
+            'w': '#ffffff', // 對話框底白
+            'r': '#e8455a', // 愛心紅
+            'b': '#9c6a33', // 大便棕
+            'B': '#6e4620', // 大便深棕（底部陰影）
+        };
+
+        // 對話框外框 20x17：圓角方框 + 底部中央尖尾巴
+        const BUBBLE_FRAME = [
+            '..################..',
+            '.#wwwwwwwwwwwwwwww#.',
+            '#wwwwwwwwwwwwwwwwww#',
+            '#wwwwwwwwwwwwwwwwww#',
+            '#wwwwwwwwwwwwwwwwww#',
+            '#wwwwwwwwwwwwwwwwww#',
+            '#wwwwwwwwwwwwwwwwww#',
+            '#wwwwwwwwwwwwwwwwww#',
+            '#wwwwwwwwwwwwwwwwww#',
+            '#wwwwwwwwwwwwwwwwww#',
+            '#wwwwwwwwwwwwwwwwww#',
+            '#wwwwwwwwwwwwwwwwww#',
+            '.#wwwwwwwwwwwwwwww#.',
+            '..######ww########..',
+            '.......#ww#.........',
+            '........#w#.........',
+            '.........#..........',
+        ];
+
+        // 四種心情圖示（'.' 代表透明、沿用底下對話框的底色），
+        // top/left 是貼進外框的位置（已置中對齊）
+        const EMOTE_ICONS = {
+            heart: { top: 4, left: 6, art: [   // 愛心
+                '.rr..rr.',
+                'rrrrrrrr',
+                'rrrrrrrr',
+                '.rrrrrr.',
+                '..rrrr..',
+                '...rr...',
+            ]},
+            note: { top: 3, left: 6, art: [    // 音符
+                '...##...',
+                '...#.#..',
+                '...#..#.',
+                '...#..#.',
+                '...#....',
+                '.###....',
+                '####....',
+                '.##.....',
+            ]},
+            scribble: { top: 4, left: 6, art: [ // 一團黑線（心情阿雜）
+                '.#.##.#.',
+                '#.#..#.#',
+                '.##.##.#',
+                '#..#..#.',
+                '.#.##.#.',
+                '..#..#..',
+            ]},
+            poop: { top: 4, left: 6, art: [    // 大便
+                '....b...',
+                '...bb...',
+                '..bbbb..',
+                '.bbbbbb.',
+                '.bbbbbb.',
+                'bbbbbbbb',
+                '.BBBBBB.',
+            ]},
+        };
+
+        // 把圖示疊進對話框、畫到 canvas，回傳 dataURL（同圖案只畫一次，之後走快取）
+        const emoteCache = {};
+        function getEmoteURI(name) {
+            if (emoteCache[name]) return emoteCache[name];
+            const icon = EMOTE_ICONS[name];
+            const rows = BUBBLE_FRAME.map((row, r) => {
+                const overlay = icon.art[r - icon.top];
+                if (!overlay) return row;
+                const patched = [...overlay].map((ch, i) => ch === '.' ? row[icon.left + i] : ch).join('');
+                return row.slice(0, icon.left) + patched + row.slice(icon.left + overlay.length);
+            });
+            const canvas = document.createElement('canvas');
+            canvas.width = rows[0].length;
+            canvas.height = rows.length;
+            const ctx = canvas.getContext('2d');
+            rows.forEach((row, y) => [...row].forEach((ch, x) => {
+                if (EMOTE_PALETTE[ch]) {
+                    ctx.fillStyle = EMOTE_PALETTE[ch];
+                    ctx.fillRect(x, y, 1, 1);
+                }
+            }));
+            return emoteCache[name] = canvas.toDataURL();
         }
 
         // ---------------------------------------------------------
@@ -197,6 +310,14 @@
                     }
                 });
 
+                // 心情對話框（發呆時隨機冒出）。
+                // 放大倍率取整數，像素才不會被非整數縮放糊掉：小體型 2x、大體型 3x
+                this.bubble = document.createElement('img');
+                this.bubble.className = 'bubble';
+                this.bubble.style.width = `${20 * Math.max(2, Math.round(sizeScale * 3))}px`;
+                this.bubble.style.display = 'none';
+                this.el.appendChild(this.bubble);
+
                 this.el.appendChild(this.img);
                 this.container.appendChild(this.el);
 
@@ -245,7 +366,16 @@
                     this.state = 'IDLE';
                     // 設定發呆時間
                     this.idleTimer = randomInt(CONFIG.lookTime.min, CONFIG.lookTime.max);
+                    this.maybeShowEmote();
                 }
+            }
+
+            // 只有站定發呆時才有機會冒心情對話框；走路中不觸發
+            maybeShowEmote() {
+                if (Math.random() >= (CONFIG.bubbleChance ?? 0.5)) return;
+                const names = Object.keys(EMOTE_ICONS);
+                this.bubble.src = getEmoteURI(names[randomInt(0, names.length - 1)]);
+                this.bubble.style.display = 'block';
             }
 
             // 行進方向的前方太近有同伴就掉頭；掉頭後進入冷卻，
@@ -271,6 +401,7 @@
                 this.idleTimer -= deltaTime;
                 if (this.idleTimer <= 0) {
                     this.state = 'WALKING';
+                    this.bubble.style.display = 'none'; // 開始走路就收起對話框
                     // 隨機決定是否轉向
                     if (Math.random() > 0.5) {
                         this.direction *= -1;
