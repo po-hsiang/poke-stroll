@@ -117,6 +117,7 @@
             lookTimeMax:      { path: ['lookTime', 'max'],  type: 'int',   min: 0,  max: 60000 },
             bubbleChance:     { path: ['bubbleChance'],     type: 'float', min: 0,  max: 1 },
             bubblePosition:   { path: ['bubblePosition'],   type: 'enum',  values: ['top', 'side', 'none'] },
+            shinyChance:      { path: ['shinyChance'],      type: 'float', min: 0,  max: 1 },
             hopHeight:        { path: ['hopHeight'],        type: 'float', min: 0,  max: 50 },
             hopVariance:      { path: ['hopVariance'],      type: 'float', min: 0,  max: 50 },
             hopFrequency:     { path: ['hopFrequency'],     type: 'float', min: 0,  max: 1 },
@@ -232,6 +233,7 @@
             'b': '#9c6a33', // 大便棕
             'B': '#6e4620', // 大便深棕（底部陰影）
             'u': '#4a6fd8', // 問號藍
+            'y': '#ecb200', // 星光金
         };
 
         // 對話框外框產生器：給定總寬度與內部（白底）列數，
@@ -331,6 +333,18 @@
                 '...uu...',
                 '...uu...',
             ]},
+            sparkle: { top: 3, left: 3, frameWidth: 16, art: [ // 金色閃光（四芒星 + 中心亮點），也是色違登場的專屬署名
+                '....yy....',
+                '....yy....',
+                '...yyyy...',
+                '..yyyyyy..',
+                'yyyywwyyyy',
+                'yyyywwyyyy',
+                '..yyyyyy..',
+                '...yyyy...',
+                '....yy....',
+                '....yy....',
+            ]},
         };
 
         // 把圖示疊進對話框、畫到 canvas，回傳 dataURL（同圖案只畫一次，之後走快取）
@@ -412,17 +426,22 @@
                     || 'rgba(0, 0, 0, 0.2)';
                 this.el.appendChild(this.shadow);
 
+                // 色違判定：每一隻「獨立」擲骰，不是一次骰全體
+                this.isShiny = Math.random() < (CONFIG.shinyChance ?? 0);
+                const shinyDir = this.isShiny ? 'shiny/' : '';
+
                 // 圖片：高度依體型分級縮放（寬度 auto，會等比例跟著縮）
                 this.img = document.createElement('img');
                 this.img.className = 'sprite';
                 this.img.style.height = `${Math.round(CONFIG.baseSize * sizeScale)}px`;
                 // 使用 PokéAPI 的 GitHub Raw 資源庫，這是第五世代的動態 GIF，非常可愛
-                this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${this.id}.gif`;
-                
+                // （色違版只差一層 shiny/ 目錄，動圖與靜圖皆同）
+                this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${shinyDir}${this.id}.gif`;
+
                 // 載入失敗處理 (有些稀有 ID 可能沒有動圖)
                 this.img.onerror = () => {
-                    // 如果動圖失敗，退回使用一般靜態圖，或是皮卡丘當作 fallback
-                    this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${this.id}.png`;
+                    // 如果動圖失敗，退回使用一般靜態圖（色違同樣有 shiny/ 靜態圖）
+                    this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shinyDir}${this.id}.png`;
                 };
 
                 // 圖片載入後把影子寬度對齊「實際顯示寬度 × shadowWidthRatio」
@@ -448,6 +467,15 @@
 
                 // 初始化渲染
                 this.updateDOM();
+
+                // 色違登場儀式：一出場必定亮出金色閃光（不吃 bubbleChance 機率，
+                // 但尊重 bubblePosition=none 的全域關閉），數秒後自動收起
+                if (this.isShiny) {
+                    this.showEmote('sparkle');
+                    this.entranceTimer = setTimeout(() => {
+                        this.bubble.style.display = 'none';
+                    }, 4000);
+                }
             }
 
             // 每一幀的邏輯更新 (Update Loop)
@@ -495,13 +523,11 @@
                 }
             }
 
-            // 只有站定發呆時才有機會冒心情對話框；走路中不觸發
-            maybeShowEmote() {
+            // 顯示指定的心情對話框（尊重 bubblePosition 的全域關閉）
+            showEmote(name) {
                 const mode = CONFIG.bubblePosition ?? 'top';
                 if (mode === 'none') return; // 嵌入方選擇完全關閉對話框
-                if (Math.random() >= (CONFIG.bubbleChance ?? 0.5)) return;
-                const names = Object.keys(EMOTE_ICONS);
-                const name = names[randomInt(0, names.length - 1)];
+                clearTimeout(this.entranceTimer); // 別讓登場儀式的收起計時誤傷後來的對話框
                 this.bubble.src = getEmoteURI(name);
                 // 寬度 = 該圖案的框寬 × 整數倍率（框寬依內容而不同，如驚嘆號是瘦框）
                 this.bubble.style.width = `${(EMOTE_ICONS[name].frameWidth ?? 20) * this.bubbleScale}px`;
@@ -518,6 +544,13 @@
                     this.bubble.style.bottom = 'calc(100% + 2px)';
                 }
                 this.bubble.style.display = 'block';
+            }
+
+            // 只有站定發呆時才有機會冒心情對話框；走路中不觸發
+            maybeShowEmote() {
+                if (Math.random() >= (CONFIG.bubbleChance ?? 0.5)) return;
+                const names = Object.keys(EMOTE_ICONS);
+                this.showEmote(names[randomInt(0, names.length - 1)]);
             }
 
             // 行進方向的前方太近有同伴就掉頭；掉頭後進入冷卻，
