@@ -6,23 +6,23 @@
 
 ```bash
 # 建置(版本號與 .env 的 VERSION 一致)
-docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.1.0 .
+docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.2.0 .
 
 # 本機試跑
-docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.1.0
+docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.2.0
 # 瀏覽器 / OBS 瀏覽器來源開 http://localhost:8080/ 即可看到 widget
 ```
 
 ## 推上 Google Artifact Registry
 
 ```bash
-docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.1.0
+docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.2.0
 ```
 
 ## 雲端主機部署
 
 ```bash
-docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.1.0
+docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.2.0
 docker compose up -d
 ```
 
@@ -42,6 +42,9 @@ docker compose up -d
         style="position:fixed; bottom:0; left:0; width:100%; height:200px;
                border:none; pointer-events:none;"></iframe>
 ```
+
+想要不同的生成數量、體型、固定陣容?在網址後掛 query string 即可,例如
+`/poke-stroll/?count=5&ids=25,133,6`,各專案互不影響。完整參數見 [PARAMS.md](PARAMS.md)。
 
 ## 設計筆記(為什麼這樣設)
 

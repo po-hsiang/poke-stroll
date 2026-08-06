@@ -97,6 +97,78 @@
         const CONFIG = window.POKE_CONFIG;
 
         // ---------------------------------------------------------
+        // URL 參數覆寫 (Query String Overrides)
+        // iframe 嵌入或直接開啟時可用 ?count=5&baseSize=120 客製，
+        // 不帶參數就吃 config.js 的預設值。完整參數文件見 PARAMS.md
+        // ---------------------------------------------------------
+        // 白名單 + 型別 + 範圍：不在表上的參數一律無視，
+        // 超出範圍或非數字的值忽略並在 console 提示，確保亂帶參數也弄不壞頁面
+        const QUERY_PARAMS = {
+            count:            { path: ['count'],            type: 'int',   min: 1,  max: 50 },
+            minId:            { path: ['minId'],            type: 'int',   min: 1,  max: 1025 },
+            maxId:            { path: ['maxId'],            type: 'int',   min: 1,  max: 1025 },
+            baseSpeed:        { path: ['baseSpeed'],        type: 'float', min: 0,  max: 10 },
+            speedVariance:    { path: ['speedVariance'],    type: 'float', min: 0,  max: 10 },
+            boundsMin:        { path: ['bounds', 'min'],    type: 'float', min: 0,  max: 1 },
+            boundsMax:        { path: ['bounds', 'max'],    type: 'float', min: 0,  max: 1 },
+            idleChance:       { path: ['idleChance'],       type: 'float', min: 0,  max: 1 },
+            lookTimeMin:      { path: ['lookTime', 'min'],  type: 'int',   min: 0,  max: 60000 },
+            lookTimeMax:      { path: ['lookTime', 'max'],  type: 'int',   min: 0,  max: 60000 },
+            bubbleChance:     { path: ['bubbleChance'],     type: 'float', min: 0,  max: 1 },
+            hopHeight:        { path: ['hopHeight'],        type: 'float', min: 0,  max: 50 },
+            hopVariance:      { path: ['hopVariance'],      type: 'float', min: 0,  max: 50 },
+            hopFrequency:     { path: ['hopFrequency'],     type: 'float', min: 0,  max: 1 },
+            personalSpace:    { path: ['personalSpace'],    type: 'int',   min: 0,  max: 1000 },
+            baseSize:         { path: ['baseSize'],         type: 'int',   min: 16, max: 512 },
+            shadowWidthRatio: { path: ['shadowWidthRatio'], type: 'float', min: 0,  max: 2 },
+        };
+
+        function applyQueryOverrides(config) {
+            const qs = new URLSearchParams(location.search);
+
+            for (const [name, spec] of Object.entries(QUERY_PARAMS)) {
+                const raw = qs.get(name);
+                if (raw === null) continue;
+                const value = spec.type === 'int' ? parseInt(raw, 10) : parseFloat(raw);
+                if (Number.isNaN(value) || value < spec.min || value > spec.max) {
+                    console.warn(`[PokéFooter] 忽略不合法的參數 ${name}=${raw}（允許範圍 ${spec.min} ~ ${spec.max}）`);
+                    continue;
+                }
+                let target = config;
+                for (const key of spec.path.slice(0, -1)) target = target[key];
+                target[spec.path[spec.path.length - 1]] = value;
+            }
+
+            // ids=25,133,6：固定生成清單（取代 count/minId/maxId 的隨機抽選）。
+            // 允許重複編號（五隻伊布也是一種浪漫），上限 50 隻
+            const ids = qs.get('ids');
+            if (ids !== null) {
+                const list = ids.split(',')
+                    .map(s => parseInt(s.trim(), 10))
+                    .filter(n => Number.isInteger(n) && n >= 1 && n <= 1025)
+                    .slice(0, 50);
+                if (list.length) {
+                    config.fixedIds = list;
+                    config.count = list.length; // 跑道數要跟實際隻數一致
+                } else {
+                    console.warn('[PokéFooter] ids 參數沒有任何合法編號（1~1025），已忽略');
+                }
+            }
+
+            // 參數彼此的合理性修正：
+            // 順序顛倒就對調；count 超過可抽的編號數量會讓抽選迴圈卡死，必須夾住
+            if (config.minId > config.maxId) [config.minId, config.maxId] = [config.maxId, config.minId];
+            if (config.lookTime.min > config.lookTime.max) [config.lookTime.min, config.lookTime.max] = [config.lookTime.max, config.lookTime.min];
+            if (config.bounds.min >= config.bounds.max) {
+                console.warn('[PokéFooter] boundsMin 必須小於 boundsMax，已改回預設 0.1 ~ 0.9');
+                config.bounds = { min: 0.1, max: 0.9 };
+            }
+            if (!config.fixedIds) {
+                config.count = Math.min(config.count, config.maxId - config.minId + 1);
+            }
+        }
+
+        // ---------------------------------------------------------
         // 工具函式 (Utils)
         // ---------------------------------------------------------
         
@@ -483,8 +555,8 @@
         let lastTime = 0;
 
         async function init() {
-            // 取得隨機 ID
-            const ids = getUniqueRandomIds(CONFIG.count, CONFIG.minId, CONFIG.maxId);
+            // URL 有帶 ?ids= 就用固定清單，否則照 count/minId/maxId 隨機抽
+            const ids = CONFIG.fixedIds ?? getUniqueRandomIds(CONFIG.count, CONFIG.minId, CONFIG.maxId);
 
             // 先向 PokéAPI 查每隻的身高，決定體型分級（並行查詢）
             const scales = await Promise.all(ids.map(getSizeScale));
@@ -513,6 +585,7 @@
 
         // 啟動！（找不到設定檔就不啟動，並在主控台提示）
         if (CONFIG) {
+            applyQueryOverrides(CONFIG);
             init();
         } else {
             console.error('[PokéFooter] 找不到 window.POKE_CONFIG，請確認 config.js 與本 HTML 放在同一個資料夾。');
