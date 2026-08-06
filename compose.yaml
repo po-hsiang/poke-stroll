@@ -1,0 +1,40 @@
+services:
+  poke_stroll:
+    env_file:
+      - .env
+    image: ${IMAGE}
+    container_name: ${CONTAINER_NAME}
+    ports:
+      - "${PORT}"
+    environment:
+      - TZ=Asia/Taipei
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${CONTAINER_NAME}.rule=PathPrefix(`/${ROUTE_PREFIX}`)
+      # /poke-stroll（無尾斜線）先 301 到 /poke-stroll/：
+      # 頁面內的 ./config.js 等相對路徑要以「目錄」為基準才解析得到，
+      # 少了尾斜線瀏覽器會把資源解析到網站根路徑而 404（API 服務沒差，靜態頁必須處理）
+      - traefik.http.middlewares.${PREFIX_MID_NAME}-slash.redirectregex.regex=^(https?://[^/]+/${ROUTE_PREFIX})$$
+      - traefik.http.middlewares.${PREFIX_MID_NAME}-slash.redirectregex.replacement=$${1}/
+      - traefik.http.middlewares.${PREFIX_MID_NAME}-slash.redirectregex.permanent=true
+      - traefik.http.middlewares.${PREFIX_MID_NAME}-stripprefix.stripprefix.prefixes=/${ROUTE_PREFIX}
+      - traefik.http.routers.${CONTAINER_NAME}.middlewares=${PREFIX_MID_NAME}-slash,${PREFIX_MID_NAME}-stripprefix
+      - traefik.basic.port=${PORT}
+      - traefik.docker.network=${NETWORK}
+    networks:
+      - ${NETWORK}
+    deploy:
+      resources:
+        limits:
+          memory: 128M  # 純 nginx 靜態站，128M 綽綽有餘
+        reservations:
+          memory: 16M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+networks:
+  ipa_service_net:
+    external: true
