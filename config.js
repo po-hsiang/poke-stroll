@@ -22,6 +22,7 @@ window.POKE_CONFIG = {
     idleChance: 0.01,   // 每一幀進入發呆狀態的機率
     lookTime: { min: 2000, max: 5000 }, // 發呆(看向我們)的時間範圍 ms
     bubbleChance: 1 / 3, // 發呆時冒出心情對話框的機率（愛心/音符/黑線/大便/Zzz/驚嘆號/問號 七選一）
+    bubblePosition: 'top', // 對話框位置：'top' 頭頂正上方 / 'side' 面向方向的側邊 / 'none' 完全不顯示
 
     // ---- 走路跳步動畫 ----
     hopHeight: 2,        // 基礎跳躍高度 px

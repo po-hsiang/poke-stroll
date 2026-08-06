@@ -54,7 +54,8 @@
             z-index: -1;
         }
 
-        /* 發呆時的心情對話框，浮在頭頂正上方。
+        /* 發呆時的心情對話框。預設浮在頭頂正上方，
+           實際位置由 JS 依 bubblePosition 設定（top 頭頂 / side 面向側邊）。
            圖是 canvas 畫的小尺寸點陣圖，靠 pixelated 整數倍放大維持鋸齒感 */
         .bubble {
             position: absolute;
@@ -115,6 +116,7 @@
             lookTimeMin:      { path: ['lookTime', 'min'],  type: 'int',   min: 0,  max: 60000 },
             lookTimeMax:      { path: ['lookTime', 'max'],  type: 'int',   min: 0,  max: 60000 },
             bubbleChance:     { path: ['bubbleChance'],     type: 'float', min: 0,  max: 1 },
+            bubblePosition:   { path: ['bubblePosition'],   type: 'enum',  values: ['top', 'side', 'none'] },
             hopHeight:        { path: ['hopHeight'],        type: 'float', min: 0,  max: 50 },
             hopVariance:      { path: ['hopVariance'],      type: 'float', min: 0,  max: 50 },
             hopFrequency:     { path: ['hopFrequency'],     type: 'float', min: 0,  max: 1 },
@@ -129,10 +131,19 @@
             for (const [name, spec] of Object.entries(QUERY_PARAMS)) {
                 const raw = qs.get(name);
                 if (raw === null) continue;
-                const value = spec.type === 'int' ? parseInt(raw, 10) : parseFloat(raw);
-                if (Number.isNaN(value) || value < spec.min || value > spec.max) {
-                    console.warn(`[PokéFooter] 忽略不合法的參數 ${name}=${raw}（允許範圍 ${spec.min} ~ ${spec.max}）`);
-                    continue;
+                let value;
+                if (spec.type === 'enum') {
+                    value = raw.toLowerCase();
+                    if (!spec.values.includes(value)) {
+                        console.warn(`[PokéFooter] 忽略不合法的參數 ${name}=${raw}（允許值：${spec.values.join(' / ')}）`);
+                        continue;
+                    }
+                } else {
+                    value = spec.type === 'int' ? parseInt(raw, 10) : parseFloat(raw);
+                    if (Number.isNaN(value) || value < spec.min || value > spec.max) {
+                        console.warn(`[PokéFooter] 忽略不合法的參數 ${name}=${raw}（允許範圍 ${spec.min} ~ ${spec.max}）`);
+                        continue;
+                    }
                 }
                 let target = config;
                 for (const key of spec.path.slice(0, -1)) target = target[key];
@@ -486,12 +497,26 @@
 
             // 只有站定發呆時才有機會冒心情對話框；走路中不觸發
             maybeShowEmote() {
+                const mode = CONFIG.bubblePosition ?? 'top';
+                if (mode === 'none') return; // 嵌入方選擇完全關閉對話框
                 if (Math.random() >= (CONFIG.bubbleChance ?? 0.5)) return;
                 const names = Object.keys(EMOTE_ICONS);
                 const name = names[randomInt(0, names.length - 1)];
                 this.bubble.src = getEmoteURI(name);
                 // 寬度 = 該圖案的框寬 × 整數倍率（框寬依內容而不同，如驚嘆號是瘦框）
                 this.bubble.style.width = `${(EMOTE_ICONS[name].frameWidth ?? 20) * this.bubbleScale}px`;
+
+                // 擺位（發呆期間 direction 不會變，開始走路就收起，所以只需設定一次）：
+                // top  = 頭頂正上方
+                // side = 面向那一側的斜上方——水平置中於該側邊緣（尾巴尖剛好落在肩側），
+                //        垂直錨在身高六成處
+                if (mode === 'side') {
+                    this.bubble.style.left = this.direction === 1 ? '100%' : '0';
+                    this.bubble.style.bottom = '60%';
+                } else {
+                    this.bubble.style.left = '50%';
+                    this.bubble.style.bottom = 'calc(100% + 2px)';
+                }
                 this.bubble.style.display = 'block';
             }
 

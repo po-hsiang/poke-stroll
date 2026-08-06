@@ -26,6 +26,7 @@
 | `lookTimeMin` | int | 0 ~ 60000 | `2000` | 發呆時間下限(ms) |
 | `lookTimeMax` | int | 0 ~ 60000 | `5000` | 發呆時間上限(ms) |
 | `bubbleChance` | float | 0 ~ 1 | `0.33` | 發呆時冒出心情對話框的機率(七種圖案隨機) |
+| `bubblePosition` | enum | `top` / `side` / `none` | `top` | 對話框位置:`top` 頭頂正上方、`side` 面向方向的側邊、`none` 完全不顯示(空間有限的頁面適用) |
 | `hopHeight` | float | 0 ~ 50 | `2` | 走路跳步的基礎高度 px |
 | `hopVariance` | float | 0 ~ 50 | `2` | 個體間的跳步高度差異上限 |
 | `hopFrequency` | float | 0 ~ 1 | `0.005` | 跳步頻率(越小跳越慢) |
@@ -52,6 +53,7 @@
 | 五隻伊布 | `?ids=133,133,133,133,133` |
 | 初代御三家世界 | `?minId=1&maxId=151&count=6` |
 | 寶可夢大遊行 | `?count=20&baseSpeed=0.4` |
-| 安靜穩重風(少動多發呆,不冒泡) | `?baseSpeed=0.1&idleChance=0.03&bubbleChance=0` |
+| 安靜穩重風(少動多發呆,不冒泡) | `?baseSpeed=0.1&idleChance=0.03&bubblePosition=none` |
+| 對話框改到側邊(上方空間有限時) | `?bubblePosition=side` |
 | 巨大化 | `?baseSize=160&count=2` |
 | 只在畫面右半邊活動 | `?boundsMin=0.5&boundsMax=0.95` |
