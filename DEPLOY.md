@@ -6,23 +6,23 @@
 
 ```bash
 # 建置(版本號與 .env 的 VERSION 一致)
-docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.4.0 .
+docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.4.1 .
 
 # 本機試跑
-docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.4.0
+docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.4.1
 # 瀏覽器 / OBS 瀏覽器來源開 http://localhost:8080/ 即可看到 widget
 ```
 
 ## 推上 Google Artifact Registry
 
 ```bash
-docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.4.0
+docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.4.1
 ```
 
 ## 雲端主機部署
 
 ```bash
-docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.4.0
+docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.4.1
 docker compose up -d
 ```
 
