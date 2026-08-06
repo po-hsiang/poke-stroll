@@ -47,7 +47,7 @@
 
 ```html
 <iframe src="pokemon_footer_widget.html"
-        style="position:fixed; bottom:0; left:0; width:100%; height:150px;
+        style="position:fixed; bottom:0; left:0; width:100%; height:200px;
                border:none; pointer-events:none;"></iframe>
 ```
 

@@ -151,15 +151,15 @@
             'u': '#4a6fd8', // 問號藍
         };
 
-        // 對話框外框產生器：給定總寬度，組出「圓角方框 + 底部尖尾巴」，
-        // 高度固定 17。概念上等同遊戲 UI 的 9-slice：四角樣式固定，
-        // 邊框依內容的 bounding box 伸縮 —— 窄內容（如驚嘆號）配瘦框
-        function buildBubbleFrame(width) {
+        // 對話框外框產生器：給定總寬度與內部（白底）列數，
+        // 組出「圓角方框 + 底部尖尾巴」。概念上等同遊戲 UI 的 9-slice：
+        // 四角與尾巴樣式固定，邊框依內容的 bounding box 雙向伸縮
+        function buildBubbleFrame(width, innerRows = 12) {
             const tail = Math.floor(width / 2) - 2; // 尾巴開口左緣（保持在框的中央）
             const rows = [];
             rows.push('..' + '#'.repeat(width - 4) + '..');
             rows.push('.#' + 'w'.repeat(width - 4) + '#.');
-            for (let i = 0; i < 10; i++) {
+            for (let i = 0; i < innerRows - 2; i++) {
                 rows.push('#' + 'w'.repeat(width - 2) + '#');
             }
             rows.push('.#' + 'w'.repeat(width - 4) + '#.');
@@ -214,27 +214,30 @@
                 'bbbbbbbbbb',
                 '.BBBBBBBB.',
             ]},
-            zzz: { top: 3, left: 4, art: [     // Zzz（大 Z 在上、中小 Z 在下，彼此留足空隙）
-                '......######',
-                '.........##.',
-                '.......##...',
-                '......######',
-                '............',
-                '.####..###..',
-                '...#....#...',
-                '.####..###..',
+            zzz: { top: 3, left: 3, frameWidth: 23, art: [ // Zzz（小中大三個 Z 沿對角線往右上爬升）
+                '...........######',
+                '...............#.',
+                '..............#..',
+                '.....#####...#...',
+                '........#...#....',
+                '.......#...######',
+                '####..#..........',
+                '..#..#####.......',
+                '.#...............',
+                '####.............',
             ]},
-            exclaim: { top: 3, left: 3, frameWidth: 12, art: [ // 驚嘆號（紅色，6→4→2 線性收窄 + 圓點）
-                '######',
-                '.####.',
-                '.####.',
-                '..##..',
-                '..##..',
-                '......',
-                '..##..',
-                '..##..',
+            exclaim: { top: 3, left: 3, frameWidth: 10, art: [ // 驚嘆號（紅色，4→2 收窄 + 2x2 圓點）
+                'rrrr',
+                'rrrr',
+                'rrrr',
+                '.rr.',
+                '.rr.',
+                '.rr.',
+                '....',
+                '.rr.',
+                '.rr.',
             ]},
-            question: { top: 3, left: 3, frameWidth: 14, art: [ // 問號（藍色，粗筆畫圓頂）
+            question: { top: 3, left: 3, frameWidth: 14, art: [ // 問號（藍色，粗筆畫圓頂 + 2x2 圓點）
                 '.uuuuu..',
                 'uuuuuuu.',
                 'uu...uuu',
@@ -242,6 +245,7 @@
                 '...uuuu.',
                 '...uu...',
                 '........',
+                '...uu...',
                 '...uu...',
             ]},
         };
@@ -251,7 +255,9 @@
         function getEmoteURI(name) {
             if (emoteCache[name]) return emoteCache[name];
             const icon = EMOTE_ICONS[name];
-            const rows = buildBubbleFrame(icon.frameWidth ?? 20).map((row, r) => {
+            // 內部列數自動配合圖案高度（上下各留 2px 白邊），最少維持 12
+            const innerRows = Math.max(12, icon.art.length + 4);
+            const rows = buildBubbleFrame(icon.frameWidth ?? 20, innerRows).map((row, r) => {
                 const overlay = icon.art[r - icon.top];
                 if (!overlay) return row;
                 const patched = [...overlay].map((ch, i) => ch === '.' ? row[icon.left + i] : ch).join('');
