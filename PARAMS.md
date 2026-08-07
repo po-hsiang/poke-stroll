@@ -26,7 +26,9 @@
 | `lookTimeMin` | int | 0 ~ 60000 | `2000` | 發呆時間下限(ms) |
 | `lookTimeMax` | int | 0 ~ 60000 | `5000` | 發呆時間上限(ms) |
 | `bubbleChance` | float | 0 ~ 1 | `0.33` | 發呆時冒出心情對話框的機率(八種圖案隨機) |
-| `shinyChance` | float | 0 ~ 1 | `1/4096` | 每一隻**獨立**擲骰出現色違的機率(預設為正作原生機率)。色違登場時必定亮出金色閃光對話框 |
+| `idleJumpChance` | float | 0 ~ 1 | `0.003` | 發呆時每一幀「原地開心跳一下」的機率(預設約半數發呆會跳個一兩下,`0` 關閉) |
+| `shinyChance` | float | 0 ~ 1 | `1/4096` | 每一隻**獨立**擲骰出現色違的機率(預設為正作原生機率)。色違登場時必定亮出金色閃光對話框 + 星星四散特效 |
+| `shinyBurstDuration` | int | 100 ~ 10000 | `1400` | 色違登場星星特效的飛散+淡出總時長 ms |
 | `bubblePosition` | enum | `top` / `side` / `none` | `top` | 對話框位置:`top` 頭頂正上方、`side` 面向方向的側邊、`none` 完全不顯示(空間有限的頁面適用) |
 | `hopHeight` | float | 0 ~ 50 | `2` | 走路跳步的基礎高度 px |
 | `hopVariance` | float | 0 ~ 50 | `2` | 個體間的跳步高度差異上限 |
@@ -58,5 +60,7 @@
 | 對話框改到側邊(上方空間有限時) | `?bubblePosition=side` |
 | 全員色違遊行 | `?shinyChance=1&count=10` |
 | 歐皇手感(平均 20 隻出 1 隻色違) | `?shinyChance=0.05` |
+| 過動兒模式(常發呆、狂跳) | `?idleChance=0.03&idleJumpChance=0.02` |
+| 色違煙火放好放滿 | `?shinyChance=1&shinyBurstDuration=3000` |
 | 巨大化 | `?baseSize=160&count=2` |
 | 只在畫面右半邊活動 | `?boundsMin=0.5&boundsMax=0.95` |

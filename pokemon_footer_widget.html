@@ -77,11 +77,12 @@
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
             pointer-events: none;
-            animation: star-burst 0.9s ease-out forwards;
+            animation: star-burst 1.4s ease-out forwards; /* 時長只是備援，JS 會依 shinyBurstDuration 覆寫 */
         }
         @keyframes star-burst {
-            from { transform: translate(0, 0); opacity: 1; }
-            to   { transform: translate(var(--dx), var(--dy)); opacity: 0; }
+            0%   { transform: translate(0, 0); opacity: 1; }
+            60%  { opacity: 0.95; } /* 前 60% 幾乎不淡出，亮得夠久；尾段再一口氣收乾淨 */
+            100% { transform: translate(var(--dx), var(--dy)); opacity: 0; }
         }
 
         .sprite {
@@ -133,7 +134,9 @@
             lookTimeMax:      { path: ['lookTime', 'max'],  type: 'int',   min: 0,  max: 60000 },
             bubbleChance:     { path: ['bubbleChance'],     type: 'float', min: 0,  max: 1 },
             bubblePosition:   { path: ['bubblePosition'],   type: 'enum',  values: ['top', 'side', 'none'] },
+            idleJumpChance:   { path: ['idleJumpChance'],   type: 'float', min: 0,  max: 1 },
             shinyChance:      { path: ['shinyChance'],      type: 'float', min: 0,  max: 1 },
+            shinyBurstDuration: { path: ['shinyBurstDuration'], type: 'int', min: 100, max: 10000 },
             hopHeight:        { path: ['hopHeight'],        type: 'float', min: 0,  max: 50 },
             hopVariance:      { path: ['hopVariance'],      type: 'float', min: 0,  max: 50 },
             hopFrequency:     { path: ['hopFrequency'],     type: 'float', min: 0,  max: 1 },
@@ -624,10 +627,15 @@
                 this.bubble.style.display = 'block';
             }
 
+            // 起跳：拋物線小跳的共用入口（點擊互動與發呆亂跳都走這裡）
+            jump() {
+                this.jumpV = 4 * (0.7 + 0.3 * this.sizeScale); // 起跳初速，體型越大跳得越高
+            }
+
             // 被點擊：小跳一下 + 冒愛心，數秒後自動收起。
             // 走路中、發呆中、甚至半空中都可以戳（半空中再戳會重新起跳）
             poke() {
-                this.jumpV = 4 * (0.7 + 0.3 * this.sizeScale); // 起跳初速，體型越大跳得越高
+                this.jump();
                 this.showEmote('heart');
                 this.bubbleTimer = setTimeout(() => {
                     this.bubble.style.display = 'none';
@@ -645,6 +653,7 @@
                     const star = document.createElement('img');
                     star.className = 'burst-star';
                     star.src = getStarURI(shape, colors[Math.floor(Math.random() * colors.length)]);
+                    star.style.animationDuration = `${CONFIG.shinyBurstDuration ?? 1400}ms`;
                     const w = STAR_ARTS[shape][0].length * this.bubbleScale;
                     star.style.width = `${w}px`;
                     // 從本體中央出發：角度沿「上半弧」平均分佈再加小亂數
@@ -686,6 +695,13 @@
                 // 發呆時緩緩落回地面，不要硬生生定格在半空中
                 this.bobY *= 0.8;
                 if (this.bobY < 0.1) this.bobY = 0;
+
+                // 發呆亂跳：站穩在地上時，機率性原地開心跳一下
+                // （落地才擲骰，不會在半空中連鎖二段跳）
+                if (this.jumpY === 0 && this.jumpV === 0
+                    && Math.random() < (CONFIG.idleJumpChance ?? 0)) {
+                    this.jump();
+                }
 
                 this.idleTimer -= deltaTime;
                 if (this.idleTimer <= 0) {
