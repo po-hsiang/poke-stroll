@@ -175,6 +175,15 @@
                 console.warn('[PokéFooter] boundsMin 必須小於 boundsMax，已改回預設 0.1 ~ 0.9');
                 config.bounds = { min: 0.1, max: 0.9 };
             }
+            // 活動範圍還得塞得下最大體型：太窄時邊界檢查會出現 maxX < minX 的矛盾。
+            // 逐參數看都合法、組合起來卻出事的典型，載入時先擋一次
+            // （update() 內另有逐幀保險，處理載入後縮放視窗等剩餘情況）。
+            // 1.5 倍是「最寬的橫向系寶可夢」的經驗係數；已是預設範圍就不再動
+            if ((config.bounds.max - config.bounds.min) * window.innerWidth < config.baseSize * 1.5
+                && !(config.bounds.min === 0.1 && config.bounds.max === 0.9)) {
+                console.warn('[PokéFooter] 活動範圍太窄，塞不下最大體型，已改回預設 0.1 ~ 0.9');
+                config.bounds = { min: 0.1, max: 0.9 };
+            }
             if (!config.fixedIds) {
                 config.count = Math.min(config.count, config.maxId - config.minId + 1);
             }
@@ -438,9 +447,16 @@
                 // （色違版只差一層 shiny/ 目錄，動圖與靜圖皆同）
                 this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${shinyDir}${this.id}.gif`;
 
-                // 載入失敗處理 (有些稀有 ID 可能沒有動圖)
+                // 載入失敗處理 (有些稀有 ID 可能沒有動圖)。
+                // 備援只有一次機會：觸發時先換掛「最終防線」再換圖，
+                // 靜態圖也失敗（網路異常、來源被擋）就整隻隱藏，
+                // 不露瀏覽器的破圖示，也杜絕 onerror 反覆觸發的重試迴圈
                 this.img.onerror = () => {
-                    // 如果動圖失敗，退回使用一般靜態圖（色違同樣有 shiny/ 靜態圖）
+                    this.img.onerror = () => {
+                        this.img.onerror = null;
+                        this.el.style.display = 'none';
+                    };
+                    // 動圖失敗，退回使用一般靜態圖（色違同樣有 shiny/ 靜態圖）
                     this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shinyDir}${this.id}.png`;
                 };
 
@@ -494,7 +510,11 @@
                 const width = this.img.offsetWidth || CONFIG.baseSize * this.sizeScale;
                 const minX = window.innerWidth * CONFIG.bounds.min;
                 const maxX = window.innerWidth * CONFIG.bounds.max - width; // 扣掉自身寬度，右緣不超線
-                if (this.x < minX) {
+                if (maxX <= minX) {
+                    // 活動範圍窄到塞不下自己（大體型 + 窄範圍的組合）：
+                    // 釘在左界原地踏步。若放任兩個夾點互相彈，會每幀翻面抖動
+                    this.x = minX;
+                } else if (this.x < minX) {
                     this.x = minX;
                     this.direction = 1; // 撞到左邊界回頭
                 } else if (this.x > maxX) {

@@ -48,6 +48,7 @@ docker compose up -d
 
 ## 設計筆記(為什麼這樣設)
 
+- **不發佈 ports**:Traefik 與容器同在 `ipa_service_net`,從 docker network 內直達容器的 80,不需要把埠發佈到主機——發佈出去等於多一條繞過閘道的直連通道。本機測試走 `docker run -p 8080:80`(見上方指令),完全不經 compose,不受影響。
 - **尾斜線 301**:compose 裡多一組 `redirectregex` middleware,把 `/poke-stroll`(無尾斜線)導向 `/poke-stroll/`。頁面內 `./config.js` 等相對路徑以「目錄」為基準,少了尾斜線資源會被瀏覽器解析到網站根路徑而 404。API 服務不在乎這個,靜態頁必須處理。
 - **可嵌入性**:nginx 預設不送 `X-Frame-Options` / `frame-ancestors`,任何網站都能 iframe。若日後要限制,再加 header 白名單即可。
 - **寶可夢圖片來源**:sprite 是「訪客的瀏覽器」直接向 `raw.githubusercontent.com` 抓的,和我們的主機無關;身高/屬性對照表已烘進 image,不打外部 API。

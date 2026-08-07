@@ -4,8 +4,9 @@ services:
       - .env
     image: ${IMAGE}
     container_name: ${CONTAINER_NAME}
-    ports:
-      - "${PORT}"
+    # 刻意不發佈 ports：Traefik 與容器同在一個 docker network，直接連容器的 80。
+    # 發佈到主機反而多開一條繞過閘道的直連通道。
+    # 本機測試不走 compose，用 docker run -p 8080:80（見 DEPLOY.md）
     environment:
       - TZ=Asia/Taipei
     labels:
