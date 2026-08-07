@@ -68,6 +68,22 @@
             pointer-events: none;
         }
 
+        /* 色違登場的星星粒子：從本體中心向外飛散、漸淡。
+           每顆的飛行向量由 JS 用 CSS 變數（--dx / --dy）逐顆指定，
+           動畫跑完由 animationend 移除元素 */
+        .burst-star {
+            position: absolute;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            pointer-events: none;
+            animation: star-burst 0.9s ease-out forwards;
+        }
+        @keyframes star-burst {
+            from { transform: translate(0, 0); opacity: 1; }
+            to   { transform: translate(var(--dx), var(--dy)); opacity: 0; }
+        }
+
         .sprite {
             display: block;
             height: 64px; /* 預設高度，實際會由 JS 依體型分級覆寫 */
@@ -383,6 +399,30 @@
         }
 
         // ---------------------------------------------------------
+        // 色違登場的星星粒子 (Shiny Burst)
+        // 兩種尺寸的像素四芒星 × 兩種金色，canvas 畫一次就快取
+        // ---------------------------------------------------------
+        const STAR_ARTS = {
+            big:   ['..y..', '.yyy.', 'yyyyy', '.yyy.', '..y..'],
+            small: ['.y.', 'yyy', '.y.'],
+        };
+        const starCache = {};
+        function getStarURI(shape, color) {
+            const key = `${shape}:${color}`;
+            if (starCache[key]) return starCache[key];
+            const art = STAR_ARTS[shape];
+            const canvas = document.createElement('canvas');
+            canvas.width = art[0].length;
+            canvas.height = art.length;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color;
+            art.forEach((row, y) => [...row].forEach((ch, x) => {
+                if (ch === 'y') ctx.fillRect(x, y, 1, 1);
+            }));
+            return starCache[key] = canvas.toDataURL();
+        }
+
+        // ---------------------------------------------------------
         // 寶可夢類別 (Pokemon Class)
         // 這就像是用 Golang 定義一個 Struct，包含狀態與行為
         // ---------------------------------------------------------
@@ -479,24 +519,42 @@
                 this.el.appendChild(this.bubble);
 
                 this.el.appendChild(this.img);
+
+                // 點擊互動：戳一下就開心跳一下 + 冒愛心（cursor: pointer 終於名符其實）。
+                // OBS 可用來源的「互動」視窗戳；iframe 預設 pointer-events: none 點不到，
+                // 想開放給訪客要自行拿掉（取捨見 README）
+                this.jumpY = 0; // 點擊跳躍目前的離地高度（與走路跳步疊加）
+                this.jumpV = 0; // 點擊跳躍的垂直速度
+                this.el.addEventListener('click', () => this.poke());
+
                 this.container.appendChild(this.el);
 
                 // 初始化渲染
                 this.updateDOM();
 
                 // 色違登場儀式：一出場必定亮出金色閃光（不吃 bubbleChance 機率，
-                // 但尊重 bubblePosition=none 的全域關閉），數秒後自動收起
+                // 但尊重 bubblePosition=none 的全域關閉），數秒後自動收起；
+                // 星星特效等圖片載入、本體現身那一刻再炸開，儀式感才對得上
                 if (this.isShiny) {
                     this.showEmote('sparkle');
-                    this.entranceTimer = setTimeout(() => {
+                    this.bubbleTimer = setTimeout(() => {
                         this.bubble.style.display = 'none';
                     }, 4000);
+                    this.img.addEventListener('load', () => this.celebrateShiny(), { once: true });
                 }
             }
 
             // 每一幀的邏輯更新 (Update Loop)
             update(deltaTime, others) {
                 if (this.avoidCooldown > 0) this.avoidCooldown -= deltaTime;
+
+                // 點擊跳躍：初速 + 重力的迷你拋物線，和走路跳步（|sin| 波）各自獨立計算
+                if (this.jumpV !== 0 || this.jumpY > 0) {
+                    const dt = deltaTime / (1000 / 60);
+                    this.jumpY += this.jumpV * dt;
+                    this.jumpV -= 0.4 * dt; // 重力
+                    if (this.jumpY <= 0) { this.jumpY = 0; this.jumpV = 0; }
+                }
 
                 if (this.state === 'WALKING') {
                     this.walk(deltaTime);
@@ -547,7 +605,7 @@
             showEmote(name) {
                 const mode = CONFIG.bubblePosition ?? 'top';
                 if (mode === 'none') return; // 嵌入方選擇完全關閉對話框
-                clearTimeout(this.entranceTimer); // 別讓登場儀式的收起計時誤傷後來的對話框
+                clearTimeout(this.bubbleTimer); // 別讓前一個自動收起計時（登場儀式/點擊愛心）誤傷這次的對話框
                 this.bubble.src = getEmoteURI(name);
                 // 寬度 = 該圖案的框寬 × 整數倍率（框寬依內容而不同，如驚嘆號是瘦框）
                 this.bubble.style.width = `${(EMOTE_ICONS[name].frameWidth ?? 20) * this.bubbleScale}px`;
@@ -564,6 +622,42 @@
                     this.bubble.style.bottom = 'calc(100% + 2px)';
                 }
                 this.bubble.style.display = 'block';
+            }
+
+            // 被點擊：小跳一下 + 冒愛心，數秒後自動收起。
+            // 走路中、發呆中、甚至半空中都可以戳（半空中再戳會重新起跳）
+            poke() {
+                this.jumpV = 4 * (0.7 + 0.3 * this.sizeScale); // 起跳初速，體型越大跳得越高
+                this.showEmote('heart');
+                this.bubbleTimer = setTimeout(() => {
+                    this.bubble.style.display = 'none';
+                }, 1600);
+            }
+
+            // 色違登場的慶祝特效：一圈像素星星從本體中心向外炸開、漸淡。
+            // 圖片載入後才觸發（本體現身的那一刻），星星本身用完即丟
+            celebrateShiny() {
+                const height = this.img.offsetHeight || CONFIG.baseSize * this.sizeScale;
+                const colors = ['#ecb200', '#ffd84d']; // 星光金 × 亮金，同色系兩層次
+                const count = 10;
+                for (let i = 0; i < count; i++) {
+                    const shape = i % 2 === 0 ? 'big' : 'small';
+                    const star = document.createElement('img');
+                    star.className = 'burst-star';
+                    star.src = getStarURI(shape, colors[Math.floor(Math.random() * colors.length)]);
+                    const w = STAR_ARTS[shape][0].length * this.bubbleScale;
+                    star.style.width = `${w}px`;
+                    // 從本體中央出發：角度沿「上半弧」平均分佈再加小亂數
+                    // （不取整圈：往正下方飛會立刻被頁面底邊裁掉），距離依體型放大
+                    const angle = Math.PI * (-0.15 + 1.3 * (i / (count - 1))) + (Math.random() - 0.5) * 0.3;
+                    const dist = (26 + Math.random() * 16) * (0.7 + this.sizeScale * 0.5);
+                    star.style.left = `calc(50% - ${Math.round(w / 2)}px)`;
+                    star.style.bottom = `${Math.round(height * 0.5)}px`;
+                    star.style.setProperty('--dx', `${Math.round(Math.cos(angle) * dist)}px`);
+                    star.style.setProperty('--dy', `${Math.round(-Math.sin(angle) * dist)}px`);
+                    star.addEventListener('animationend', () => star.remove());
+                    this.el.appendChild(star);
+                }
             }
 
             // 只有站定發呆時才有機會冒心情對話框；走路中不觸發
@@ -613,10 +707,12 @@
 
                 // 原圖面向左邊：direction 1 (向右) -> scaleX(-1) 鏡像
                 const scale = this.direction === 1 ? -1 : 1;
-                this.img.style.transform = `scaleX(${scale}) translateY(${-this.bobY}px)`;
+                const lift = this.bobY + this.jumpY; // 走路跳步 + 點擊跳躍疊加後的離地高度
+                this.img.style.transform = `scaleX(${scale}) translateY(${-lift}px)`;
 
                 // 跳起來時影子縮小、變淡，強化離地的感覺
-                const airRatio = Math.min(this.bobY / this.hopHeight, 1);
+                // （走路跳步以自身跳高為滿格；點擊跳躍以 20px 為滿格，取較高者）
+                const airRatio = Math.min(Math.max(this.bobY / this.hopHeight, this.jumpY / 20), 1);
                 this.shadow.style.transform = `translateX(-50%) scale(${1 - airRatio * 0.3})`;
                 this.shadow.style.opacity = 1 - airRatio * 0.4;
 
