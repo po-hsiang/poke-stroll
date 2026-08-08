@@ -14,7 +14,7 @@
 
 | 參數 | 型別 | 允許範圍 | 預設 | 說明 |
 |------|------|----------|------|------|
-| `count` | int | 1 ~ 50 | `3` | 同時生成的寶可夢數量 |
+| `count` | int | 1 ~ 50 | `5` | 同時生成的寶可夢數量 |
 | `minId` | int | 1 ~ 1025 | `1` | 隨機抽選的圖鑑編號下限 |
 | `maxId` | int | 1 ~ 1025 | `649` | 隨機抽選的圖鑑編號上限(650 以後沒有動態 GIF,會退回靜態圖) |
 | `ids` | int 清單 | 各 1 ~ 1025,最多 50 隻 | — | **固定生成清單**,逗號分隔(如 `ids=25,133,6`)。設了就無視 `count`/`minId`/`maxId` 的隨機抽選;允許重複編號 |
@@ -27,14 +27,14 @@
 | `lookTimeMax` | int | 0 ~ 60000 | `5000` | 發呆時間上限(ms) |
 | `bubbleChance` | float | 0 ~ 1 | `0.33` | 發呆時冒出心情對話框的機率(八種圖案隨機) |
 | `idleJumpChance` | float | 0 ~ 1 | `0.003` | 發呆時每一幀「原地開心跳一下」的機率(預設約半數發呆會跳個一兩下,`0` 關閉) |
-| `shinyChance` | float | 0 ~ 1 | `1/4096` | 每一隻**獨立**擲骰出現色違的機率(預設為正作原生機率)。色違登場時必定亮出金色閃光對話框 + 星星四散特效 |
+| `shinyChance` | float | 0 ~ 1 | `1/100` | 每一隻**獨立**擲骰出現色違的機率(預設調得比正作的 1/4096 高很多,直播才熱鬧)。色違登場時必定亮出金色閃光對話框 + 星星四散特效,而且該對話框有 4 秒**保護期**,不會被登場後隨即發呆的心情或被戳的愛心蓋掉 |
 | `shinyBurstDuration` | int | 100 ~ 10000 | `1400` | 色違登場星星特效的飛散+淡出總時長 ms |
-| `bubblePosition` | enum | `top` / `side` / `none` | `top` | 對話框位置:`top` 頭頂正上方、`side` 面向方向的側邊、`none` 完全不顯示(空間有限的頁面適用) |
+| `bubblePosition` | enum | `top` / `side` / `none` | `side` | 對話框位置:`top` 頭頂正上方、`side` 面向方向的側邊(整框推到身體外側,尾巴鏡像成朝內指回本體;轉向時會自動換邊)、`none` 完全不顯示(空間有限的頁面適用) |
 | `hopHeight` | float | 0 ~ 50 | `2` | 走路跳步的基礎高度 px |
 | `hopVariance` | float | 0 ~ 50 | `2` | 個體間的跳步高度差異上限 |
 | `hopFrequency` | float | 0 ~ 1 | `0.005` | 跳步頻率(越小跳越慢) |
 | `personalSpace` | int | 0 ~ 1000 | `56` | 同伴間最小距離 px,太近會掉頭 |
-| `baseSize` | int | 16 ~ 512 | `96` | 「大」體型的顯示高度 px(中 = 0.75 倍、小 = 0.5 倍) |
+| `baseSize` | int | 16 ~ 512 | `128` | 「大」體型的顯示高度 px(中 = 0.8 倍、小 = 0.6 倍) |
 | `shadowWidthRatio` | float | 0 ~ 2 | `0.9` | 影子寬度相對寶可夢寬度的比例 |
 
 ## 容錯規則
@@ -57,9 +57,9 @@
 | 初代御三家世界 | `?minId=1&maxId=151&count=6` |
 | 寶可夢大遊行 | `?count=20&baseSpeed=0.4` |
 | 安靜穩重風(少動多發呆,不冒泡) | `?baseSpeed=0.1&idleChance=0.03&bubblePosition=none` |
-| 對話框改到側邊(上方空間有限時) | `?bubblePosition=side` |
+| 對話框改回頭頂(側邊空間有限時) | `?bubblePosition=top` |
 | 全員色違遊行 | `?shinyChance=1&count=10` |
-| 歐皇手感(平均 20 隻出 1 隻色違) | `?shinyChance=0.05` |
+| 回到正作原生的色違機率 | `?shinyChance=0.000244` |
 | 過動兒模式(常發呆、狂跳) | `?idleChance=0.03&idleJumpChance=0.02` |
 | 色違煙火放好放滿 | `?shinyChance=1&shinyBurstDuration=3000` |
 | 巨大化 | `?baseSize=160&count=2` |

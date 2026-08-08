@@ -54,8 +54,9 @@
             z-index: -1;
         }
 
-        /* 發呆時的心情對話框。預設浮在頭頂正上方，
-           實際位置由 JS 依 bubblePosition 設定（top 頭頂 / side 面向側邊）。
+        /* 發呆時的心情對話框。這裡只放頭頂正上方的預設值，
+           實際擺位由 JS 的 placeBubble() 依 bubblePosition 覆寫
+           （top 頭頂 / side 面向側邊，side 還會跟著面向左右換邊 + 鏡像尾巴）。
            圖是 canvas 畫的小尺寸點陣圖，靠 pixelated 整數倍放大維持鋸齒感 */
         .bubble {
             position: absolute;
@@ -226,6 +227,13 @@
             return Array.from(ids);
         }
 
+        // 查不到身高時的保底體型：取 sizeTiers 正中間那一級（預設三級 = 中型）。
+        // 不寫死數字，調整 sizeTiers 時保底值會自己跟上
+        function fallbackSizeScale() {
+            const tiers = CONFIG.sizeTiers ?? [];
+            return tiers[Math.floor(tiers.length / 2)]?.scale ?? 1;
+        }
+
         // 依身高換算成大中小的縮放比例：
         // 優先查本地靜態對照表（pokemon_heights.js，離線可用、不打 API），
         // 查不到才退回 PokéAPI，再失敗就當中型
@@ -238,13 +246,13 @@
                     const data = await res.json();
                     deciMeters = data.height; // API 的 height 單位是分米 (0.1 公尺)
                 } catch (e) {
-                    return 0.75; // 查不到身高就當中型
+                    return fallbackSizeScale(); // 查不到身高就當中型
                 }
             }
 
             const meters = deciMeters / 10;
             const tier = CONFIG.sizeTiers.find(t => meters < t.maxMeters);
-            return tier ? tier.scale : 0.75;
+            return tier ? tier.scale : fallbackSizeScale();
         }
 
         // ---------------------------------------------------------
@@ -266,8 +274,9 @@
 
         // 對話框外框產生器：給定總寬度與內部（白底）列數，
         // 組出「圓角方框 + 底部尖尾巴」。概念上等同遊戲 UI 的 9-slice：
-        // 四角與尾巴樣式固定，邊框依內容的 bounding box 雙向伸縮
-        function buildBubbleFrame(width, innerRows = 12) {
+        // 四角與尾巴樣式固定，邊框依內容的 bounding box 雙向伸縮。
+        // tailDir: 1 = 尾巴朝右下（預設）、-1 = 朝左下
+        function buildBubbleFrame(width, innerRows = 12, tailDir = 1) {
             const tail = Math.floor(width / 2) - 2; // 尾巴開口左緣（保持在框的中央）
             const rows = [];
             rows.push('..' + '#'.repeat(width - 4) + '..');
@@ -280,7 +289,11 @@
             rows.push('.'.repeat(tail - 1) + '#ww#' + '.'.repeat(width - tail - 3));
             rows.push('.'.repeat(tail) + '#w#' + '.'.repeat(width - tail - 3));
             rows.push('.'.repeat(tail + 1) + '#' + '.'.repeat(width - tail - 2));
-            return rows;
+            // 尾巴朝左：整個框左右翻轉。方框本身左右對稱，
+            // 所以翻轉的淨效果就只有尾巴改朝向。
+            // 心情圖示是「翻轉後」才疊上去的，不會跟著鏡像
+            // （音符、問號、Zzz 鏡像過去會變成錯字）
+            return tailDir === -1 ? rows.map(row => [...row].reverse().join('')) : rows;
         }
 
         // 四種心情圖示（'.' 代表透明、沿用底下對話框的底色），
@@ -375,14 +388,16 @@
             ]},
         };
 
-        // 把圖示疊進對話框、畫到 canvas，回傳 dataURL（同圖案只畫一次，之後走快取）
+        // 把圖示疊進對話框、畫到 canvas，回傳 dataURL
+        // （同圖案 × 同尾巴朝向只畫一次，之後走快取）
         const emoteCache = {};
-        function getEmoteURI(name) {
-            if (emoteCache[name]) return emoteCache[name];
+        function getEmoteURI(name, tailDir = 1) {
+            const key = `${name}:${tailDir}`;
+            if (emoteCache[key]) return emoteCache[key];
             const icon = EMOTE_ICONS[name];
             // 內部列數自動配合圖案高度（上下各留 2px 白邊），最少維持 12
             const innerRows = Math.max(12, icon.art.length + 4);
-            const rows = buildBubbleFrame(icon.frameWidth ?? 20, innerRows).map((row, r) => {
+            const rows = buildBubbleFrame(icon.frameWidth ?? 20, innerRows, tailDir).map((row, r) => {
                 const overlay = icon.art[r - icon.top];
                 if (!overlay) return row;
                 const patched = [...overlay].map((ch, i) => ch === '.' ? row[icon.left + i] : ch).join('');
@@ -398,7 +413,7 @@
                     ctx.fillRect(x, y, 1, 1);
                 }
             }));
-            return emoteCache[name] = canvas.toDataURL();
+            return emoteCache[key] = canvas.toDataURL();
         }
 
         // ---------------------------------------------------------
@@ -519,6 +534,9 @@
                 this.bubble = document.createElement('img');
                 this.bubble.className = 'bubble';
                 this.bubble.style.display = 'none';
+                this.bubbleName = null;   // 目前顯示的圖案（換邊重擺時要重新取圖）
+                this.bubbleDir = 0;       // 擺位時的面向，和 direction 不同就得重擺
+                this.bubbleLocked = false; // 保護期：期間內不被其他心情覆蓋（色違登場用）
                 this.el.appendChild(this.bubble);
 
                 this.el.appendChild(this.img);
@@ -536,13 +554,12 @@
                 this.updateDOM();
 
                 // 色違登場儀式：一出場必定亮出金色閃光（不吃 bubbleChance 機率，
-                // 但尊重 bubblePosition=none 的全域關閉），數秒後自動收起；
+                // 但尊重 bubblePosition=none 的全域關閉），4 秒後自動收起。
+                // 這個閃光同樣是一種心情表達，且是色違的專屬署名，所以整段期間上鎖：
+                // 登場後隨即發呆（或被戳）不會把它瞬間換成別的心情、也不會提前收走。
                 // 星星特效等圖片載入、本體現身那一刻再炸開，儀式感才對得上
                 if (this.isShiny) {
-                    this.showEmote('sparkle');
-                    this.bubbleTimer = setTimeout(() => {
-                        this.bubble.style.display = 'none';
-                    }, 4000);
+                    this.showEmote('sparkle', 4000, true);
                     this.img.addEventListener('load', () => this.celebrateShiny(), { once: true });
                 }
             }
@@ -604,27 +621,61 @@
                 }
             }
 
-            // 顯示指定的心情對話框（尊重 bubblePosition 的全域關閉）
-            showEmote(name) {
-                const mode = CONFIG.bubblePosition ?? 'top';
-                if (mode === 'none') return; // 嵌入方選擇完全關閉對話框
-                clearTimeout(this.bubbleTimer); // 別讓前一個自動收起計時（登場儀式/點擊愛心）誤傷這次的對話框
-                this.bubble.src = getEmoteURI(name);
+            // 顯示指定的心情對話框（尊重 bubblePosition 的全域關閉）。
+            // duration > 0：幾毫秒後自動收起（0 = 留到發呆結束才收）
+            // lock：保護期，期間內不接受其他心情覆蓋、也不會被提前收起
+            // 回傳是否真的顯示了
+            showEmote(name, duration = 0, lock = false) {
+                const mode = CONFIG.bubblePosition ?? 'side';
+                if (mode === 'none') return false; // 嵌入方選擇完全關閉對話框
+                if (this.bubbleLocked) return false; // 保護期中（色違登場的金色閃光還沒演完）
+                clearTimeout(this.bubbleTimer); // 別讓前一個自動收起計時（點擊愛心）誤傷這次的對話框
+                this.bubbleName = name;
                 // 寬度 = 該圖案的框寬 × 整數倍率（框寬依內容而不同，如驚嘆號是瘦框）
                 this.bubble.style.width = `${(EMOTE_ICONS[name].frameWidth ?? 20) * this.bubbleScale}px`;
+                this.placeBubble();
+                this.bubble.style.display = 'block';
 
-                // 擺位（發呆期間 direction 不會變，開始走路就收起，所以只需設定一次）：
-                // top  = 頭頂正上方
-                // side = 面向那一側的斜上方——水平置中於該側邊緣（尾巴尖剛好落在肩側），
-                //        垂直錨在身高六成處
-                if (mode === 'side') {
+                if (lock) this.bubbleLocked = true;
+                if (duration > 0) {
+                    this.bubbleTimer = setTimeout(() => {
+                        this.bubbleLocked = false; // 保護期到此為止
+                        this.hideEmote();
+                    }, duration);
+                }
+                return true;
+            }
+
+            // 收起對話框（保護期內一律讓路，例如色違剛登場就結束發呆）
+            hideEmote() {
+                if (this.bubbleLocked) return;
+                clearTimeout(this.bubbleTimer);
+                this.bubble.style.display = 'none';
+            }
+
+            // 擺位 + 尾巴朝向：
+            // top  = 頭頂正上方（尾巴朝下，維持預設朝向）
+            // side = 面向那一側的斜上方，垂直錨在身高六成處。
+            //        整個框推到本體邊界「之外」再留一點空隙——切齊或半重疊都會被
+            //        大鉗蟹、鐵甲蛹這類寬體型蓋住；尾巴則鏡像成朝內指回本體
+            //        （面向右 → 框在右側 → 尾巴朝左下）
+            placeBubble() {
+                const mode = CONFIG.bubblePosition ?? 'side';
+                const side = mode === 'side';
+                this.bubble.src = getEmoteURI(this.bubbleName, side ? -this.direction : 1);
+                if (side) {
+                    const gap = 2 * this.bubbleScale; // 換算成點陣圖上的 2px，跟著放大倍率縮放
                     this.bubble.style.left = this.direction === 1 ? '100%' : '0';
+                    this.bubble.style.transform = this.direction === 1
+                        ? `translateX(${gap}px)`
+                        : `translateX(calc(-100% - ${gap}px))`;
                     this.bubble.style.bottom = '60%';
                 } else {
                     this.bubble.style.left = '50%';
+                    this.bubble.style.transform = 'translateX(-50%)';
                     this.bubble.style.bottom = 'calc(100% + 2px)';
                 }
-                this.bubble.style.display = 'block';
+                this.bubbleDir = this.direction; // 記住擺位時的面向，方向變了要重擺
             }
 
             // 起跳：拋物線小跳的共用入口（點擊互動與發呆亂跳都走這裡）
@@ -632,14 +683,12 @@
                 this.jumpV = 4 * (0.7 + 0.3 * this.sizeScale); // 起跳初速，體型越大跳得越高
             }
 
-            // 被點擊：小跳一下 + 冒愛心，數秒後自動收起。
-            // 走路中、發呆中、甚至半空中都可以戳（半空中再戳會重新起跳）
+            // 被點擊：小跳一下 + 冒愛心，1.6 秒後自動收起。
+            // 走路中、發呆中、甚至半空中都可以戳（半空中再戳會重新起跳）。
+            // 色違登場閃光的保護期內只跳、不換對話框
             poke() {
                 this.jump();
-                this.showEmote('heart');
-                this.bubbleTimer = setTimeout(() => {
-                    this.bubble.style.display = 'none';
-                }, 1600);
+                this.showEmote('heart', 1600);
             }
 
             // 色違登場的慶祝特效：一圈像素星星從本體中心向外炸開、漸淡。
@@ -706,7 +755,7 @@
                 this.idleTimer -= deltaTime;
                 if (this.idleTimer <= 0) {
                     this.state = 'WALKING';
-                    this.bubble.style.display = 'none'; // 開始走路就收起對話框
+                    this.hideEmote(); // 開始走路就收起對話框（保護期中的閃光除外）
                     // 隨機決定是否轉向
                     if (Math.random() > 0.5) {
                         this.direction *= -1;
@@ -720,6 +769,13 @@
                 // - 翻面用「瞬間鏡像」，補間 scaleX 會經過 0 導致被壓扁成一條線
                 //   （2D 像素遊戲的角色轉向本來就是瞬間翻面，這樣反而最自然）
                 this.el.style.transform = `translate3d(${this.x}px, 0, 0)`;
+
+                // 對話框顯示中又轉了向（避讓掉頭、撞邊界、發呆結束時的隨機轉身），
+                // 就得跟著換邊並鏡像尾巴。方向沒變時不動 DOM，不會每幀重設樣式
+                if (this.bubbleName && this.bubbleDir !== this.direction
+                    && this.bubble.style.display !== 'none') {
+                    this.placeBubble();
+                }
 
                 // 原圖面向左邊：direction 1 (向右) -> scaleX(-1) 鏡像
                 const scale = this.direction === 1 ? -1 : 1;
