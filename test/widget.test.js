@@ -419,5 +419,72 @@ group('11. 保底值不再寫死舊數字');
     CONFIG.bubblePosition = savedPos;
 }
 
+// =========================================================
+group('12. 快出畫面就翻到內側');
+CONFIG.bubblePosition = 'side';
+{
+    const W = sandbox.window.innerWidth;
+    const p = newPokemon(143, { direction: 1 });
+    p.showEmote('heart');
+    const { width, gap } = p.bubbleMetrics();
+    const bodyW = p.img.offsetWidth;
+
+    check('畫面中央：照面向擺右側', p.bubbleSide === 1 && p.bubble.style.left === '100%');
+
+    // 右側剛好差 1px 塞不下 → 翻到左邊
+    p.x = W - bodyW - gap - width + 1;
+    p.updateDOM();
+    check('貼右邊界：面向右但翻到左側', p.bubbleSide === -1 && p.bubble.style.left === '0');
+    check('翻邊後尾巴改朝右（仍指回本體）', p.bubble.src === T.getEmoteURI('heart', 1));
+    check('只有對話框換邊，本體面向不動', p.direction === 1);
+    check('翻邊後位移是 -(100% + gap)',
+        p.bubble.style.transform === `translateX(calc(-100% - ${gap}px))`);
+
+    // 剛好塞得下就不翻
+    p.x = W - bodyW - gap - width;
+    p.updateDOM();
+    check('右側剛好塞得下：維持面向那側', p.bubbleSide === 1 && p.bubble.style.left === '100%');
+
+    // 左邊界 + 面向左 → 翻到右邊
+    const q = newPokemon(143, { direction: -1 });
+    q.showEmote('note');
+    check('面向左：先擺左側', q.bubbleSide === -1);
+    q.x = gap + width - 1; // 左側差 1px 塞不下
+    q.updateDOM();
+    check('貼左邊界：面向左但翻到右側', q.bubbleSide === 1 && q.bubble.style.left === '100%');
+    check('翻邊後尾巴改朝左', q.bubble.src === T.getEmoteURI('note', -1));
+    q.x = gap + width;
+    q.updateDOM();
+    check('左側剛好塞得下：翻回左側', q.bubbleSide === -1);
+
+    // 走著走著逼近邊界（保護期中的色違會邊走邊冒泡）也要即時翻邊
+    const r = newPokemon(143, { shiny: true, direction: 1 });
+    check('色違登場先擺右側', r.bubbleSide === 1);
+    for (let i = 0; i < 5; i++) { r.x = W - bodyW - width * (5 - i) * 0.5; r.updateDOM(); }
+    check('邊走邊靠近右邊界 → 自動翻到左側', r.bubbleSide === -1);
+    check('翻邊不影響保護期', r.bubbleLocked === true && r.bubbleName === 'sparkle');
+
+    // 兩側都塞不下（視窗超窄）：維持面向，不要每幀左右彈跳
+    sandbox.window.innerWidth = bodyW + 10;
+    const s = newPokemon(143, { direction: 1 });
+    s.showEmote('heart');
+    s.x = 5;
+    s.updateDOM();
+    check('兩側都塞不下：維持面向那側', s.bubbleSide === 1, `實際 ${s.bubbleSide}`);
+    s.updateDOM(); s.updateDOM();
+    check('連續數幀也不左右彈跳', s.bubbleSide === 1);
+    sandbox.window.innerWidth = W;
+
+    // top / none 模式不受這套邏輯影響
+    CONFIG.bubblePosition = 'top';
+    const t = newPokemon(143, { direction: 1 });
+    t.showEmote('heart');
+    t.x = W - 1; // 極端貼邊
+    t.updateDOM();
+    check('top 模式：貼邊也不換邊，維持置中',
+        t.bubble.style.left === '50%' && t.bubble.style.transform === 'translateX(-50%)');
+    CONFIG.bubblePosition = 'side';
+}
+
 console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
 process.exit(fail ? 1 : 0);

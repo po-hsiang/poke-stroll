@@ -535,7 +535,7 @@
                 this.bubble.className = 'bubble';
                 this.bubble.style.display = 'none';
                 this.bubbleName = null;   // 目前顯示的圖案（換邊重擺時要重新取圖）
-                this.bubbleDir = 0;       // 擺位時的面向，和 direction 不同就得重擺
+                this.bubbleSide = 0;      // 目前擺在哪一側（1 右 / -1 左），要換邊才重擺
                 this.bubbleLocked = false; // 保護期：期間內不被其他心情覆蓋（色違登場用）
                 this.el.appendChild(this.bubble);
 
@@ -653,20 +653,43 @@
                 this.bubble.style.display = 'none';
             }
 
+            // side 模式的對話框寬度與空隙（都是純算術，可以每幀重算不碰 DOM）
+            bubbleMetrics() {
+                return {
+                    width: (EMOTE_ICONS[this.bubbleName].frameWidth ?? 20) * this.bubbleScale,
+                    gap: 2 * this.bubbleScale, // 換算成點陣圖上的 2px，跟著放大倍率縮放
+                };
+            }
+
+            // 對話框要放哪一側（回傳 1 = 右、-1 = 左）。
+            // 原則上跟著面向，但「快出畫面就翻到內側」：頁面 overflow 是 hidden，
+            // 貼著邊界的那隻若照面向擺，框會被畫面邊緣切掉半個。
+            // 兩側都塞不下（視窗超窄）就維持面向，不要每幀左右彈跳
+            desiredBubbleSide() {
+                if ((CONFIG.bubblePosition ?? 'side') !== 'side') return this.direction;
+                const { width, gap } = this.bubbleMetrics();
+                const bodyW = this.img.offsetWidth || CONFIG.baseSize * this.sizeScale;
+                const fitsRight = this.x + bodyW + gap + width <= window.innerWidth;
+                const fitsLeft = this.x - gap - width >= 0;
+                if (this.direction === 1 && !fitsRight && fitsLeft) return -1;
+                if (this.direction === -1 && !fitsLeft && fitsRight) return 1;
+                return this.direction;
+            }
+
             // 擺位 + 尾巴朝向：
             // top  = 頭頂正上方（尾巴朝下，維持預設朝向）
-            // side = 面向那一側的斜上方，垂直錨在身高六成處。
+            // side = 由 desiredBubbleSide() 決定的那一側斜上方，垂直錨在身高六成處。
             //        整個框推到本體邊界「之外」再留一點空隙——切齊或半重疊都會被
             //        大鉗蟹、鐵甲蛹這類寬體型蓋住；尾巴則鏡像成朝內指回本體
-            //        （面向右 → 框在右側 → 尾巴朝左下）
-            placeBubble() {
+            //        （框在右側 → 尾巴朝左下）
+            placeBubble(bubbleSide = this.desiredBubbleSide()) {
                 const mode = CONFIG.bubblePosition ?? 'side';
                 const side = mode === 'side';
-                this.bubble.src = getEmoteURI(this.bubbleName, side ? -this.direction : 1);
+                this.bubble.src = getEmoteURI(this.bubbleName, side ? -bubbleSide : 1);
                 if (side) {
-                    const gap = 2 * this.bubbleScale; // 換算成點陣圖上的 2px，跟著放大倍率縮放
-                    this.bubble.style.left = this.direction === 1 ? '100%' : '0';
-                    this.bubble.style.transform = this.direction === 1
+                    const { gap } = this.bubbleMetrics();
+                    this.bubble.style.left = bubbleSide === 1 ? '100%' : '0';
+                    this.bubble.style.transform = bubbleSide === 1
                         ? `translateX(${gap}px)`
                         : `translateX(calc(-100% - ${gap}px))`;
                     this.bubble.style.bottom = '60%';
@@ -675,7 +698,7 @@
                     this.bubble.style.transform = 'translateX(-50%)';
                     this.bubble.style.bottom = 'calc(100% + 2px)';
                 }
-                this.bubbleDir = this.direction; // 記住擺位時的面向，方向變了要重擺
+                this.bubbleSide = bubbleSide; // 記住實際擺在哪側，換側時才動 DOM
             }
 
             // 起跳：拋物線小跳的共用入口（點擊互動與發呆亂跳都走這裡）
@@ -770,11 +793,11 @@
                 //   （2D 像素遊戲的角色轉向本來就是瞬間翻面，這樣反而最自然）
                 this.el.style.transform = `translate3d(${this.x}px, 0, 0)`;
 
-                // 對話框顯示中又轉了向（避讓掉頭、撞邊界、發呆結束時的隨機轉身），
-                // 就得跟著換邊並鏡像尾巴。方向沒變時不動 DOM，不會每幀重設樣式
-                if (this.bubbleName && this.bubbleDir !== this.direction
-                    && this.bubble.style.display !== 'none') {
-                    this.placeBubble();
+                // 對話框顯示中要換邊時（轉向、或走到畫面邊緣得翻到內側），
+                // 跟著換邊並鏡像尾巴。判斷純算術，同一側就不動 DOM
+                if (this.bubbleName && this.bubble.style.display !== 'none') {
+                    const bubbleSide = this.desiredBubbleSide();
+                    if (bubbleSide !== this.bubbleSide) this.placeBubble(bubbleSide);
                 }
 
                 // 原圖面向左邊：direction 1 (向右) -> scaleX(-1) 鏡像
