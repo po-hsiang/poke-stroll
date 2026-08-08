@@ -88,12 +88,30 @@ poke-stroll/
 ├── pokemon_footer_widget.html  ← 主角:畫面 + 動畫邏輯,全部在這
 ├── config.js                   ← 你的遊樂場:所有可調參數
 ├── pokemon_heights.js          ← 圖鑑身高對照表(離線可用,不用打 API)
-└── pokemon_types.js            ← 圖鑑主屬性對照表(影子染色用)
+├── pokemon_types.js            ← 圖鑑主屬性對照表(影子染色用)
+└── test/widget.test.js         ← 單元測試(只在開發時用,不影響執行)
 ```
 
-檔案放同一個資料夾就好,沒有 npm、沒有 build、沒有框架。復古,但很自由。
+上面四個檔案放同一個資料夾就好,沒有 npm、沒有 build、沒有框架。復古,但很自由。
 
 > 🎨 想調影子顏色?`config.js` 的 `typeShadowColors` 一屬性一色,18 色隨你換。
+
+## 🧪 測試
+
+```bash
+node test/widget.test.js
+```
+
+零依賴,不用 `npm install`。它把 widget 的 inline `<script>` 抽出來丟進 Node 的 `vm`,
+配一套最小 DOM stub 跑**真正的** `Pokemon` 類別 —— 不是另外複製一份邏輯來測,
+所以改壞了主檔這裡就會紅燈。
+
+- **假時鐘**取代 `setTimeout`,才能斷言對話框自動收起的時序。
+- **canvas stub 記錄每一次 `fillRect`**,所以對話框外框、尾巴鏡像、心情圖示是
+  直接比對「畫出來的像素」,不是靠眼睛看。
+
+需要真瀏覽器才驗得到的部分(CSS 實際套用結果、GIF 載入、視覺上好不好看)不在範圍內,
+那些還是得自己開檔案看一眼。
 
 ## 🤔 常見問題
 

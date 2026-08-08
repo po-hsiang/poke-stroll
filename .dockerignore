@@ -3,6 +3,7 @@
 .gitignore
 .dockerignore
 README.md
+test
 Dockerfile
 compose.yaml
 .env
