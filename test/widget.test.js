@@ -253,14 +253,14 @@ check('快取：同 name 同朝向回傳同一個 URI', T.getEmoteURI('note', 1)
 check('快取：同 name 不同朝向是不同圖', T.getEmoteURI('note', 1) !== T.getEmoteURI('note', -1));
 
 // =========================================================
-group("4. side 擺位：整框推到本體之外 + 尾巴朝內");
+group("4. side 擺位：貼在本體側邊 + 尾巴朝內");
 CONFIG.bubblePosition = 'side';
 {
     const p = newPokemon(143, { direction: 1 });
     p.showEmote('heart');
-    const gap = 2 * p.bubbleScale;
-    check('面向右 → 框貼在右緣外側', p.bubble.style.left === '100%');
-    check('面向右 → 位移為 +gap（完全不與本體重疊）',
+    const { gap } = p.bubbleMetrics(); // 實際空隙由 bubbleSideGap 決定（可為負）
+    check('面向右 → 框錨在右緣', p.bubble.style.left === '100%');
+    check('面向右 → 位移為 +gap',
         p.bubble.style.transform === `translateX(${gap}px)`, p.bubble.style.transform);
     check('面向右 → 尾巴朝左（指回本體）',
         p.bubble.src === T.getEmoteURI('heart', -1));
@@ -268,8 +268,10 @@ CONFIG.bubblePosition = 'side';
     p.direction = -1;
     p.updateDOM();
     check('轉向左 → 自動換到左緣', p.bubble.style.left === '0');
+    // 往左擺要再退自己一個身（-100%）再加空隙；正負號的組法在第 14 組另有專門測試
+    const back = gap >= 0 ? `- ${gap}px` : `+ ${-gap}px`;
     check('轉向左 → 位移為 -(100% + gap)',
-        p.bubble.style.transform === `translateX(calc(-100% - ${gap}px))`, p.bubble.style.transform);
+        p.bubble.style.transform === `translateX(calc(-100% ${back}))`, p.bubble.style.transform);
     check('轉向左 → 尾巴改朝右', p.bubble.src === T.getEmoteURI('heart', 1));
     check('垂直錨在身高六成處', p.bubble.style.bottom === '60%');
 
@@ -458,7 +460,9 @@ CONFIG.bubblePosition = 'side';
     check('翻邊後尾巴改朝右（仍指回本體）', p.bubble.src === T.getEmoteURI('heart', 1));
     check('只有對話框換邊，本體面向不動', p.direction === 1);
     check('翻邊後位移是 -(100% + gap)',
-        p.bubble.style.transform === `translateX(calc(-100% - ${gap}px))`);
+        p.bubble.style.transform
+            === `translateX(calc(-100% ${gap >= 0 ? `- ${gap}px` : `+ ${-gap}px`}))`,
+        p.bubble.style.transform);
 
     // 剛好塞得下就不翻
     p.x = W - bodyW - gap - width;
@@ -477,11 +481,16 @@ CONFIG.bubblePosition = 'side';
     q.updateDOM();
     check('左側剛好塞得下：翻回左側', q.bubbleSide === -1);
 
-    // 走著走著逼近邊界（保護期中的色違會邊走邊冒泡）也要即時翻邊
+    // 走著走著逼近邊界（保護期中的色違會邊走邊冒泡）也要即時翻邊。
+    // 起點在門檻左邊 40px、終點越過門檻 10px，中間分五幀走完
+    // （門檻由 gap 決定，所以這裡從實際 metrics 推，不寫死）
     const r = newPokemon(143, { shiny: true, direction: 1 });
     check('色違登場先擺右側', r.bubbleSide === 1);
-    for (let i = 0; i < 5; i++) { r.x = W - bodyW - width * (5 - i) * 0.5; r.updateDOM(); }
-    check('邊走邊靠近右邊界 → 自動翻到左側', r.bubbleSide === -1);
+    // 門檻要用「這一隻自己的」框寬算：sparkle 是 16px 瘦框，比愛心的 20px 窄
+    const rm = r.bubbleMetrics();
+    const edgeX = W - bodyW - rm.gap - rm.width; // 剛好塞得下的最右位置
+    for (let i = 0; i <= 5; i++) { r.x = edgeX - 40 + i * 10; r.updateDOM(); }
+    check('邊走邊靠近右邊界 → 自動翻到左側', r.bubbleSide === -1, `x=${r.x}, 門檻=${edgeX}`);
     check('翻邊不影響保護期', r.bubbleLocked === true && r.bubbleName === 'sparkle');
 
     // 兩側都塞不下（視窗超窄）：維持面向，不要每幀左右彈跳
@@ -558,7 +567,8 @@ CONFIG.bubblePosition = 'side';
 group('14. bubbleSideGap：side 對話框的左右空隙');
 CONFIG.bubblePosition = 'side';
 {
-    check('config.js 預設 = 2', CONFIG.bubbleSideGap === 2, `實際 ${CONFIG.bubbleSideGap}`);
+    check('config.js 預設 = -7（往身體上疊）', CONFIG.bubbleSideGap === -7,
+        `實際 ${CONFIG.bubbleSideGap}`);
 
     const saved = CONFIG.bubbleSideGap;
     // 設定值是點陣圖 px，乘上放大倍率：大體型 3x、小體型 2x
@@ -566,9 +576,14 @@ CONFIG.bubblePosition = 'side';
     const small = newPokemon(25, { scale: 0.6 });   // bubbleScale 2
     big.showEmote('heart');
     small.showEmote('heart');
-    check('大體型（3x）預設空隙 = 6px', big.bubbleMetrics().gap === 6, `實際 ${big.bubbleMetrics().gap}`);
-    check('小體型（2x）預設空隙 = 4px', small.bubbleMetrics().gap === 4, `實際 ${small.bubbleMetrics().gap}`);
-    check('預設值套進 transform', big.bubble.style.transform === 'translateX(6px)');
+    check('大體型（3x）預設空隙 = -21px', big.bubbleMetrics().gap === -21, `實際 ${big.bubbleMetrics().gap}`);
+    check('小體型（2x）預設空隙 = -14px', small.bubbleMetrics().gap === -14, `實際 ${small.bubbleMetrics().gap}`);
+    check('預設值套進 transform', big.bubble.style.transform === 'translateX(-21px)',
+        big.bubble.style.transform);
+    // 疊上去也不能疊過頭：框要有一半以上留在身體外面才看得清楚
+    const bigW = big.bubbleMetrics().width;
+    check('預設重疊量不超過框寬的一半', Math.abs(big.bubbleMetrics().gap) < bigW / 2,
+        `重疊 ${-big.bubbleMetrics().gap}px / 框寬 ${bigW}px`);
 
     // 調大：右側往右推、左側往左退更多
     CONFIG.bubbleSideGap = 6;
@@ -616,7 +631,7 @@ CONFIG.bubblePosition = 'side';
 
     // 缺 key 時退回 2（相容舊的 config.js）
     delete CONFIG.bubbleSideGap;
-    check('缺 bubbleSideGap key → 退回預設 2（大體型 6px）',
+    check('缺 bubbleSideGap key → 退回程式內建的 2（大體型 6px）',
         big.bubbleMetrics().gap === 6, `實際 ${big.bubbleMetrics().gap}`);
     CONFIG.bubbleSideGap = saved;
 }
