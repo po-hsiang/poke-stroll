@@ -488,7 +488,55 @@ CONFIG.bubblePosition = 'side';
 }
 
 // =========================================================
-group('13. bubbleSideGap：side 對話框的左右空隙');
+group('13. bubbleLayer：對話框在本體之上／之下');
+CONFIG.bubblePosition = 'side';
+{
+    check("config.js 預設 = 'front'", CONFIG.bubbleLayer === 'front', `實際 ${CONFIG.bubbleLayer}`);
+
+    const saved = CONFIG.bubbleLayer;
+    const p = newPokemon(143, { direction: 1 });
+    p.showEmote('heart');
+    // sprite 因為 will-change: transform 會被歸到 z-index:0 那一階，
+    // 所以「之上」必須是正值才跨得過去（0 或 auto 會被 DOM 順序判輸）
+    check("front → z-index 為正（跨過 sprite）", Number(p.bubble.style.zIndex) > 0,
+        `實際 ${p.bubble.style.zIndex}`);
+
+    CONFIG.bubbleLayer = 'behind';
+    const q = newPokemon(143, { direction: 1 });
+    q.showEmote('heart');
+    check('behind → z-index 為負（躲回 sprite 後面）', Number(q.bubble.style.zIndex) < 0,
+        `實際 ${q.bubble.style.zIndex}`);
+    check('behind 仍在影子之上（影子 z-index -1，靠 DOM 順序勝出）',
+        q.el.children.indexOf(q.bubble) > q.el.children.indexOf(q.shadow));
+
+    // 換邊重擺時 z-index 不能掉
+    q.direction = -1;
+    q.updateDOM();
+    check('換邊後 behind 的 z-index 還在', Number(q.bubble.style.zIndex) < 0);
+
+    // top 模式同樣吃這個設定
+    CONFIG.bubbleLayer = 'front';
+    CONFIG.bubblePosition = 'top';
+    const t = newPokemon(143, { direction: 1 });
+    t.showEmote('heart');
+    check('top 模式也照 bubbleLayer 分層', Number(t.bubble.style.zIndex) > 0);
+    CONFIG.bubblePosition = 'side';
+
+    // 缺 key 時退回 front（相容舊的 config.js）
+    delete CONFIG.bubbleLayer;
+    const r = newPokemon(143, { direction: 1 });
+    r.showEmote('heart');
+    check('缺 bubbleLayer key → 退回 front', Number(r.bubble.style.zIndex) > 0);
+    CONFIG.bubbleLayer = saved;
+
+    const spec = T.QUERY_PARAMS?.bubbleLayer;
+    check('已登記在 QUERY_PARAMS', !!spec);
+    check('型別 enum，允許值 front / behind',
+        spec?.type === 'enum' && JSON.stringify(spec?.values) === '["front","behind"]');
+}
+
+// =========================================================
+group('14. bubbleSideGap：side 對話框的左右空隙');
 CONFIG.bubblePosition = 'side';
 {
     check('config.js 預設 = 2', CONFIG.bubbleSideGap === 2, `實際 ${CONFIG.bubbleSideGap}`);
@@ -555,7 +603,7 @@ CONFIG.bubblePosition = 'side';
 }
 
 // =========================================================
-group('14. bubbleSideGap 的 URL 參數白名單');
+group('15. bubbleSideGap 的 URL 參數白名單');
 {
     const spec = T.QUERY_PARAMS?.bubbleSideGap;
     check('已登記在 QUERY_PARAMS', !!spec);

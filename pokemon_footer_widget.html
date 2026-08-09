@@ -56,7 +56,8 @@
 
         /* 發呆時的心情對話框。這裡只放頭頂正上方的預設值，
            實際擺位由 JS 的 placeBubble() 依 bubblePosition 覆寫
-           （top 頭頂 / side 面向側邊，side 還會跟著面向左右換邊 + 鏡像尾巴）。
+           （top 頭頂 / side 面向側邊，side 還會跟著面向左右換邊 + 鏡像尾巴），
+           上下層由 bubbleLayer 決定（z-index 也在 placeBubble() 設）。
            圖是 canvas 畫的小尺寸點陣圖，靠 pixelated 整數倍放大維持鋸齒感 */
         .bubble {
             position: absolute;
@@ -136,6 +137,7 @@
             bubbleChance:     { path: ['bubbleChance'],     type: 'float', min: 0,  max: 1 },
             bubblePosition:   { path: ['bubblePosition'],   type: 'enum',  values: ['top', 'side', 'none'] },
             bubbleSideGap:    { path: ['bubbleSideGap'],    type: 'int',   min: -20, max: 50 },
+            bubbleLayer:      { path: ['bubbleLayer'],      type: 'enum',  values: ['front', 'behind'] },
             idleJumpChance:   { path: ['idleJumpChance'],   type: 'float', min: 0,  max: 1 },
             shinyChance:      { path: ['shinyChance'],      type: 'float', min: 0,  max: 1 },
             shinyBurstDuration: { path: ['shinyBurstDuration'], type: 'int', min: 100, max: 10000 },
@@ -689,6 +691,11 @@
                 const mode = CONFIG.bubblePosition ?? 'side';
                 const side = mode === 'side';
                 this.bubble.src = getEmoteURI(this.bubbleName, side ? -bubbleSide : 1);
+
+                // 上下層：sprite 有 will-change: transform，會自成堆疊脈絡並被歸到
+                // 「z-index: 0」那一階畫，又排在 bubble 之後，所以光靠 DOM 順序
+                // 一定被它蓋掉——要用明確的正/負 z-index 才跨得過去
+                this.bubble.style.zIndex = (CONFIG.bubbleLayer ?? 'front') === 'behind' ? -1 : 2;
                 if (side) {
                     const { gap } = this.bubbleMetrics();
                     // 擺左側時要再往左退自己一個身（-100%）。gap 允許負數，
