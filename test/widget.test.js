@@ -172,7 +172,8 @@ function newPokemon(id, { shiny = false, direction = 1, scale = 1 } = {}) {
 
 // =========================================================
 group('1. config.js 預設值');
-check('count = 5', CONFIG.count === 5, `實際 ${CONFIG.count}`);
+check('count = 4', CONFIG.count === 4, `實際 ${CONFIG.count}`);
+check('hopHeight = 3', CONFIG.hopHeight === 3, `實際 ${CONFIG.hopHeight}`);
 check('shinyChance = 1/100', Math.abs(CONFIG.shinyChance - 0.01) < 1e-12, `實際 ${CONFIG.shinyChance}`);
 check("bubblePosition = 'side'", CONFIG.bubblePosition === 'side');
 check('baseSize = 128', CONFIG.baseSize === 128);
