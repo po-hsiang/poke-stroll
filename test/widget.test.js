@@ -209,10 +209,29 @@ check('朝左：尖端勾向根部左方', tipX(frameL) < mouthCenter(frameL),
     `tip=${tipX(frameL)}, mouth=${mouthCenter(frameL)}`);
 check('勾的幅度相同，只是反向',
     tipX(frameR) - mouthCenter(frameR) === -(tipX(frameL) - mouthCenter(frameL)));
-check('朝右的尾巴整體偏中線左側、朝左的偏右側（各自指回本體那一邊）',
-    mouthCenter(frameR) < mid && mouthCenter(frameL) > mid,
+// 尾巴要在「它勾過去那一側」的下角，不是掛在正中央
+check('朝右的尾巴在右下角、朝左的在左下角（勾向與所在角落一致）',
+    mouthCenter(frameR) > mid && mouthCenter(frameL) < mid,
     `mouthR=${mouthCenter(frameR)}, mouthL=${mouthCenter(frameL)}, mid=${mid}`);
 check('兩者與中線等距', Math.abs(mouthCenter(frameR) - mid) === Math.abs(mouthCenter(frameL) - mid));
+check('尾巴比舊版（掛中央）更靠角落', mouthCenter(frameR) - mid > 2,
+    `右移了 ${mouthCenter(frameR) - mid}px`);
+
+// 所有實際會用到的框寬都要合法：列寬一致、尖端不掉出框外，
+// 且距「勾過去那一側」邊緣的距離一致（窄框如驚嘆號會被夾住，但仍要在框內）
+for (const [name, icon] of Object.entries(T.EMOTE_ICONS)) {
+    const w = icon.frameWidth ?? 20;
+    const innerRows = Math.max(12, icon.art.length + 4);
+    for (const dir of [1, -1]) {
+        const rows = T.buildBubbleFrame(w, innerRows, dir);
+        const widths = new Set(rows.map(r => r.length));
+        const tip = tipX(rows);
+        const fromEdge = dir === 1 ? w - 1 - tip : tip;
+        check(`${name}(w=${w}, dir=${dir})：列寬一致且尖端距該側邊緣 4px`,
+            widths.size === 1 && [...widths][0] === w && fromEdge === 4,
+            `列寬=${[...widths].join(',')}, 尖端x=${tip}, 距邊緣=${fromEdge}`);
+    }
+}
 
 // =========================================================
 group('3. 心情圖示不跟著鏡像（音符/問號不能變錯字）');

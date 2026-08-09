@@ -275,12 +275,19 @@
             'y': '#ecb200', // 星光金
         };
 
+        // 尾巴根部距「它勾過去那一側」邊緣的點陣圖 px（框的圓角本身就佔掉 2px）。
+        // 尾巴貼近下角、不掛在正中央：對話框擺在本體側邊時，尾巴要從靠本體的那個
+        // 下角伸出來才像在講話，掛中央會指向本體旁邊的空氣
+        const TAIL_INSET = 6;
+
         // 對話框外框產生器：給定總寬度與內部（白底）列數，
         // 組出「圓角方框 + 底部尖尾巴」。概念上等同遊戲 UI 的 9-slice：
         // 四角與尾巴樣式固定，邊框依內容的 bounding box 雙向伸縮。
-        // tailDir: 1 = 尾巴朝右下（預設）、-1 = 朝左下
+        // tailDir: 1 = 尾巴在右下角、朝右勾（預設）、-1 = 左下角、朝左勾
         function buildBubbleFrame(width, innerRows = 12, tailDir = 1) {
-            const tail = Math.floor(width / 2) - 2; // 尾巴開口左緣（保持在框的中央）
+            // 尾巴開口左緣。夾在 [2, width-4]：兩端都要留得下圓角與邊框，
+            // 窄框（如驚嘆號的 10px）擺不到那麼靠邊時就以夾住的位置為準
+            const tail = Math.min(Math.max(2, width - TAIL_INSET), width - 4);
             const rows = [];
             rows.push('..' + '#'.repeat(width - 4) + '..');
             rows.push('.#' + 'w'.repeat(width - 4) + '#.');
