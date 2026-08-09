@@ -568,7 +568,7 @@ CONFIG.bubblePosition = 'side';
 group('14. bubbleSideGap：side 對話框的左右空隙');
 CONFIG.bubblePosition = 'side';
 {
-    check('config.js 預設 = -7（往身體上疊）', CONFIG.bubbleSideGap === -7,
+    check('config.js 預設 = -5（往身體上疊）', CONFIG.bubbleSideGap === -5,
         `實際 ${CONFIG.bubbleSideGap}`);
 
     const saved = CONFIG.bubbleSideGap;
@@ -577,9 +577,9 @@ CONFIG.bubblePosition = 'side';
     const small = newPokemon(25, { scale: 0.6 });   // bubbleScale 2
     big.showEmote('heart');
     small.showEmote('heart');
-    check('大體型（3x）預設空隙 = -21px', big.bubbleMetrics().gap === -21, `實際 ${big.bubbleMetrics().gap}`);
-    check('小體型（2x）預設空隙 = -14px', small.bubbleMetrics().gap === -14, `實際 ${small.bubbleMetrics().gap}`);
-    check('預設值套進 transform', big.bubble.style.transform === 'translateX(-21px)',
+    check('大體型（3x）預設空隙 = -15px', big.bubbleMetrics().gap === -15, `實際 ${big.bubbleMetrics().gap}`);
+    check('小體型（2x）預設空隙 = -10px', small.bubbleMetrics().gap === -10, `實際 ${small.bubbleMetrics().gap}`);
+    check('預設值套進 transform', big.bubble.style.transform === 'translateX(-15px)',
         big.bubble.style.transform);
     // 疊上去也不能疊過頭：框要有一半以上留在身體外面才看得清楚
     const bigW = big.bubbleMetrics().width;
