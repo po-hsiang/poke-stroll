@@ -137,6 +137,7 @@
             bubbleChance:     { path: ['bubbleChance'],     type: 'float', min: 0,  max: 1 },
             bubblePosition:   { path: ['bubblePosition'],   type: 'enum',  values: ['top', 'side', 'none'] },
             bubbleSideGap:    { path: ['bubbleSideGap'],    type: 'int',   min: -20, max: 50 },
+            bubbleSideLift:   { path: ['bubbleSideLift'],   type: 'int',   min: -50, max: 100 },
             bubbleLayer:      { path: ['bubbleLayer'],      type: 'enum',  values: ['front', 'behind'] },
             idleJumpChance:   { path: ['idleJumpChance'],   type: 'float', min: 0,  max: 1 },
             shinyChance:      { path: ['shinyChance'],      type: 'float', min: 0,  max: 1 },
@@ -712,7 +713,12 @@
                     this.bubble.style.transform = bubbleSide === 1
                         ? `translateX(${gap}px)`
                         : `translateX(calc(-100% ${back}))`;
-                    this.bubble.style.bottom = '60%';
+                    // 垂直錨在身高六成處，再吃 bubbleSideLift 的幾個 px 微調。
+                    // 正負號分開組，避免 calc(60% + -3px) 這種雙符號
+                    const lift = Math.round(CONFIG.bubbleSideLift ?? 2);
+                    this.bubble.style.bottom = lift === 0
+                        ? '60%'
+                        : `calc(60% ${lift > 0 ? '+' : '-'} ${Math.abs(lift)}px)`;
                 } else {
                     this.bubble.style.left = '50%';
                     this.bubble.style.transform = 'translateX(-50%)';

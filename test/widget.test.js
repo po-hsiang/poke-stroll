@@ -273,7 +273,8 @@ CONFIG.bubblePosition = 'side';
     check('轉向左 → 位移為 -(100% + gap)',
         p.bubble.style.transform === `translateX(calc(-100% ${back}))`, p.bubble.style.transform);
     check('轉向左 → 尾巴改朝右', p.bubble.src === T.getEmoteURI('heart', 1));
-    check('垂直錨在身高六成處', p.bubble.style.bottom === '60%');
+    check('垂直錨在身高六成處（+ bubbleSideLift 微調）',
+        p.bubble.style.bottom === `calc(60% + ${CONFIG.bubbleSideLift}px)`, p.bubble.style.bottom);
 
     // 沒轉向時不應重設 DOM（避免每幀寫樣式）
     const before = p.bubble.src;
@@ -637,7 +638,67 @@ CONFIG.bubblePosition = 'side';
 }
 
 // =========================================================
-group('15. bubbleSideGap 的 URL 參數白名單');
+group('15. bubbleSideLift：side 對話框的垂直微調');
+CONFIG.bubblePosition = 'side';
+{
+    check('config.js 預設 = 2', CONFIG.bubbleSideLift === 2, `實際 ${CONFIG.bubbleSideLift}`);
+
+    const saved = CONFIG.bubbleSideLift;
+    const p = newPokemon(143, { direction: 1 });
+    p.showEmote('heart');
+    check('預設 → calc(60% + 2px)', p.bubble.style.bottom === 'calc(60% + 2px)', p.bubble.style.bottom);
+
+    CONFIG.bubbleSideLift = 0;
+    p.placeBubble(1);
+    check('0 → 就是原本的 60%，不多包一層 calc', p.bubble.style.bottom === '60%', p.bubble.style.bottom);
+
+    CONFIG.bubbleSideLift = 8;
+    p.placeBubble(1);
+    check('8 → calc(60% + 8px)', p.bubble.style.bottom === 'calc(60% + 8px)');
+
+    // 負數往下，且不能組出 calc(60% + -3px)
+    CONFIG.bubbleSideLift = -3;
+    p.placeBubble(1);
+    check('-3 → 改用減號往下移', p.bubble.style.bottom === 'calc(60% - 3px)', p.bubble.style.bottom);
+    check('沒有出現 "+ -" 雙符號', !p.bubble.style.bottom.includes('+ -'));
+
+    // 非整數取整（半像素會讓點陣圖糊掉）
+    CONFIG.bubbleSideLift = 2.6;
+    p.placeBubble(1);
+    check('2.6 → 取整成 3px', p.bubble.style.bottom === 'calc(60% + 3px)', p.bubble.style.bottom);
+
+    // 換邊時垂直位置不變
+    CONFIG.bubbleSideLift = 2;
+    p.placeBubble(-1);
+    check('換到左側 → 垂直位置一樣', p.bubble.style.bottom === 'calc(60% + 2px)');
+
+    // 不影響大小體型的相對錨點（六成是比例，lift 是固定 px）
+    const small = newPokemon(25, { scale: 0.6 });
+    small.showEmote('heart');
+    check('小體型同樣是 60% + 2px（錨點比例照舊）',
+        small.bubble.style.bottom === 'calc(60% + 2px)');
+
+    // top 模式不吃這個設定
+    CONFIG.bubblePosition = 'top';
+    const t = newPokemon(143, { direction: 1 });
+    t.showEmote('heart');
+    check('top 模式仍是 calc(100% + 2px)（頭頂那顆固定值）',
+        t.bubble.style.bottom === 'calc(100% + 2px)', t.bubble.style.bottom);
+    CONFIG.bubblePosition = 'side';
+
+    // 缺 key 時退回 2
+    delete CONFIG.bubbleSideLift;
+    p.placeBubble(1);
+    check('缺 bubbleSideLift key → 退回 2', p.bubble.style.bottom === 'calc(60% + 2px)');
+    CONFIG.bubbleSideLift = saved;
+
+    const spec = T.QUERY_PARAMS?.bubbleSideLift;
+    check('已登記在 QUERY_PARAMS', !!spec);
+    check('型別 int 且允許負數', spec?.type === 'int' && spec?.min < 0);
+}
+
+// =========================================================
+group('16. bubbleSideGap 的 URL 參數白名單');
 {
     const spec = T.QUERY_PARAMS?.bubbleSideGap;
     check('已登記在 QUERY_PARAMS', !!spec);

@@ -32,6 +32,7 @@
 | `bubblePosition` | enum | `top` / `side` / `none` | `side` | 對話框位置:`top` 頭頂正上方、`side` 面向方向的側邊(整框推到身體外側,尾巴移到靠本體那個下角、鏡像成朝內指回本體;轉向時自動換邊,走到畫面邊緣快被裁掉時也會自動翻到內側)、`none` 完全不顯示(空間有限的頁面適用) |
 | `bubbleLayer` | enum | `front` / `behind` | `front` | 對話框在本體的上層(`front`,像遊戲裡角色講話的對話框,會遮到一點身體)還是下層(`behind`,完全不遮本體)。**注意**:只在同一隻的本體之間分層,右邊鄰居的身體仍可能蓋到你的對話框(每隻的堆疊層級是按 X 座標排的) |
 | `bubbleSideGap` | int | -20 ~ 50 | `-7` | 只在 `bubblePosition=side` 生效:本體邊緣與對話框之間的左右空隙。單位是**點陣圖像素**,會乘上對話框放大倍率(小/中 2x、大 3x),所以 `-7` 實際是 -14px / -21px。**預設為負數 = 往身體上疊**,搭配 `bubbleLayer=front` 才像遊戲裡在講話;`0` = 貼齊身體邊緣;正數 = 整個框推到身體外面完全不重疊。也會一併影響「快出畫面翻到內側」的判斷 |
+| `bubbleSideLift` | int | -50 ~ 100 | `2` | 只在 `bubblePosition=side` 生效:垂直微調 px。對話框底邊本來錨在**身高六成**處,這個值再往上加(負數往下)。單位是螢幕 px、不乘放大倍率——六成的錨點已經是等比例的,這裡只是收尾的幾個像素 |
 | `hopHeight` | float | 0 ~ 50 | `3` | 走路跳步的基礎高度 px |
 | `hopVariance` | float | 0 ~ 50 | `2` | 個體間的跳步高度差異上限 |
 | `hopFrequency` | float | 0 ~ 1 | `0.005` | 跳步頻率(越小跳越慢) |
@@ -61,6 +62,7 @@
 | 安靜穩重風(少動多發呆,不冒泡) | `?baseSpeed=0.1&idleChance=0.03&bubblePosition=none` |
 | 對話框改回頭頂(側邊空間有限時) | `?bubblePosition=top` |
 | 對話框不要疊在身體上 / 疊更多 | `?bubbleSideGap=2` / `?bubbleSideGap=-14` |
+| 對話框再高一點 / 低一點 | `?bubbleSideLift=8` / `?bubbleSideLift=-4` |
 | 對話框躲到寶可夢後面 | `?bubbleLayer=behind` |
 | 全員色違遊行 | `?shinyChance=1&count=10` |
 | 回到正作原生的色違機率 | `?shinyChance=0.000244` |
