@@ -30,6 +30,7 @@
 | `shinyChance` | float | 0 ~ 1 | `1/100` | 每一隻**獨立**擲骰出現色違的機率(預設調得比正作的 1/4096 高很多,直播才熱鬧)。色違登場時必定亮出金色閃光對話框 + 星星四散特效,而且該對話框有 4 秒**保護期**,不會被登場後隨即發呆的心情或被戳的愛心蓋掉 |
 | `shinyBurstDuration` | int | 100 ~ 10000 | `1400` | 色違登場星星特效的飛散+淡出總時長 ms |
 | `bubblePosition` | enum | `top` / `side` / `none` | `side` | 對話框位置:`top` 頭頂正上方、`side` 面向方向的側邊(整框推到身體外側,尾巴鏡像成朝內指回本體;轉向時自動換邊,走到畫面邊緣快被裁掉時也會自動翻到內側)、`none` 完全不顯示(空間有限的頁面適用) |
+| `bubbleSideGap` | int | -20 ~ 50 | `2` | 只在 `bubblePosition=side` 生效:本體邊緣與對話框之間的左右空隙。單位是**點陣圖像素**,會乘上對話框放大倍率(小/中 2x、大 3x),所以 `2` 實際是 4px / 6px。`0` = 貼齊身體邊緣;**負數 = 往身體上疊**(約 `-10` 回到舊版半重疊的樣子)。也會一併影響「快出畫面翻到內側」的判斷 |
 | `hopHeight` | float | 0 ~ 50 | `3` | 走路跳步的基礎高度 px |
 | `hopVariance` | float | 0 ~ 50 | `2` | 個體間的跳步高度差異上限 |
 | `hopFrequency` | float | 0 ~ 1 | `0.005` | 跳步頻率(越小跳越慢) |
@@ -58,6 +59,7 @@
 | 寶可夢大遊行 | `?count=20&baseSpeed=0.4` |
 | 安靜穩重風(少動多發呆,不冒泡) | `?baseSpeed=0.1&idleChance=0.03&bubblePosition=none` |
 | 對話框改回頭頂(側邊空間有限時) | `?bubblePosition=top` |
+| 對話框離身體遠一點 / 貼緊一點 | `?bubbleSideGap=6` / `?bubbleSideGap=0` |
 | 全員色違遊行 | `?shinyChance=1&count=10` |
 | 回到正作原生的色違機率 | `?shinyChance=0.000244` |
 | 過動兒模式(常發呆、狂跳) | `?idleChance=0.03&idleJumpChance=0.02` |

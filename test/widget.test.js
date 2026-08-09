@@ -147,7 +147,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -485,6 +485,85 @@ CONFIG.bubblePosition = 'side';
     check('top 模式：貼邊也不換邊，維持置中',
         t.bubble.style.left === '50%' && t.bubble.style.transform === 'translateX(-50%)');
     CONFIG.bubblePosition = 'side';
+}
+
+// =========================================================
+group('13. bubbleSideGap：side 對話框的左右空隙');
+CONFIG.bubblePosition = 'side';
+{
+    check('config.js 預設 = 2', CONFIG.bubbleSideGap === 2, `實際 ${CONFIG.bubbleSideGap}`);
+
+    const saved = CONFIG.bubbleSideGap;
+    // 設定值是點陣圖 px，乘上放大倍率：大體型 3x、小體型 2x
+    const big = newPokemon(143, { scale: 1 });      // bubbleScale 3
+    const small = newPokemon(25, { scale: 0.6 });   // bubbleScale 2
+    big.showEmote('heart');
+    small.showEmote('heart');
+    check('大體型（3x）預設空隙 = 6px', big.bubbleMetrics().gap === 6, `實際 ${big.bubbleMetrics().gap}`);
+    check('小體型（2x）預設空隙 = 4px', small.bubbleMetrics().gap === 4, `實際 ${small.bubbleMetrics().gap}`);
+    check('預設值套進 transform', big.bubble.style.transform === 'translateX(6px)');
+
+    // 調大：右側往右推、左側往左退更多
+    CONFIG.bubbleSideGap = 6;
+    big.placeBubble(1);
+    check('調成 6 → 大體型 18px', big.bubble.style.transform === 'translateX(18px)');
+    big.placeBubble(-1);
+    check('調成 6 → 左側是 calc(-100% - 18px)',
+        big.bubble.style.transform === 'translateX(calc(-100% - 18px))');
+
+    // 0：剛好貼齊本體邊緣
+    CONFIG.bubbleSideGap = 0;
+    big.placeBubble(1);
+    check('0 → 右側零位移（貼齊邊緣）', big.bubble.style.transform === 'translateX(0px)');
+    big.placeBubble(-1);
+    check('0 → 左側剛好是 -100%', big.bubble.style.transform === 'translateX(calc(-100% - 0px))');
+
+    // 負數：往身體上疊，且不能產生 calc(-100% - -6px) 這種雙負號
+    CONFIG.bubbleSideGap = -2;
+    big.placeBubble(1);
+    check('-2 → 右側往內疊 -6px', big.bubble.style.transform === 'translateX(-6px)');
+    big.placeBubble(-1);
+    check('-2 → 左側改用加號，不出現雙負號',
+        big.bubble.style.transform === 'translateX(calc(-100% + 6px))',
+        big.bubble.style.transform);
+    check('組出的 calc 沒有 "- -"', !big.bubble.style.transform.includes('- -'));
+
+    // 非整數設定值要取整，避免半像素把點陣圖弄糊
+    CONFIG.bubbleSideGap = 1.5;
+    check('1.5 × 3x = 4.5 → 取整成 5', big.bubbleMetrics().gap === 5, `實際 ${big.bubbleMetrics().gap}`);
+    big.placeBubble(1);
+    check('transform 也是整數 px', big.bubble.style.transform === 'translateX(5px)');
+
+    // 空隙會一併影響「快出畫面就翻到內側」的判斷
+    CONFIG.bubbleSideGap = 2;
+    const p = newPokemon(143, { direction: 1 });
+    p.showEmote('heart');
+    const { width } = p.bubbleMetrics();
+    const bodyW = p.img.offsetWidth;
+    p.x = sandbox.window.innerWidth - bodyW - 6 - width; // 用 gap=6 剛好塞得下
+    p.updateDOM();
+    check('gap 2：剛好塞得下，維持右側', p.bubbleSide === 1);
+    CONFIG.bubbleSideGap = 3; // 空隙變大 → 同一個位置就塞不下了
+    p.updateDOM();
+    check('gap 3：同一位置變成塞不下 → 翻到左側', p.bubbleSide === -1);
+
+    // 缺 key 時退回 2（相容舊的 config.js）
+    delete CONFIG.bubbleSideGap;
+    check('缺 bubbleSideGap key → 退回預設 2（大體型 6px）',
+        big.bubbleMetrics().gap === 6, `實際 ${big.bubbleMetrics().gap}`);
+    CONFIG.bubbleSideGap = saved;
+}
+
+// =========================================================
+group('14. bubbleSideGap 的 URL 參數白名單');
+{
+    const spec = T.QUERY_PARAMS?.bubbleSideGap;
+    check('已登記在 QUERY_PARAMS', !!spec);
+    if (spec) {
+        check('型別 int（半像素會糊掉）', spec.type === 'int');
+        check('允許負數（可疊回身體上）', spec.min < 0);
+        check('路徑指向 bubbleSideGap', JSON.stringify(spec.path) === '["bubbleSideGap"]');
+    }
 }
 
 console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);

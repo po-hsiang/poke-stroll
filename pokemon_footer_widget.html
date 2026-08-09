@@ -135,6 +135,7 @@
             lookTimeMax:      { path: ['lookTime', 'max'],  type: 'int',   min: 0,  max: 60000 },
             bubbleChance:     { path: ['bubbleChance'],     type: 'float', min: 0,  max: 1 },
             bubblePosition:   { path: ['bubblePosition'],   type: 'enum',  values: ['top', 'side', 'none'] },
+            bubbleSideGap:    { path: ['bubbleSideGap'],    type: 'int',   min: -20, max: 50 },
             idleJumpChance:   { path: ['idleJumpChance'],   type: 'float', min: 0,  max: 1 },
             shinyChance:      { path: ['shinyChance'],      type: 'float', min: 0,  max: 1 },
             shinyBurstDuration: { path: ['shinyBurstDuration'], type: 'int', min: 100, max: 10000 },
@@ -653,11 +654,13 @@
                 this.bubble.style.display = 'none';
             }
 
-            // side 模式的對話框寬度與空隙（都是純算術，可以每幀重算不碰 DOM）
+            // side 模式的對話框寬度與空隙（都是純算術，可以每幀重算不碰 DOM）。
+            // gap 的設定值是「點陣圖上的像素」，乘上放大倍率換成畫面 px；
+            // 取整數避免半像素位移把點陣圖弄糊（負數代表往身體上疊）
             bubbleMetrics() {
                 return {
                     width: (EMOTE_ICONS[this.bubbleName].frameWidth ?? 20) * this.bubbleScale,
-                    gap: 2 * this.bubbleScale, // 換算成點陣圖上的 2px，跟著放大倍率縮放
+                    gap: Math.round((CONFIG.bubbleSideGap ?? 2) * this.bubbleScale),
                 };
             }
 
@@ -688,10 +691,13 @@
                 this.bubble.src = getEmoteURI(this.bubbleName, side ? -bubbleSide : 1);
                 if (side) {
                     const { gap } = this.bubbleMetrics();
+                    // 擺左側時要再往左退自己一個身（-100%）。gap 允許負數，
+                    // 所以正負分開組字串，避免產生 calc(-100% - -6px) 這種雙負號
+                    const back = gap >= 0 ? `- ${gap}px` : `+ ${-gap}px`;
                     this.bubble.style.left = bubbleSide === 1 ? '100%' : '0';
                     this.bubble.style.transform = bubbleSide === 1
                         ? `translateX(${gap}px)`
-                        : `translateX(calc(-100% - ${gap}px))`;
+                        : `translateX(calc(-100% ${back}))`;
                     this.bubble.style.bottom = '60%';
                 } else {
                     this.bubble.style.left = '50%';
