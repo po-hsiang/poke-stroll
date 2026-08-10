@@ -415,9 +415,9 @@
         { name: 'flybyDelayMax',  type: 'int',   range: '1000 ~ 600000', def: '20000',  group: '客串事件', sample: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000',
           desc: '擲骰間隔上限 ms（min > max 自動對調）' },
         { name: 'flybyChance',    type: 'float', range: '0 ~ 1',         def: '0.25',   group: '客串事件', sample: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000',
-          desc: '每次擲骰真的觸發客串的機率（0 = 整個機制關閉）。觸發時一隻寶可夢從畫面外高速橫越，不加入常駐陣容；色違吃全頁 shinyChance，中了會拖金色星塵尾跡' },
+          desc: '每次擲骰真的觸發客串的機率（0 = 整個機制關閉）。觸發時一隻寶可夢從畫面外沿隨機斜線航道、浮浮沉沉地高速橫越（這趟可能左 45% 飛到右 60%，下一趟右 70% 飛到左 50%），不加入常駐陣容；色違吃全頁 shinyChance，中了會拖金色星塵尾跡' },
         { name: 'flybyLegendaryChance', type: 'float', range: '0 ~ 1',   def: '0.05',   group: '客串事件', sample: 'flybyChance=1&flybyLegendaryChance=1',
-          desc: '觸發時抽「傳說池」（48 隻傳說＋幻之）而非「飛行池」（73 隻飛行系，平均分佈）的機率' },
+          desc: '觸發時抽「會飛的傳說池」（9 隻：三聖鳥/洛奇亞/鳳王/烈空坐/雲三家）而非「飛行池」（73 隻飛行系，平均分佈）的機率。兩池全員任一屬性槽都含飛行——固拉多再傳說也不會飛，不會亂入天空' },
         { name: 'flybySpeed',     type: 'float', range: '1 ~ 100',       def: '14',     group: '客串事件', sample: 'flybyChance=1&flybySpeed=25',
           desc: '橫越速度 px/幀（60fps 基準），實際每次 ±15% 隨機' },
     ];

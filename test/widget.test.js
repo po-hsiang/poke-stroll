@@ -786,11 +786,13 @@ group('18. 客串事件（飛行系/傳說高速橫越）');
     const LEG = cameoSandbox.window.POKE_LEGENDARY;
     check('飛行池非空且都在 1~649', FLY?.length > 50 && FLY.every(n => n >= 1 && n <= 649),
         `共 ${FLY?.length} 隻`);
-    check('傳說池非空且都在 1~649', LEG?.length > 30 && LEG.every(n => n >= 1 && n <= 649),
-        `共 ${LEG?.length} 隻`);
+    check('傳說池 = 會飛的傳說 9 隻（三聖鳥/洛奇亞/鳳王/烈空坐/雲三家）',
+        JSON.stringify(LEG) === JSON.stringify([144, 145, 146, 249, 250, 384, 641, 642, 645]),
+        `實際 ${JSON.stringify(LEG)}`);
+    check('不會飛的傳說進不了飛行客串（超夢/夢幻/固拉多/蓋歐卡）',
+        ![150, 151, 383, 382].some(n => LEG.includes(n) || FLY.includes(n)));
     check('兩池不重疊（傳說不稀釋飛行池的平均分佈）', FLY.every(n => !LEG.includes(n)));
-    check('抽查：噴火龍在飛行池；超夢/洛奇亞/烈空坐在傳說池',
-        FLY.includes(6) && LEG.includes(150) && LEG.includes(249) && LEG.includes(384));
+    check('抽查：噴火龍/比雕/暴鯉龍在飛行池', FLY.includes(6) && FLY.includes(18) && FLY.includes(130));
     check('主 sandbox 沒有名單 → 排程器不啟動（本測試的前提）',
         !sandbox.window.POKE_FLYING && !sandbox.window.POKE_LEGENDARY);
 
@@ -826,6 +828,35 @@ group('18. 客串事件（飛行系/傳說高速橫越）');
         `一幀移動 ${Math.abs(c.x - x0).toFixed(1)}px`);
     c.x = c.direction === 1 ? 1920 + c.margin + 1 : -c.margin - 1;
     check('飛出對側畫面外 → 回報移除', c.update(16) === false);
+
+    // 斜線航道 + 浮沉（stub 視窗高 200 → 高度帶 90 ~ 150）
+    const yOf = el => Number((el.style.transform.match(/translate3d\([^,]+,\s*(-?\d+)px/) || [])[1]);
+    const f = new T.Cameo(18, 1);
+    check('起點高度在視窗高 45%~75%', f.startBottom >= 90 && f.startBottom <= 150, `實際 ${f.startBottom}`);
+    check('終點高度獨立隨機、也在 45%~75%', f.endBottom >= 90 && f.endBottom <= 150, `實際 ${f.endBottom}`);
+    check('斜率 = 高度差 ÷ 出發當下的全程距離',
+        Math.abs(f.slope - (f.endBottom - f.startBottom) / (1920 + f.margin * 2)) < 1e-9);
+    check('浮沉振幅 3~7px、節奏 0.003~0.006 rad/ms',
+        f.floatAmp >= 3 && f.floatAmp <= 7 && f.floatFreq >= 0.003 && f.floatFreq <= 0.006);
+
+    // 斜線：關掉浮沉，前進 500px 後高度 = 起點 + 500 × 斜率
+    f.floatAmp = 0;
+    f.x = f.startX + 500 * f.direction;
+    f.render();
+    check('前進 500px 後爬升/滑降到位',
+        yOf(f.el) === -Math.round(f.startBottom + 500 * f.slope),
+        `transform y=${yOf(f.el)}，期望 ${-Math.round(f.startBottom + 500 * f.slope)}`);
+
+    // 浮沉：關掉斜率，sin 波峰與波谷高度差 = 2 × 振幅（有上有下，不是 |sin| 落地彈）
+    f.slope = 0;
+    f.floatAmp = 5;
+    f.x = f.startX;
+    f.floatPhase = Math.PI / 2;  f.render(); const crest = yOf(f.el);
+    f.floatPhase = -Math.PI / 2; f.render(); const trough = yOf(f.el);
+    check('浮沉波峰對波谷相差 2 × 振幅', crest - trough === -10, `實際 ${crest - trough}`);
+    const phase0 = f.floatPhase;
+    f.update(100);
+    check('update 會推進浮沉相位', f.floatPhase > phase0);
 
     // 色違：吃全頁 shinyChance、走 shiny/ 目錄、拖星塵尾跡
     CONFIG.shinyChance = 1;

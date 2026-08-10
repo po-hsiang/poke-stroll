@@ -1053,10 +1053,9 @@
                 this.height = Math.round(CONFIG.baseSize * sizeScale);
                 this.el = document.createElement('div');
                 this.el.className = 'cameo';
-                // 飛行高度：視窗高的 45% ~ 75%——OBS 全畫布時劃過半空，
-                // 200px 的 footer iframe 也還在框內、於散步成員的頭頂之上
-                this.bottom = Math.round(window.innerHeight * (0.45 + Math.random() * 0.3));
-                this.el.style.bottom = `${this.bottom}px`;
+                // 高度以 bottom: 0 為基準，實際垂直位置全走 transform
+                // （斜線 + 浮沉每一幀都在變，translate 不觸發 layout）
+                this.el.style.bottom = '0px';
 
                 this.img = document.createElement('img');
                 this.img.className = 'sprite';
@@ -1076,8 +1075,25 @@
 
                 // 出發點：畫面外一個身位（寬度未載入前用高度概算，流星不等人）
                 this.margin = this.height * 1.5 + 40;
-                this.x = this.direction === 1 ? -this.margin : window.innerWidth + this.margin;
+                this.startX = this.direction === 1 ? -this.margin : window.innerWidth + this.margin;
+                this.x = this.startX;
                 this.trailTimer = 0;
+
+                // 斜線航道：起點與終點高度「各自」在視窗高 45% ~ 75% 內隨機——
+                // 這趟可能從左 45% 爬升到右 60%，下一趟從右 70% 滑降到左 50%。
+                // （45%~75%：OBS 全畫布時劃過半空，200px 的 footer iframe 也還在框內、
+                //   於散步成員的頭頂之上）
+                const altitude = () => window.innerHeight * (0.45 + Math.random() * 0.3);
+                this.startBottom = altitude();
+                this.endBottom = altitude();
+                // 每前進 1px 的爬升/下降量，以出發當下的全程距離換算
+                this.slope = (this.endBottom - this.startBottom) / (window.innerWidth + this.margin * 2);
+
+                // 浮沉：飛行版的小跳步。走路是 |sin| 的落地彈跳，
+                // 飛行是完整 sin 波的上下漂浮；振幅與節奏每隻略異，不會像編隊飛行
+                this.floatPhase = Math.random() * Math.PI * 2;
+                this.floatAmp = 3 + Math.random() * 4;          // 3 ~ 7 px
+                this.floatFreq = 0.003 + Math.random() * 0.003; // 相位速度 rad/ms
 
                 app.appendChild(this.el);
                 this.render();
@@ -1088,6 +1104,7 @@
                 if (this.dead) return false;
                 const dt = deltaTime / (1000 / 60);
                 this.x += this.speed * this.direction * dt;
+                this.floatPhase += deltaTime * this.floatFreq;
 
                 // 色違的星塵尾跡：定時在「身後」撒一顆金星，飄落漸淡
                 if (this.isShiny) {
@@ -1105,7 +1122,11 @@
             }
 
             render() {
-                this.el.style.transform = `translate3d(${this.x}px, 0, 0)`;
+                // 垂直位置 = 航道起點高度 + 斜率 × 已飛距離 + 浮沉波
+                const traveled = Math.abs(this.x - this.startX);
+                this.curBottom = this.startBottom + traveled * this.slope
+                                 + Math.sin(this.floatPhase) * this.floatAmp;
+                this.el.style.transform = `translate3d(${this.x}px, ${-Math.round(this.curBottom)}px, 0)`;
             }
 
             dropTrailStar() {
@@ -1115,9 +1136,9 @@
                 star.src = getStarURI(shape, Math.random() < 0.5 ? '#ecb200' : '#ffd84d');
                 star.style.width = `${STAR_ARTS[shape][0].length * 2}px`;
                 star.style.animationDuration = '700ms';
-                // 撒在目前身體中央，靠 CSS 動畫往後下方飄散
+                // 撒在目前身體中央（跟著斜線航道的當下高度），靠 CSS 動畫往後下方飄散
                 star.style.left = `${Math.round(this.x + this.height * 0.6)}px`;
-                star.style.bottom = `${this.bottom + Math.round(this.height * 0.45)}px`;
+                star.style.bottom = `${Math.round(this.curBottom + this.height * 0.45)}px`;
                 star.style.zIndex = 9999; // 墊在本體後面一階
                 star.style.setProperty('--dx', `${-this.direction * (14 + Math.round(Math.random() * 18))}px`);
                 star.style.setProperty('--dy', `${10 + Math.round(Math.random() * 16)}px`);
