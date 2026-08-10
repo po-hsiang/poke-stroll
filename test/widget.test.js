@@ -1073,6 +1073,11 @@ group('19. 色違星星特效定時重播');
     // =====================================================
     group('22. 丟果實餵食');
 
+    // 發呆是每幀擲骰的隨機行為：收尾回到 WALKING 後若多跑幾幀，
+    // 有機率隨機進入 IDLE 害斷言翻車（CI 就骰到過）。整組關掉，結束再還原
+    const savedIdleChance = CONFIG.idleChance;
+    CONFIG.idleChance = 0;
+
     // 參數登記 + config 預設 + 果實圖
     check('berry 已登記（enum on/off）',
         T.QUERY_PARAMS?.berry?.type === 'enum'
@@ -1154,6 +1159,7 @@ group('19. 色違星星特效定時重播');
     const minReach = 1920 * CONFIG.bounds.min + far.img.offsetWidth / 2;
     check('範圍外的點擊 → 果實釘在搆得到的最近位置',
         T.getBerry().x === minReach, `實際 ${T.getBerry().x}，期望 ${minReach}`);
+    CONFIG.idleChance = savedIdleChance;
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
     process.exit(fail ? 1 : 0);
