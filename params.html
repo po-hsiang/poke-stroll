@@ -178,7 +178,11 @@
         cursor: copy;
     }
     td.name:hover { color: var(--gold); }
-    td.range, td.def { font-family: var(--mono); font-size: 14px; white-space: nowrap; }
+    td.range, td.def { font-family: var(--mono); font-size: 14px; }
+    /* 允許範圍「可換行」：theme 這種八個值的長 enum 不該把整張表撐出
+       橫向拉桿（橫向捲動很不直覺）；數字範圍短，實際上不會被折到 */
+    td.range { white-space: normal; min-width: 150px; }
+    td.def { white-space: nowrap; }
     td.desc { min-width: 300px; color: #c4cee1; }
     .badge {
         display: inline-block;
