@@ -410,6 +410,16 @@
           desc: '影子寬度相對寶可夢寬度的比例' },
         { name: 'theme',          type: 'enum',  range: 'none / grass / water / snow / sand / rock / dirt / lava', def: 'none', group: '動畫與外觀', sample: 'theme=grass',
           desc: '主題地面：在頁面最底鋪一條 24px 高的像素地面，寶可夢會站上去（依地形略微踩進表面：草蓋腳邊、雪會下陷、水泡到小腿、岩地平踩）。水域與熔岩會緩慢流動；貼片圖樣每次載入隨機生成。none = 關閉，維持透明背景' },
+        { name: 'flybyDelayMin',  type: 'int',   range: '1000 ~ 600000', def: '15000',  group: '客串事件', sample: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000',
+          desc: '客串事件：距離下一次「擲骰時點」的間隔下限 ms' },
+        { name: 'flybyDelayMax',  type: 'int',   range: '1000 ~ 600000', def: '20000',  group: '客串事件', sample: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000',
+          desc: '擲骰間隔上限 ms（min > max 自動對調）' },
+        { name: 'flybyChance',    type: 'float', range: '0 ~ 1',         def: '0.25',   group: '客串事件', sample: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000',
+          desc: '每次擲骰真的觸發客串的機率（0 = 整個機制關閉）。觸發時一隻寶可夢從畫面外高速橫越，不加入常駐陣容；色違吃全頁 shinyChance，中了會拖金色星塵尾跡' },
+        { name: 'flybyLegendaryChance', type: 'float', range: '0 ~ 1',   def: '0.05',   group: '客串事件', sample: 'flybyChance=1&flybyLegendaryChance=1',
+          desc: '觸發時抽「傳說池」（48 隻傳說＋幻之）而非「飛行池」（73 隻飛行系，平均分佈）的機率' },
+        { name: 'flybySpeed',     type: 'float', range: '1 ~ 100',       def: '14',     group: '客串事件', sample: 'flybyChance=1&flybySpeed=25',
+          desc: '橫越速度 px/幀（60fps 基準），實際每次 ±15% 隨機' },
     ];
 
     const RECIPES = [
@@ -432,6 +442,8 @@
         { label: '草地散步', query: 'theme=grass' },
         { label: '海邊戲水（可達鴨一家＋乘龍）', query: 'theme=water&ids=54,55,116,131' },
         { label: '熔岩試膽（小火龍一家）', query: 'theme=lava&ids=4,5,6' },
+        { label: '客串頻發（展示/測試用）', query: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000' },
+        { label: '傳說時刻（每次都是傳說級路過）', query: 'flybyChance=1&flybyLegendaryChance=1&flybyDelayMin=3000&flybyDelayMax=5000' },
     ];
 
     // ---------------------------------------------------------

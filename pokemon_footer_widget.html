@@ -70,6 +70,18 @@
             pointer-events: none;
         }
 
+        /* 客串事件：從畫面外高速橫越的飛行系/傳說寶可夢。
+           不可點擊（飛太快，也不是常駐成員）、蓋在所有散步成員上方 */
+        .cameo {
+            position: absolute;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            pointer-events: none;
+            z-index: 10000;
+            will-change: transform;
+        }
+
         /* 主題地面（theme 參數）：鋪在頁面最底、所有寶可夢身後的像素地面。
            貼片是載入時用 canvas 隨機生成的，橫向平鋪；
            水域與熔岩掛 ground-flow 讓圖樣緩慢橫向流動 */
@@ -133,6 +145,7 @@
     <script src="./config.js"></script>
     <script src="./pokemon_heights.js"></script>
     <script src="./pokemon_types.js"></script>
+    <script src="./pokemon_cameo.js"></script>
 
     <script>
         // ---------------------------------------------------------
@@ -174,6 +187,11 @@
             baseSize:         { path: ['baseSize'],         type: 'int',   min: 16, max: 512 },
             shadowWidthRatio: { path: ['shadowWidthRatio'], type: 'float', min: 0,  max: 2 },
             theme:            { path: ['theme'],            type: 'enum',  values: ['none', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava'] },
+            flybyDelayMin:    { path: ['flybyDelay', 'min'], type: 'int',  min: 1000, max: 600000 },
+            flybyDelayMax:    { path: ['flybyDelay', 'max'], type: 'int',  min: 1000, max: 600000 },
+            flybyChance:      { path: ['flybyChance'],      type: 'float', min: 0,  max: 1 },
+            flybyLegendaryChance: { path: ['flybyLegendaryChance'], type: 'float', min: 0, max: 1 },
+            flybySpeed:       { path: ['flybySpeed'],       type: 'float', min: 1,  max: 100 },
         };
 
         function applyQueryOverrides(config) {
@@ -221,6 +239,7 @@
             // 順序顛倒就對調；count 超過可抽的編號數量會讓抽選迴圈卡死，必須夾住
             if (config.minId > config.maxId) [config.minId, config.maxId] = [config.maxId, config.minId];
             if (config.lookTime.min > config.lookTime.max) [config.lookTime.min, config.lookTime.max] = [config.lookTime.max, config.lookTime.min];
+            if (config.flybyDelay && config.flybyDelay.min > config.flybyDelay.max) [config.flybyDelay.min, config.flybyDelay.max] = [config.flybyDelay.max, config.flybyDelay.min];
             if (config.bounds.min >= config.bounds.max) {
                 console.warn('[PokéFooter] boundsMin 必須小於 boundsMax，已改回預設 0.1 ~ 0.9');
                 config.bounds = { min: 0.1, max: 0.9 };
@@ -1014,10 +1033,123 @@
         }
 
         // ---------------------------------------------------------
+        // 客串事件 (Fly-by Cameo)
+        // 三層機率：
+        //   1. 隨機間隔——從 flybyDelay 區間抽下一個「擲骰時點」
+        //   2. flybyChance——該時點是否真的觸發
+        //   3. 抽誰——飛行池平均分佈，flybyLegendaryChance 的極低機率改抽傳說池
+        // 客串不加入常駐陣容：從畫面外高速橫越，飛出另一側就移除。
+        // 色違吃全頁同一個 shinyChance，中了會拖著金色星塵尾跡（流星本人）
+        // ---------------------------------------------------------
+        class Cameo {
+            constructor(id, sizeScale) {
+                this.dead = false;
+                this.direction = Math.random() > 0.5 ? 1 : -1;
+                // 每次 ±15% 隨機，連續兩次客串速度也不會一模一樣
+                this.speed = (CONFIG.flybySpeed ?? 14) * (0.85 + Math.random() * 0.3);
+                this.isShiny = Math.random() < (CONFIG.shinyChance ?? 0);
+                const shinyDir = this.isShiny ? 'shiny/' : '';
+
+                this.height = Math.round(CONFIG.baseSize * sizeScale);
+                this.el = document.createElement('div');
+                this.el.className = 'cameo';
+                // 飛行高度：視窗高的 45% ~ 75%——OBS 全畫布時劃過半空，
+                // 200px 的 footer iframe 也還在框內、於散步成員的頭頂之上
+                this.bottom = Math.round(window.innerHeight * (0.45 + Math.random() * 0.3));
+                this.el.style.bottom = `${this.bottom}px`;
+
+                this.img = document.createElement('img');
+                this.img.className = 'sprite';
+                this.img.style.height = `${this.height}px`;
+                // 原圖面向左：往右飛要鏡像
+                this.img.style.transform = this.direction === 1 ? 'scaleX(-1)' : '';
+                this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${shinyDir}${id}.gif`;
+                // 備援同散步成員：動圖 → 靜圖 → 直接取消這次客串
+                this.img.onerror = () => {
+                    this.img.onerror = () => {
+                        this.img.onerror = null;
+                        this.dead = true;
+                    };
+                    this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shinyDir}${id}.png`;
+                };
+                this.el.appendChild(this.img);
+
+                // 出發點：畫面外一個身位（寬度未載入前用高度概算，流星不等人）
+                this.margin = this.height * 1.5 + 40;
+                this.x = this.direction === 1 ? -this.margin : window.innerWidth + this.margin;
+                this.trailTimer = 0;
+
+                app.appendChild(this.el);
+                this.render();
+            }
+
+            // 回傳是否還在畫面行程內（false = 該移除了）
+            update(deltaTime) {
+                if (this.dead) return false;
+                const dt = deltaTime / (1000 / 60);
+                this.x += this.speed * this.direction * dt;
+
+                // 色違的星塵尾跡：定時在「身後」撒一顆金星，飄落漸淡
+                if (this.isShiny) {
+                    this.trailTimer -= deltaTime;
+                    if (this.trailTimer <= 0) {
+                        this.dropTrailStar();
+                        this.trailTimer = 90;
+                    }
+                }
+
+                this.render();
+                return this.direction === 1
+                    ? this.x <= window.innerWidth + this.margin
+                    : this.x >= -this.margin;
+            }
+
+            render() {
+                this.el.style.transform = `translate3d(${this.x}px, 0, 0)`;
+            }
+
+            dropTrailStar() {
+                const shape = Math.random() < 0.5 ? 'big' : 'small';
+                const star = document.createElement('img');
+                star.className = 'burst-star';
+                star.src = getStarURI(shape, Math.random() < 0.5 ? '#ecb200' : '#ffd84d');
+                star.style.width = `${STAR_ARTS[shape][0].length * 2}px`;
+                star.style.animationDuration = '700ms';
+                // 撒在目前身體中央，靠 CSS 動畫往後下方飄散
+                star.style.left = `${Math.round(this.x + this.height * 0.6)}px`;
+                star.style.bottom = `${this.bottom + Math.round(this.height * 0.45)}px`;
+                star.style.zIndex = 9999; // 墊在本體後面一階
+                star.style.setProperty('--dx', `${-this.direction * (14 + Math.round(Math.random() * 18))}px`);
+                star.style.setProperty('--dy', `${10 + Math.round(Math.random() * 16)}px`);
+                star.addEventListener('animationend', () => star.remove());
+                app.appendChild(star);
+            }
+        }
+
+        // 排程器：抽下一個擲骰時點 → 到點擲骰 → 不論中沒中，再排下一輪
+        function scheduleFlyby() {
+            const delay = randomInt(CONFIG.flybyDelay.min, CONFIG.flybyDelay.max);
+            setTimeout(() => {
+                if (Math.random() < (CONFIG.flybyChance ?? 0)) spawnFlyby();
+                scheduleFlyby();
+            }, delay);
+        }
+
+        async function spawnFlyby() {
+            const legendary = Math.random() < (CONFIG.flybyLegendaryChance ?? 0);
+            const pool = legendary ? window.POKE_LEGENDARY : window.POKE_FLYING;
+            if (!pool || !pool.length) return;
+            const id = pool[randomInt(0, pool.length - 1)];
+            // 體型分級與散步成員同一套，世界觀比例一致（傳說通常就是大隻）
+            cameos.push(new Cameo(id, await getSizeScale(id)));
+        }
+
+        // ---------------------------------------------------------
         // 主程式邏輯 (Main)
         // ---------------------------------------------------------
         const app = document.getElementById('app');
         const pokemons = [];
+        const cameos = [];
         let lastTime = 0;
 
         async function init() {
@@ -1035,6 +1167,11 @@
                 pokemons.push(new Pokemon(id, app, scales[i], i, groundLift));
             });
 
+            // 客串事件排程：機率 0 或名單檔沒載到（獨立檔案，可能被拿掉）就整個不啟動
+            if ((CONFIG.flybyChance ?? 0) > 0 && (window.POKE_FLYING?.length || window.POKE_LEGENDARY?.length)) {
+                scheduleFlyby();
+            }
+
             // 啟動動畫迴圈
             requestAnimationFrame(gameLoop);
         }
@@ -1045,6 +1182,14 @@
             lastTime = timestamp;
 
             pokemons.forEach(p => p.update(deltaTime, pokemons));
+
+            // 客串成員：倒著掃，飛完行程（或載圖全滅）就移除
+            for (let i = cameos.length - 1; i >= 0; i--) {
+                if (!cameos[i].update(deltaTime)) {
+                    cameos[i].el.remove();
+                    cameos.splice(i, 1);
+                }
+            }
 
             requestAnimationFrame(gameLoop);
         }

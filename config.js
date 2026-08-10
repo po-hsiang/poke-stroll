@@ -25,6 +25,16 @@ window.POKE_CONFIG = {
     // 貼片圖樣載入時隨機生成，每次重新整理都長得不太一樣
     theme: 'none',
 
+    // ---- 客串事件 ----
+    // 三層機率：每隔 flybyDelay 區間內的隨機秒數擲骰一次，flybyChance 決定該次
+    // 是否觸發；觸發時從「飛行系池」平均抽一隻（flybyLegendaryChance 的極低機率
+    // 改抽「傳說池」），從畫面外高速橫越、不加入常駐陣容。
+    // 名單在 pokemon_cameo.js；色違吃全頁同一個 shinyChance，中了會拖金色星塵尾跡
+    flybyDelay: { min: 15000, max: 20000 }, // 下一次擲骰的間隔區間 ms
+    flybyChance: 0.25,           // 每次擲骰真的觸發客串的機率（0 = 整個機制關閉）
+    flybyLegendaryChance: 0.05,  // 觸發時抽中「傳說池」而非「飛行池」的機率
+    flybySpeed: 14,              // 橫越速度 px/幀（60fps 基準），實際每次 ±15% 隨機
+
     // ---- 移動 ----
     baseSpeed: 0.25,    // 基礎移動速度 (px/幀，以 60fps 為基準)
     speedVariance: 0.25,// 個體間的速度差異上限（實際速度 = baseSpeed ~ baseSpeed + variance）

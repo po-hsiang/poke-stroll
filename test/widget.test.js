@@ -141,6 +141,7 @@ const sandbox = {
     location: { search: '' },
     window: {
         innerWidth: 1920,
+        innerHeight: 200, // footer iframe 的典型高度（客串事件的飛行高度依它計算）
         POKE_CONFIG: null, // 下面注入
         POKE_HEIGHTS: { 25: 4, 143: 21 }, // 皮卡丘 0.4m（小）、卡比獸 2.1m（大）
         POKE_TYPES: { 25: 'electric', 143: 'normal' },
@@ -155,7 +156,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -772,6 +773,78 @@ group('17. theme 主題地面');
         `實際 ${water.style.getPropertyValue('--flow-width')}`);
     check('水域踩得更深（inset 5 → 抬高 14px）', waterLift === 14, `實際 ${waterLift}`);
     check('岩地幾乎不下陷（inset 1 → 抬高 22px）', T.initGround('rock') === 22);
+}
+
+// =========================================================
+group('18. 客串事件（飛行系/傳說高速橫越）');
+{
+    // 名單檔在「獨立」context 驗證：主 sandbox 刻意不載 pokemon_cameo.js，
+    // 否則排程器會啟動，假時鐘 advance 時客串就會隨機亂入其他測試
+    const cameoSandbox = { window: {} };
+    vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'pokemon_cameo.js'), 'utf8'), cameoSandbox);
+    const FLY = cameoSandbox.window.POKE_FLYING;
+    const LEG = cameoSandbox.window.POKE_LEGENDARY;
+    check('飛行池非空且都在 1~649', FLY?.length > 50 && FLY.every(n => n >= 1 && n <= 649),
+        `共 ${FLY?.length} 隻`);
+    check('傳說池非空且都在 1~649', LEG?.length > 30 && LEG.every(n => n >= 1 && n <= 649),
+        `共 ${LEG?.length} 隻`);
+    check('兩池不重疊（傳說不稀釋飛行池的平均分佈）', FLY.every(n => !LEG.includes(n)));
+    check('抽查：噴火龍在飛行池；超夢/洛奇亞/烈空坐在傳說池',
+        FLY.includes(6) && LEG.includes(150) && LEG.includes(249) && LEG.includes(384));
+    check('主 sandbox 沒有名單 → 排程器不啟動（本測試的前提）',
+        !sandbox.window.POKE_FLYING && !sandbox.window.POKE_LEGENDARY);
+
+    // config 預設
+    check('flybyDelay 預設 15~20 秒', CONFIG.flybyDelay.min === 15000 && CONFIG.flybyDelay.max === 20000);
+    check('flybyChance 預設 0.25', CONFIG.flybyChance === 0.25);
+    check('flybyLegendaryChance 預設 0.05（極低）', CONFIG.flybyLegendaryChance === 0.05);
+    check('flybySpeed 預設 14', CONFIG.flybySpeed === 14);
+
+    // URL 參數白名單
+    for (const [name, pathStr] of [
+        ['flybyDelayMin', '["flybyDelay","min"]'],
+        ['flybyDelayMax', '["flybyDelay","max"]'],
+        ['flybyChance', '["flybyChance"]'],
+        ['flybyLegendaryChance', '["flybyLegendaryChance"]'],
+        ['flybySpeed', '["flybySpeed"]'],
+    ]) {
+        const spec = T.QUERY_PARAMS?.[name];
+        check(`${name} 已登記且路徑正確`, !!spec && JSON.stringify(spec.path) === pathStr);
+    }
+    check('delay 下限 1000ms（防 setTimeout 轟炸）',
+        T.QUERY_PARAMS.flybyDelayMin.min >= 1000 && T.QUERY_PARAMS.flybyDelayMax.min >= 1000);
+
+    // Cameo 行為
+    const savedShiny = CONFIG.shinyChance;
+    CONFIG.shinyChance = 0;
+    const c = new T.Cameo(6, 1);
+    check('從畫面外出發', c.x < 0 || c.x > 1920, `x=${c.x}`);
+    check('速度 = flybySpeed ±15%', c.speed >= 14 * 0.85 && c.speed <= 14 * 1.15, `實際 ${c.speed}`);
+    const x0 = c.x;
+    check('行程中：update 回傳 true 且高速前進',
+        c.update(1000 / 60) === true && Math.abs(c.x - x0) > 10,
+        `一幀移動 ${Math.abs(c.x - x0).toFixed(1)}px`);
+    c.x = c.direction === 1 ? 1920 + c.margin + 1 : -c.margin - 1;
+    check('飛出對側畫面外 → 回報移除', c.update(16) === false);
+
+    // 色違：吃全頁 shinyChance、走 shiny/ 目錄、拖星塵尾跡
+    CONFIG.shinyChance = 1;
+    const s = new T.Cameo(16, 0.6);
+    check('色違判定吃全頁 shinyChance', s.isShiny === true);
+    check('色違 sprite 走 shiny/ 目錄', s.img.src.includes('/shiny/'));
+    const starsBefore = appEl.children.length;
+    s.update(100);
+    const tail = appEl.children[appEl.children.length - 1];
+    check('飛行中撒出星塵尾跡（復用 burst-star）',
+        appEl.children.length > starsBefore && tail.className === 'burst-star');
+    CONFIG.shinyChance = savedShiny;
+
+    // 載圖備援：動圖 → 靜圖 → 兩段都失敗就取消這次客串
+    const d = new T.Cameo(6, 1);
+    d.img.onerror();
+    check('動圖失敗 → 退靜態圖', d.img.src.endsWith('/6.png'));
+    d.img.onerror();
+    check('靜圖也失敗 → 本幀回報移除，不留破圖', d.update(16) === false);
 }
 
 console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);

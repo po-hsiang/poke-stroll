@@ -45,6 +45,11 @@
 | `baseSize` | int | 16 ~ 512 | `128` | 「大」體型的顯示高度 px(中 = 0.8 倍、小 = 0.6 倍) |
 | `shadowWidthRatio` | float | 0 ~ 2 | `0.9` | 影子寬度相對寶可夢寬度的比例 |
 | `theme` | enum | `none` / `grass` / `water` / `snow` / `sand` / `rock` / `dirt` / `lava` | `none` | **主題地面**:在頁面最底鋪一條 24px 高的像素地面,寶可夢會站上去(依地形略微踩進表面:草蓋腳邊、雪會下陷、水泡到小腿、岩地平踩)。水域與熔岩會緩慢流動;貼片圖樣每次載入隨機生成。`none` = 關閉,維持透明背景 |
+| `flybyDelayMin` | int | 1000 ~ 600000 | `15000` | **客串事件**:距離下一次「擲骰時點」的間隔下限 ms |
+| `flybyDelayMax` | int | 1000 ~ 600000 | `20000` | 擲骰間隔上限 ms(min > max 自動對調) |
+| `flybyChance` | float | 0 ~ 1 | `0.25` | 每次擲骰真的觸發客串的機率(`0` = 整個機制關閉)。觸發時一隻寶可夢從畫面外高速橫越,不加入常駐陣容;色違吃全頁 `shinyChance`,中了會拖金色星塵尾跡 |
+| `flybyLegendaryChance` | float | 0 ~ 1 | `0.05` | 觸發時抽「傳說池」(48 隻傳說+幻之)而非「飛行池」(73 隻飛行系,平均分佈)的機率 |
+| `flybySpeed` | float | 1 ~ 100 | `14` | 橫越速度 px/幀(60fps 基準),實際每次 ±15% 隨機 |
 
 ## 容錯規則
 
@@ -79,3 +84,5 @@
 | 草地散步 | `?theme=grass` |
 | 海邊戲水(可達鴨一家+乘龍) | `?theme=water&ids=54,55,116,131` |
 | 熔岩試膽(小火龍一家) | `?theme=lava&ids=4,5,6` |
+| 客串頻發(展示/測試用) | `?flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000` |
+| 傳說時刻(每次都是傳說級路過) | `?flybyChance=1&flybyLegendaryChance=1&flybyDelayMin=3000&flybyDelayMax=5000` |

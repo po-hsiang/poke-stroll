@@ -4,8 +4,8 @@ FROM nginx:1.29-alpine
 # 快取策略與 gzip（覆蓋 image 內建的 default.conf，內容見 nginx.conf 註解）
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# 純靜態站：widget 執行需要的四個檔案 + 給嵌入方看的互動參數文件，README、截圖等不進 image
-COPY pokemon_footer_widget.html config.js pokemon_heights.js pokemon_types.js params.html /usr/share/nginx/html/
+# 純靜態站：widget 執行需要的五個檔案 + 給嵌入方看的互動參數文件，README、截圖等不進 image
+COPY pokemon_footer_widget.html config.js pokemon_heights.js pokemon_types.js pokemon_cameo.js params.html /usr/share/nginx/html/
 
 # 根路徑直接出 widget：iframe 嵌 https://<gateway>/poke-stroll/ 即可，
 # 原檔名 /poke-stroll/pokemon_footer_widget.html 也同時保留可用
