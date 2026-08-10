@@ -137,6 +137,7 @@ const sandbox = {
     document: {
         createElement: tag => (tag === 'canvas' ? makeCanvas() : makeElement(tag)),
         getElementById: () => appEl,
+        hidden: false, // 分頁可見度：背景分頁防護的測試會切這個開關
     },
     location: { search: '' },
     window: {
@@ -156,7 +157,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, cameos };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -912,5 +913,53 @@ group('19. 色違星星特效定時重播');
     check('之後持續重播、不會只放兩輪', stars() >= first + 20, `實際 ${stars()} 顆`);
 }
 
-console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
-process.exit(fail ? 1 : 0);
+// =========================================================
+// 最後一組：客串生成是 async（等身高查詢），要 flush 微任務才能斷言，
+// 所以包在 async IIFE 裡，總結與離場也一併搬進來
+(async () => {
+    group('20. 背景分頁防護（rAF 停了就別生東西）');
+
+    const starsOf = p => p.el.children.filter(el => el.className === 'burst-star').length;
+
+    // 開頁時就在背景：登場那輪跳過，但排程有排，切回可見補得到
+    sandbox.document.hidden = true;
+    const bg = newPokemon(25, { shiny: true });
+    bg.img.dispatch('load');
+    check('隱藏中登場 → 該輪星星跳過', starsOf(bg) === 0, `實際 ${starsOf(bg)}`);
+    sandbox.document.hidden = false;
+    advance(20001);
+    check('切回可見 → 下一輪重播照放', starsOf(bg) === 10, `實際 ${starsOf(bg)}`);
+
+    // 可見登場 → 隱藏期間重播跳過 → 排程不斷鏈，恢復可見就繼續
+    const p = newPokemon(25, { shiny: true });
+    p.img.dispatch('load');
+    check('可見登場先放一輪', starsOf(p) === 10);
+    sandbox.document.hidden = true;
+    advance(20001);
+    check('隱藏期間：重播跳過', starsOf(p) === 10, `實際 ${starsOf(p)}`);
+    advance(20001);
+    check('連續跳過也不會斷鏈', starsOf(p) === 10);
+    sandbox.document.hidden = false;
+    advance(20001);
+    check('恢復可見：重播繼續', starsOf(p) === 20, `實際 ${starsOf(p)}`);
+
+    // 客串排程：隱藏時擲骰作廢（rAF 停著，生出來只會凍在半空累積），
+    // 排程照鏈，恢復可見後照常生成。皮卡丘在 stub 身高表裡，不會打網路
+    sandbox.window.POKE_FLYING = [25];
+    const savedChance = CONFIG.flybyChance;
+    CONFIG.flybyChance = 1; // 每次擲骰必中，測的是可見度那一關
+    T.scheduleFlyby();
+    sandbox.document.hidden = true;
+    advance(60000); // 至少擲了 3 次骰
+    await new Promise(r => setImmediate(r));
+    check('隱藏期間：必中的骰也不生客串', T.cameos.length === 0, `實際 ${T.cameos.length} 隻`);
+    sandbox.document.hidden = false;
+    advance(20001); // 下一個擲骰時點必到
+    await new Promise(r => setImmediate(r));
+    check('恢復可見：客串照常生成', T.cameos.length > 0, `實際 ${T.cameos.length} 隻`);
+    CONFIG.flybyChance = savedChance;
+    delete sandbox.window.POKE_FLYING;
+
+    console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
+    process.exit(fail ? 1 : 0);
+})();

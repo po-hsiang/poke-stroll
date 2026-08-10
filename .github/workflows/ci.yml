@@ -8,6 +8,48 @@ on:
   pull_request:
 
 jobs:
+  version:
+    # 版本治理：.env 的 VERSION 是唯一的版本事實來源，這裡把它落實成 git tag。
+    # 規則：(1) 必須是 x.y.z 格式 (2) 版號不可倒退、不可重用
+    # (3) 新版號由 CI 自動補 tag——人只要記得 bump VERSION，不用記得打 tag。
+    # 只在 push main 時跑：PR 還沒定案，不該 tag（tag push 不會再觸發本 workflow）
+    name: 版本治理（.env VERSION ↔ git tag）
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 要看得到全部 tag 才能比大小
+      - name: 檢查版號並自動補 tag
+        run: |
+          VERSION=$(grep -oP '^VERSION=\K.+' .env)
+          echo "VERSION=$VERSION"
+          echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "FAIL: VERSION 必須是 x.y.z"; exit 1; }
+          TAG="v$VERSION"
+          if git rev-parse -q --verify "refs/tags/$TAG" > /dev/null; then
+            # 同版號的後續 commit（改文件、沒 bump）：tag 必須落在這條歷史的祖先上，
+            # 否則代表版號被回收重用了
+            TAGGED=$(git rev-parse "$TAG^{commit}")
+            if [ "$TAGGED" != "$GITHUB_SHA" ] && ! git merge-base --is-ancestor "$TAGGED" "$GITHUB_SHA"; then
+              echo "FAIL: $TAG 已存在且不在這條歷史上——版號不可重用，請 bump VERSION"
+              exit 1
+            fi
+            echo "OK: $TAG 已存在（本次 push 未 bump 版號）"
+          else
+            # 新版號：必須大於現有最大 tag——多 session 並行開發時防互踩、防倒退
+            LATEST=$(git tag -l 'v[0-9]*' | sort -V | tail -1)
+            if [ -n "$LATEST" ] && [ "$(printf '%s\n%s\n' "$LATEST" "$TAG" | sort -V | tail -1)" != "$TAG" ]; then
+              echo "FAIL: VERSION $VERSION 不大於現有最新 tag $LATEST——版號不可倒退"
+              exit 1
+            fi
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "$TAG"
+            echo "OK: 已自動補上 $TAG"
+          fi
+
   test:
     name: 單元測試（零依賴）
     runs-on: ubuntu-latest

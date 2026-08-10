@@ -6,27 +6,37 @@
 
 ```bash
 # 建置(版本號與 .env 的 VERSION 一致)
-docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.17.0 .
+docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.18.0 .
 
 # 本機試跑
-docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.17.0
+docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.18.0
 # 瀏覽器 / OBS 瀏覽器來源開 http://localhost:8080/ 即可看到 widget
 ```
 
 ## 推上 Google Artifact Registry
 
 ```bash
-docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.17.0
+docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.18.0
 ```
 
 ## 雲端主機部署
 
 ```bash
-docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.17.0
+docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.18.0
 docker compose up -d
 ```
 
 改版時:改 `.env` 的 `VERSION` → 重新 build/push/pull → `docker compose up -d` 換新容器。
+
+## 版本治理
+
+`.env` 的 `VERSION` 是**唯一的版本事實來源**,CI 會把它落實成 git tag:
+
+- push 到 main 時,CI 檢查 `VERSION` 是 `x.y.z` 格式、**不可倒退、不可重用**,
+  是新版號就**自動補上 `vX.Y.Z` tag**——人只要記得 bump `VERSION`,不用記得打 tag。
+- 沒 bump 版號的 push(改文件之類)也合法,CI 只確認既有 tag 落在這條歷史上。
+- 想看某一版的程式碼:`git switch --detach v0.17.0`;完整版本史:`git tag -l 'v*' | sort -V`。
+- 歷史版本 v0.1.0 ~ v0.17.0 已一次回填(打在每個版號第一次出現的 commit 上)。
 
 ## 部署後的網址
 
