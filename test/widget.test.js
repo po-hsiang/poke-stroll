@@ -146,6 +146,9 @@ const sandbox = {
         POKE_CONFIG: null, // 下面注入
         POKE_HEIGHTS: { 25: 4, 143: 21 }, // 皮卡丘 0.4m（小）、卡比獸 2.1m（大）
         POKE_TYPES: { 25: 'electric', 143: 'normal' },
+        // postMessage 遙控會掛 message 監聽器；測試從 listeners 取出直接餵假事件
+        listeners: {},
+        addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
     },
 };
 sandbox.globalThis = sandbox;
@@ -157,7 +160,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, cameos };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, cameos, pokemons, remoteStamps };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -959,6 +962,110 @@ group('19. 色違星星特效定時重播');
     check('恢復可見：客串照常生成', T.cameos.length > 0, `實際 ${T.cameos.length} 隻`);
     CONFIG.flybyChance = savedChance;
     delete sandbox.window.POKE_FLYING;
+
+    // =====================================================
+    group('21. postMessage 遙控');
+
+    // 參數登記 + config 預設
+    check('remote 已登記（enum on/off）',
+        T.QUERY_PARAMS?.remote?.type === 'enum'
+        && JSON.stringify(T.QUERY_PARAMS.remote.values) === '["on","off"]');
+    check('remoteRateLimit 已登記（int，下限 ≥ 1）',
+        T.QUERY_PARAMS?.remoteRateLimit?.type === 'int' && T.QUERY_PARAMS.remoteRateLimit.min >= 1);
+    check("config.js 預設 remote = 'on'", CONFIG.remote === 'on');
+    check('config.js 預設 remoteRateLimit = 10', CONFIG.remoteRateLimit === 10);
+
+    // 監聽器真的掛在 window 上（不是只寫了函式沒註冊）
+    const handlers = sandbox.window.listeners.message ?? [];
+    check('message 監聽器已註冊', handlers.length === 1, `實際 ${handlers.length} 個`);
+
+    // 從監聽器餵假事件；回執記到 replies
+    const replies = [];
+    const send = data => handlers.forEach(fn => fn({
+        data, origin: 'https://example.com',
+        source: { postMessage: m => replies.push(m) },
+    }));
+    const lastReply = () => replies[replies.length - 1];
+
+    // 固定陣容：清掉 init() 生的隨機成員，換成一隻皮卡丘 + 一隻色違卡比獸
+    T.pokemons.length = 0;
+    const pika = newPokemon(25, { scale: 0.6 });
+    const snor = newPokemon(143, { shiny: true });
+    T.pokemons.push(pika, snor);
+    T.remoteStamps.length = 0; // 前面測試沒發過指令，保險歸零
+
+    // 不是寄給我們的信：沒有 ns 就完全無視（連回執都沒有）
+    send({ cmd: 'poke' });
+    check('沒帶 ns → 無視、不回執', replies.length === 0 && pika.jumpV === 0);
+    send('!pokemon 25');
+    check('非物件訊息 → 無視不炸', replies.length === 0);
+
+    // 未知指令：回執 ok:false
+    send({ ns: 'poke-stroll', cmd: 'dance' });
+    check('未知指令 → 回執 ok:false', lastReply()?.ok === false && lastReply()?.re === 'dance');
+
+    // poke：全員開心跳
+    send({ ns: 'poke-stroll', cmd: 'poke' });
+    check('poke → 全員起跳', pika.jumpV > 0 && snor.jumpV > 0);
+    check('poke 回執 count = 2', lastReply()?.ok === true && lastReply()?.count === 2);
+
+    // poke 指定 id：只戳那一隻
+    pika.jumpV = 0; snor.jumpV = 0; pika.jumpY = 0; snor.jumpY = 0;
+    send({ ns: 'poke-stroll', cmd: 'poke', id: 25 });
+    check('poke id=25 → 只有皮卡丘跳', pika.jumpV > 0 && snor.jumpV === 0);
+    check('poke id 回執 count = 1', lastReply()?.count === 1);
+
+    // burst：色違立刻重播，且重播鏈維持單一條
+    snor.img.dispatch('load'); // 登場先放一輪（同時排下一輪重播）
+    const snorStars = () => snor.el.children.filter(el => el.className === 'burst-star').length;
+    check('（前置）登場一輪 10 顆', snorStars() === 10);
+    send({ ns: 'poke-stroll', cmd: 'burst' });
+    check('burst → 色違立刻再放一輪', snorStars() === 20, `實際 ${snorStars()}`);
+    check('burst 回執 count = 1（只算色違）', lastReply()?.ok === true && lastReply()?.count === 1);
+    advance(20001);
+    check('重播鏈不因手動 burst 疊加（+10 而非 +20）', snorStars() === 30, `實際 ${snorStars()}`);
+
+    // spawn 指定 id：生一隻客串（async，flush 微任務再驗收）
+    const cameosBefore = T.cameos.length;
+    send({ ns: 'poke-stroll', cmd: 'spawn', id: 25 });
+    check('spawn id=25 → 回執 ok', lastReply()?.ok === true);
+    await new Promise(r => setImmediate(r));
+    check('spawn id=25 → 客串 +1', T.cameos.length === cameosBefore + 1, `實際 ${T.cameos.length}`);
+
+    // spawn 的參數驗證與環境防護
+    send({ ns: 'poke-stroll', cmd: 'spawn', id: 'abc' });
+    check('spawn id 非數字 → ok:false', lastReply()?.ok === false);
+    send({ ns: 'poke-stroll', cmd: 'spawn', id: 9999 });
+    check('spawn id 超範圍 → ok:false', lastReply()?.ok === false);
+    send({ ns: 'poke-stroll', cmd: 'spawn' }); // 主 sandbox 沒載名單檔
+    check('spawn 不帶 id 且名單未載入 → ok:false', lastReply()?.ok === false
+        && lastReply()?.reason === 'cameo pools not loaded');
+    sandbox.document.hidden = true;
+    send({ ns: 'poke-stroll', cmd: 'spawn', id: 25 });
+    check('背景分頁 → spawn 拒收（跟排程器同一套防護）',
+        lastReply()?.ok === false && lastReply()?.reason === 'page hidden');
+    sandbox.document.hidden = false;
+
+    // 節流：滑動窗超額整道丟棄
+    T.remoteStamps.length = 0;
+    const savedLimit = CONFIG.remoteRateLimit;
+    CONFIG.remoteRateLimit = 3;
+    const okBefore = replies.filter(r => r.ok).length;
+    for (let i = 0; i < 5; i++) send({ ns: 'poke-stroll', cmd: 'poke', id: 25 });
+    const okAfter = replies.filter(r => r.ok).length;
+    check('限速 3/秒 → 5 連發只放行 3 道', okAfter - okBefore === 3, `放行 ${okAfter - okBefore}`);
+    check('超額的回執 rate limited', lastReply()?.reason === 'rate limited');
+    CONFIG.remoteRateLimit = savedLimit;
+
+    // 總開關：off = 靜默，連回執都不給
+    T.remoteStamps.length = 0;
+    CONFIG.remote = 'off';
+    const repliesBefore = replies.length;
+    pika.jumpV = 0;
+    send({ ns: 'poke-stroll', cmd: 'poke' });
+    check("remote='off' → 靜默無視（不動作、不回執）",
+        replies.length === repliesBefore && pika.jumpV === 0);
+    CONFIG.remote = 'on';
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
     process.exit(fail ? 1 : 0);

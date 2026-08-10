@@ -27,9 +27,14 @@ const widgetKeys = new Set(
 widgetKeys.add('ids');
 check(widgetKeys.size > 20, `widget 白名單解析出 ${widgetKeys.size} 個參數（含 ids）`);
 
-// 2) PARAMS.md 參數總表的每一列
+// 2) PARAMS.md「參數總表」章節的每一列。
+// 只認這一章：文件後面還有別的表格（postMessage 的指令表、回執欄位表），
+// 那些的第一欄也是 `反引號`，不鎖章節就會被誤認成 URL 參數
+const md = read('PARAMS.md');
+const mdSection = md.match(/## 參數總表([\s\S]*?)(?=\n## )/);
+check(!!mdSection, '能在 PARAMS.md 中找到「參數總表」章節');
 const mdKeys = new Set(
-    [...read('PARAMS.md').matchAll(/^\| `(\w+)`/gm)].map(m => m[1])
+    [...(mdSection ? mdSection[1] : '').matchAll(/^\| `(\w+)`/gm)].map(m => m[1])
 );
 
 // 3) params.html 資料陣列的 name 欄位

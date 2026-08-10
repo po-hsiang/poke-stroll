@@ -195,6 +195,8 @@
             flybyChance:      { path: ['flybyChance'],      type: 'float', min: 0,  max: 1 },
             flybyLegendaryChance: { path: ['flybyLegendaryChance'], type: 'float', min: 0, max: 1 },
             flybySpeed:       { path: ['flybySpeed'],       type: 'float', min: 1,  max: 100 },
+            remote:           { path: ['remote'],           type: 'enum',  values: ['on', 'off'] },
+            remoteRateLimit:  { path: ['remoteRateLimit'],  type: 'int',   min: 1,  max: 100 },
         };
 
         function applyQueryOverrides(config) {
@@ -1186,6 +1188,79 @@
             // 體型分級與散步成員同一套，世界觀比例一致（傳說通常就是大隻）
             cameos.push(new Cameo(id, await getSizeScale(id)));
         }
+
+        // ---------------------------------------------------------
+        // postMessage 遙控 (Remote Control)
+        // ---------------------------------------------------------
+        // 父頁面（或 OBS 的 wrapper 頁）隔著 iframe 疆界下指令：
+        //   frame.contentWindow.postMessage({ ns: 'poke-stroll', cmd: 'poke' }, '*')
+        // 防線是「指令白名單 + 參數夾範圍 + 節流」而非 origin 驗證：
+        // 指令全是無害的視覺效果，最壞情況是有人在他自己的頁面上讓皮卡丘跳舞。
+        // 每道指令都回執（{ ns, re, ok, ... }），串接文件見 PARAMS.md / params.html
+        const REMOTE_NS = 'poke-stroll';
+        const remoteStamps = []; // 最近一秒內已處理的指令時戳（節流滑動窗）
+
+        const REMOTE_COMMANDS = {
+            // 客串一隻：帶 id 指定誰路過（不限飛行系，遙控的卡比獸也能飛），
+            // 不帶 id 就照常抽池（含傳說機率那一層）
+            spawn(msg) {
+                // rAF 停著時生成只會凍在半空，跟排程器同一套背景分頁防護
+                if (document.hidden) return { ok: false, reason: 'page hidden' };
+                if (msg.id !== undefined) {
+                    const id = Math.round(Number(msg.id));
+                    if (!Number.isFinite(id) || id < 1 || id > 1025) {
+                        return { ok: false, reason: 'id must be 1~1025' };
+                    }
+                    getSizeScale(id).then(scale => cameos.push(new Cameo(id, scale)));
+                    return { ok: true };
+                }
+                if (!window.POKE_FLYING?.length && !window.POKE_LEGENDARY?.length) {
+                    return { ok: false, reason: 'cameo pools not loaded' };
+                }
+                spawnFlyby();
+                return { ok: true };
+            },
+            // 開心跳一下 + 冒愛心：帶 id 只戳該圖鑑編號的成員，不帶就全員
+            poke(msg) {
+                const targets = msg.id !== undefined
+                    ? pokemons.filter(p => p.id === Math.round(Number(msg.id)))
+                    : pokemons;
+                targets.forEach(p => p.poke());
+                return { ok: true, count: targets.length };
+            },
+            // 色違星星立刻重播。先清掉原本的重播計時器再放，
+            // 排程鏈維持單一條，不會越 burst 越密
+            burst() {
+                const shinies = pokemons.filter(p => p.isShiny);
+                shinies.forEach(p => { clearTimeout(p.burstTimer); p.celebrateShiny(); });
+                return { ok: true, count: shinies.length };
+            },
+        };
+
+        function handleRemoteMessage(e) {
+            const msg = e.data;
+            if (!msg || typeof msg !== 'object' || msg.ns !== REMOTE_NS) return; // 不是寄給我們的信，別拆
+            if ((CONFIG.remote ?? 'on') === 'off') return; // 總開關關閉：連回執都不給，像沒這功能
+            const reply = payload => {
+                // 回執讓串接方能除錯與確認送達；對方視窗可能已經關了，失敗就算了
+                try { e.source && e.source.postMessage({ ns: REMOTE_NS, re: msg.cmd ?? null, ...payload }, '*'); }
+                catch (err) { /* 靜默 */ }
+            };
+            const fn = REMOTE_COMMANDS[msg.cmd];
+            if (!fn) {
+                console.warn(`[PokéFooter] 未知的遙控指令：${msg.cmd}`);
+                return reply({ ok: false, reason: 'unknown cmd' });
+            }
+            // 節流：滑動窗超額就整道丟棄（聊天室洗版時保住渲染效能）
+            const t = Date.now();
+            while (remoteStamps.length && t - remoteStamps[0] >= 1000) remoteStamps.shift();
+            if (remoteStamps.length >= (CONFIG.remoteRateLimit ?? 10)) {
+                return reply({ ok: false, reason: 'rate limited' });
+            }
+            remoteStamps.push(t);
+            reply(fn(msg));
+        }
+        window.addEventListener('message', handleRemoteMessage);
 
         // ---------------------------------------------------------
         // 主程式邏輯 (Main)

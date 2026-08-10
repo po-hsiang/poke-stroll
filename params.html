@@ -203,6 +203,18 @@
     #hero-snippet { white-space: pre; line-height: 1.6; } /* 保留 iframe 範例的三行排版 */
     .recipe .row { display: flex; gap: 8px; margin-top: auto; }
 
+    /* ---- 遙控 API：多行程式碼區塊 ---- */
+    .codeblock {
+        display: block;
+        font: 12.5px/1.7 var(--mono);
+        border: 2px solid var(--ink);
+        box-shadow: inset 2px 2px 0 rgba(43,43,43,.08);
+        background: #fffef8;
+        padding: 12px 14px;
+        overflow-x: auto;
+        white-space: pre;
+    }
+
     /* ---- 底部預覽軌：牠們就在這條軌上散步 ---- */
     #dock {
         position: fixed;
@@ -331,6 +343,107 @@
         <div class="recipes" id="recipes"></div>
     </section>
 
+    <section id="remote-sec">
+        <h2>postMessage 遙控</h2>
+        <p class="sec-note">URL 參數是「載入時」的客製;<b>postMessage 是執行中的遙控</b>——
+        父頁面隨時能隔著 iframe 疆界下指令(讓觀眾用聊天室指令召喚寶可夢,就是靠這個)。
+        它是瀏覽器原生的跨視窗通道,<b>不走網路、不受 CORS 限制</b>,跨網域 iframe 直接可用。
+        總開關與節流見參數表的 <code>remote</code> / <code>remoteRateLimit</code>。</p>
+
+        <div class="card recipe" style="margin-bottom:16px">
+            <span class="label">🕹️ 現場試玩——指令直接打進底部預覽軌</span>
+            <div class="row" style="flex-wrap:wrap">
+                <button class="btn" data-remote='{"cmd":"spawn","id":143}'>🕊️ spawn:卡比獸飛過</button>
+                <button class="btn" data-remote='{"cmd":"spawn"}'>🎲 spawn:隨機客串</button>
+                <button class="btn" data-remote='{"cmd":"poke"}'>👆 poke:全員跳一下</button>
+                <button class="btn" data-remote='{"cmd":"burst"}'>✨ burst:星星重播</button>
+            </div>
+            <code class="q" id="remote-log">(按上面的按鈕,widget 的回執會即時顯示在這裡)</code>
+            <p class="hint" style="margin:0"><code>burst</code> 要場上有色違才有效果(回執的
+            <code>count</code> 會告訴你作用到幾隻)——先按食譜「全員色違遊行」再回來玩。</p>
+        </div>
+
+        <div class="card recipe" style="margin-bottom:16px">
+            <span class="label">快速開始(嵌入方網頁)</span>
+            <code class="codeblock" id="remote-snippet">&lt;iframe id="poke" src="https://rd7-ai-gw-02.i17game.net/poke-stroll/"
+        style="position:fixed; bottom:0; left:0; width:100%; height:200px;
+               border:none; pointer-events:none;"&gt;&lt;/iframe&gt;
+&lt;script&gt;
+    const poke = document.getElementById('poke');
+    function pokeCmd(cmd, extra = {}) {
+        poke.contentWindow.postMessage({ ns: 'poke-stroll', cmd, ...extra }, '*');
+    }
+    pokeCmd('spawn', { id: 143 });   // 例:客串一隻卡比獸高速飛過
+
+    // 回執(除錯與確認送達用)
+    window.addEventListener('message', e =&gt; {
+        if (e.data?.ns === 'poke-stroll' &amp;&amp; e.data.re) console.log(e.data);
+    });
+&lt;/script&gt;</code>
+            <div class="row"><button class="btn" data-copy-el="remote-snippet">📋 複製範例</button></div>
+        </div>
+
+        <div class="tablewrap card" style="margin-bottom:16px">
+            <table>
+                <thead>
+                    <tr><th>指令</th><th>參數</th><th>效果</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="name">spawn</td>
+                        <td class="range">id(選填,1 ~ 1025)</td>
+                        <td class="desc">客串一隻從畫面外高速橫越。帶 <code>id</code> 指定誰路過(<b>不限飛行系</b>,遙控的卡比獸也能飛);不帶就照常抽飛行池(含傳說機率那一層)。色違照全頁 <code>shinyChance</code> 擲骰</td>
+                    </tr>
+                    <tr>
+                        <td class="name">poke</td>
+                        <td class="range">id(選填)</td>
+                        <td class="desc">開心跳一下 + 冒愛心(跟滑鼠點擊同一種互動)。帶 <code>id</code> 只戳該圖鑑編號的成員,不帶就全員</td>
+                    </tr>
+                    <tr>
+                        <td class="name">burst</td>
+                        <td class="range">—</td>
+                        <td class="desc">場上所有<b>色違</b>立刻重播星星特效(重播排程會重排,不會越放越密);沒有色違就是 <code>count: 0</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card rules" style="margin-bottom:16px">
+            <ul>
+                <li><b>訊息格式</b>:<code>{ ns: 'poke-stroll', cmd: '…', …參數 }</code>。沒帶 <code>ns</code> 的訊息一律無視——父頁面常有別的 iframe 在互傳訊息,不是寄給我們的信不拆。</li>
+                <li><b>回執</b>:每道指令都回 <code>{ ns, re, ok, count?, reason? }</code> 給發送方;<code>reason</code> 可能是 <code>unknown cmd</code> / <code>id must be 1~1025</code> / <code>cameo pools not loaded</code> / <code>page hidden</code>(背景分頁不生成)/ <code>rate limited</code>。</li>
+                <li><b>節流</b>:每秒最多 <code>remoteRateLimit</code>(預設 10)道,超額整道丟棄——聊天室洗版也拖不垮渲染。</li>
+                <li><b>總開關</b>:<code>?remote=off</code> 後完全靜默(連回執都不給,像沒這功能)。</li>
+                <li><b>刻意不驗 origin</b>:指令全是無害的視覺效果、無機密無狀態,最壞情況是有人在他自己的頁面上讓皮卡丘跳舞。要鎖就直接 <code>remote=off</code>。</li>
+            </ul>
+        </div>
+
+        <div class="card recipe">
+            <span class="label">進階:接聊天室(OBS wrapper 模式)——外部程式碰不到 postMessage,讓 wrapper 對外連 WebSocket、對內轉譯</span>
+            <code class="codeblock" id="wrapper-snippet">&lt;!-- wrapper.html:OBS 瀏覽器來源載入這一頁(widget 本體完全不用改) --&gt;
+&lt;iframe id="poke" src="./pokemon_footer_widget.html"
+        style="position:fixed; inset:0; width:100%; height:100%; border:none;"&gt;&lt;/iframe&gt;
+&lt;script&gt;
+    const poke = document.getElementById('poke');
+    // Twitch 允許匿名唯讀連聊天室,零申請零金鑰
+    const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+    ws.onopen = () =&gt; {
+        ws.send('NICK justinfan12345');   // justinfan+數字 = 官方保留的匿名帳號
+        ws.send('JOIN #你的頻道名稱');
+    };
+    ws.onmessage = ev =&gt; {
+        if (ev.data.startsWith('PING')) return ws.send('PONG :tmi.twitch.tv');
+        // 觀眾打「!pokemon 143」→ 客串一隻卡比獸
+        const m = ev.data.match(/PRIVMSG #\S+ :!pokemon (\d{1,4})/);
+        if (m) poke.contentWindow.postMessage(
+            { ns: 'poke-stroll', cmd: 'spawn', id: Number(m[1]) }, '*');
+    };
+&lt;/script&gt;</code>
+            <div class="row"><button class="btn" data-copy-el="wrapper-snippet">📋 複製 wrapper 範例</button></div>
+            <p class="hint" style="margin:0">widget 端已內建每秒節流;想更嚴(單一觀眾冷卻、訂閱者限定)就在 wrapper 這層做——平台相關的邏輯全關在 wrapper 裡,widget 永遠不知道 Twitch 存在。</p>
+        </div>
+    </section>
+
     <footer>
         <p>寶可夢圖片來自 <a href="https://github.com/PokeAPI/sprites">PokeAPI sprites</a>;Pokémon 為任天堂 / Creatures Inc. / GAME FREAK inc. 之註冊商標。本專案為粉絲自娛用途。</p>
     </footer>
@@ -426,6 +539,10 @@
           desc: '觸發時抽「會飛的傳說池」（9 隻：三聖鳥/洛奇亞/鳳王/烈空坐/雲三家）而非「飛行池」（73 隻飛行系，平均分佈）的機率。兩池全員任一屬性槽都含飛行——固拉多再傳說也不會飛，不會亂入天空' },
         { name: 'flybySpeed',     type: 'float', range: '1 ~ 100',       def: '5',      group: '客串事件', sample: 'flybyChance=1&flybySpeed=15',
           desc: '橫越速度 px/幀（60fps 基準），實際每次 ±15% 隨機' },
+        { name: 'remote',         type: 'enum',  range: 'on / off',      def: 'on',     group: '遙控', sample: 'remote=off',
+          desc: 'postMessage 遙控總開關：off = 完全不理會遙控訊息（連回執都不給）。指令與串接方法見下方「postMessage 遙控」一節' },
+        { name: 'remoteRateLimit', type: 'int',  range: '1 ~ 100',       def: '10',     group: '遙控', sample: 'remoteRateLimit=3',
+          desc: '遙控指令節流：每秒最多處理幾道，超額的直接丟棄並回執 rate limited（防聊天室洗版）' },
     ];
 
     const RECIPES = [
@@ -524,6 +641,22 @@
             const el = document.getElementById(btn.dataset.copyEl);
             copyText(el.textContent, e.currentTarget);
         });
+    });
+
+    // ---------------------------------------------------------
+    // 遙控試玩：指令打進預覽軌的 iframe，回執即時顯示。
+    // 這一段本身就是「快速開始」範例的活教材——原始碼照抄即可串接
+    // ---------------------------------------------------------
+    const remoteLog = document.getElementById('remote-log');
+    document.querySelectorAll('[data-remote]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const msg = JSON.parse(btn.dataset.remote);
+            frame.contentWindow.postMessage({ ns: 'poke-stroll', ...msg }, '*');
+        });
+    });
+    window.addEventListener('message', e => {
+        if (!e.data || e.data.ns !== 'poke-stroll' || !e.data.re) return;
+        remoteLog.textContent = '回執 ← ' + JSON.stringify(e.data);
     });
 
     // ---------------------------------------------------------
