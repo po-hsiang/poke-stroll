@@ -11,9 +11,18 @@
 不帶參數就使用預設值。本機直接開檔案也支援(`file:///...pokemon_footer_widget.html?count=10`)。
 
 > 🕹️ **互動版文件**:部署站同捆一份 [`params.html`](https://rd7-ai-gw-02.i17game.net/poke-stroll/params.html)——
-> 可搜尋、分類篩選、一鍵複製,頁面底部有**即時預覽軌**,每道食譜按一下就能看效果。
+> 夜間模式介面,可搜尋、分類篩選、一鍵複製,頁面底部有**即時預覽軌**,每道食譜按一下就能看效果。
 > 給嵌入方同仁直接丟這個網址就好(本 repo 是私人的,他們看不到這份 .md)。
 > 本檔、該頁與程式內的參數白名單三方由 CI 自動檢查同步,不會漂移。
+
+文件頁本身也能嵌進團隊 wiki 或開發者後台。跟嵌 widget 相反,文件要互動,**不要**加 `pointer-events:none`,高度給足(建議 80vh 且 ≥ 600px):
+
+```html
+<iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/params.html"
+        title="PokéStroll 參數文件"
+        style="width:100%; height:80vh; min-height:600px; border:none;"
+        loading="lazy"></iframe>
+```
 
 ## 參數總表
 

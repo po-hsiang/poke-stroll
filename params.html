@@ -3,21 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#101828">
 <title>PokéStroll — URL 參數 API</title>
 <style>
-    /* 版面語彙直接取自 widget 本體的像素素材：
-       對話框的墨線黑 #2b2b2b、泡泡白、星光金 #ecb200、問號藍 #4a6fd8，
-       背景是 sprite 編輯器的淡棋盤格。所有「硬陰影」都是位移 0 模糊，維持點陣感 */
+    /* 夜間模式：底色 #101828（深夜藍）。版面語彙仍取自 widget 的像素素材，
+       只是全部翻到夜裡——墨線換成月光白、卡片是比背景亮一階的夜空藍、
+       星光金加亮一階（夜空才壓得住），背景是 sprite 編輯器棋盤格的暗色版。
+       「硬陰影」維持位移 0 模糊的點陣感。文字對比按 WCAG AA 校過：
+       主文對底 ≥ 12:1、次要文字 ≥ 6:1、金色強調 ≥ 8:1 */
     :root {
-        --ink: #2b2b2b;
-        --paper: #ffffff;
-        --gold: #ecb200;
-        --gold-soft: #fff3cd;
-        --blue: #4a6fd8;
-        --red: #e8455a;
-        --green: #1e642a;
-        --purple: #641e78;
-        --shadow: rgba(43, 43, 43, .22);
+        color-scheme: dark;     /* 原生控件（搜尋框、捲軸）跟著走暗色 */
+        --bg: #101828;          /* 頁面底色 */
+        --ink: #e7ecf6;         /* 墨線與主要文字：月光白 */
+        --muted: #93a1ba;       /* 次要文字：眉標、註記、頁尾 */
+        --paper: #182238;       /* 卡片底：亮一階的夜空藍 */
+        --paper-deep: #0d1526;  /* 程式碼與輸入框底：暗一階，做出凹陷感 */
+        --line: #2b3a58;        /* 細分隔線、code 邊框 */
+        --gold: #ffc934;
+        --gold-ink: #241d05;    /* 壓在金色上的深色字（金底不能配白字） */
+        --gold-soft: rgba(255, 201, 52, .16);
+        --blue: #8ab4ff;        /* 連結：暗底要亮得起來 */
+        --shadow: rgba(0, 0, 0, .5);
         --mono: ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace;
         --sans: 'Segoe UI', 'Noto Sans TC', system-ui, sans-serif;
         --dock-h: 150px;  /* 底部預覽軌高度，跟 widget 的活動區一致 */
@@ -27,10 +33,11 @@
     body {
         font: 15px/1.75 var(--sans);
         color: var(--ink);
-        /* sprite 編輯器的透明棋盤格，對比壓到極低當紙面紋理 */
-        background:
-            conic-gradient(#f7f8fa 25%, #fdfdfe 0 50%, #f7f8fa 0 75%, #fdfdfe 0)
-            0 0 / 28px 28px;
+        /* sprite 編輯器的透明棋盤格，暗色版同樣壓到極低對比當底紋 */
+        background-color: var(--bg);
+        background-image:
+            conic-gradient(#0e1524 25%, #121b2e 0 50%, #0e1524 0 75%, #121b2e 0);
+        background-size: 28px 28px;
         padding-bottom: calc(var(--dock-h) + 96px); /* 給底部預覽軌讓路 */
     }
     .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
@@ -39,8 +46,9 @@
     code, .q {
         font-family: var(--mono);
         font-size: .92em;
-        background: #f1f3f5;
-        border: 1px solid #dde1e5;
+        color: #dbe4f5;
+        background: var(--paper-deep);
+        border: 1px solid var(--line);
         padding: 1px 5px;
     }
 
@@ -49,7 +57,7 @@
     .eyebrow {
         font: 700 12px/1 var(--mono);
         letter-spacing: .35em;
-        color: #8a8f94;
+        color: var(--muted);
         margin: 0 0 18px 4px;
     }
     .h1-bubble {
@@ -89,7 +97,7 @@
         margin: 0 0 6px;
     }
     h2::before { content: '◆ '; color: var(--gold); }
-    .sec-note { margin: 0 0 16px; color: #5d6368; }
+    .sec-note { margin: 0 0 16px; color: var(--muted); }
 
     /* ---- 卡片與按鈕的像素外框 ---- */
     .card {
@@ -109,22 +117,24 @@
     }
     .btn:hover { background: var(--gold-soft); }
     .btn:active { transform: translate(2px, 2px); box-shadow: none; }
-    .btn.primary { background: var(--gold); }
-    .btn.primary:hover { background: #ffc61a; }
+    .btn.primary { background: var(--gold); color: var(--gold-ink); }
+    .btn.primary:hover { background: #ffd75e; }
     .btn:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
 
     /* ---- 工具列：搜尋 + 分類 ---- */
     .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
     #search {
         font: 14px var(--sans);
+        color: var(--ink);
         border: 2px solid var(--ink);
-        box-shadow: inset 2px 2px 0 rgba(43,43,43,.08);
+        box-shadow: inset 2px 2px 0 rgba(0,0,0,.35);
         padding: 8px 10px;
         width: 240px;
         max-width: 100%;
-        background: var(--paper);
+        background: var(--paper-deep);
     }
-    #chips .btn[aria-pressed="true"] { background: var(--gold); }
+    #search::placeholder { color: #7788a5; }
+    #chips .btn[aria-pressed="true"] { background: var(--gold); color: var(--gold-ink); }
 
     /* ---- 參數表 ---- */
     .tablewrap { overflow-x: auto; }
@@ -133,26 +143,26 @@
         font: 700 12px/1 var(--mono);
         letter-spacing: .08em;
         text-align: left;
-        background: var(--ink);
-        color: #fff;
+        background: #0a101d; /* 表頭沉到最深的一階，光字浮在上面 */
+        color: var(--ink);
         padding: 10px 12px;
         position: sticky;
         top: 0;
     }
     tbody td {
         padding: 10px 12px;
-        border-bottom: 1px solid #e6e9ec;
+        border-bottom: 1px solid #24324e;
         vertical-align: top;
     }
-    tbody tr:hover { background: #fffdf2; }
+    tbody tr:hover { background: #1e2a44; }
     td.name {
         font: 700 13.5px var(--mono);
         white-space: nowrap;
         cursor: copy;
     }
-    td.name:hover { color: #a37b00; }
+    td.name:hover { color: var(--gold); }
     td.range, td.def { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
-    td.desc { min-width: 300px; color: #3c4145; }
+    td.desc { min-width: 300px; color: #c4cee1; }
     .badge {
         display: inline-block;
         font: 700 10.5px/1 var(--mono);
@@ -160,24 +170,27 @@
         padding: 3px 6px;
         letter-spacing: .05em;
     }
-    .badge.int   { background: var(--blue); }
-    .badge.float { background: var(--green); }
-    .badge.enum  { background: var(--purple); }
-    .badge.list  { background: #8c6d1f; }
+    /* 徽章底色比亮色版加深半階：白字對比 ≥ 5:1，暗底上仍看得出色相 */
+    .badge.int   { background: #3d63cf; }
+    .badge.float { background: #1e7a35; }
+    .badge.enum  { background: #8438a4; }
+    .badge.list  { background: #7a5c12; }
     .add {
         font: 700 14px/1 var(--mono);
+        color: var(--ink);
         border: 2px solid var(--ink);
         background: var(--paper);
         cursor: pointer;
         width: 26px; height: 26px;
         box-shadow: 2px 2px 0 var(--shadow);
     }
-    .add:hover { background: var(--gold); }
+    .add:hover { background: var(--gold); color: var(--gold-ink); }
     .add:active { transform: translate(2px,2px); box-shadow: none; }
-    .hint { font-size: 13px; color: #7a8085; margin: 8px 2px 0; }
+    .hint { font-size: 13px; color: var(--muted); margin: 8px 2px 0; }
     .hint kbd {
-        font-family: var(--mono); font-size: 11.5px;
-        border: 1px solid #c8cdd2; border-bottom-width: 2px; padding: 0 4px; background: #fff;
+        font-family: var(--mono); font-size: 11.5px; color: var(--ink);
+        border: 1px solid var(--line); border-bottom-width: 2px; padding: 0 4px;
+        background: var(--paper-deep);
     }
 
     /* ---- 容錯規則 ---- */
@@ -200,16 +213,17 @@
         white-space: nowrap;
         padding: 6px 8px;
     }
-    #hero-snippet { white-space: pre; line-height: 1.6; } /* 保留 iframe 範例的三行排版 */
+    #hero-snippet, #doc-embed-snippet { white-space: pre; line-height: 1.6; } /* 保留 iframe 範例的多行排版 */
     .recipe .row { display: flex; gap: 8px; margin-top: auto; }
 
     /* ---- 遙控 API：多行程式碼區塊 ---- */
     .codeblock {
         display: block;
         font: 12.5px/1.7 var(--mono);
+        color: #dbe4f5;
         border: 2px solid var(--ink);
-        box-shadow: inset 2px 2px 0 rgba(43,43,43,.08);
-        background: #fffef8;
+        box-shadow: inset 2px 2px 0 rgba(0,0,0,.35);
+        background: var(--paper-deep);
         padding: 12px 14px;
         overflow-x: auto;
         white-space: pre;
@@ -229,29 +243,31 @@
         align-items: center;
         flex-wrap: wrap;
         padding: 8px 14px;
-        border-bottom: 1px dashed #d5d9dd;
+        border-bottom: 1px dashed #33415f;
     }
     #dockbar .tag {
         font: 700 11px/1 var(--mono);
         letter-spacing: .25em;
-        color: #8a8f94;
+        color: var(--muted);
         margin-right: 2px;
     }
     #query {
         flex: 1;
         min-width: 200px;
         font: 13px var(--mono);
+        color: var(--ink);
         border: 2px solid var(--ink);
         padding: 7px 9px;
-        background: #fffef8;
+        background: var(--paper-deep);
     }
+    #query::placeholder { color: #7788a5; }
     #frame {
         display: block;
         width: 100%;
         height: var(--dock-h);
         border: none;
         background:
-            conic-gradient(#f4f6f8 25%, #fbfcfd 0 50%, #f4f6f8 0 75%, #fbfcfd 0)
+            conic-gradient(#0c1322 25%, #101a2e 0 50%, #0c1322 0 75%, #101a2e 0)
             0 0 / 22px 22px;
     }
 
@@ -282,7 +298,7 @@
         #toast.show { animation: none; }
     }
 
-    footer { margin-top: 60px; font-size: 13px; color: #7a8085; }
+    footer { margin-top: 60px; font-size: 13px; color: var(--muted); }
     footer p { margin: 4px 0; }
 </style>
 </head>
@@ -296,11 +312,22 @@
         不帶參數就使用預設值;亂帶參數不會弄壞頁面(見容錯規則)。
         頁面最底下那條就是<b>即時預覽軌</b>——每個參數、每道食譜都能一鍵丟進去看效果。</p>
         <div class="card recipe" style="max-width:640px">
-            <span class="label">iframe 嵌入範例</span>
+            <span class="label">iframe 嵌入範例(嵌 widget 本體)</span>
             <code class="q" id="hero-snippet">&lt;iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/?count=5&amp;baseSize=120"
         style="position:fixed; bottom:0; left:0; width:100%; height:200px;
                border:none; pointer-events:none;"&gt;&lt;/iframe&gt;</code>
             <div class="row"><button class="btn" data-copy-el="hero-snippet">📋 複製嵌入碼</button></div>
+        </div>
+        <div class="card recipe" style="max-width:640px; margin-top:14px">
+            <span class="label">iframe 嵌入範例(嵌這份說明文件——團隊 wiki / 開發者後台適用)</span>
+            <code class="q" id="doc-embed-snippet">&lt;iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/params.html"
+        title="PokéStroll 參數文件"
+        style="width:100%; height:80vh; min-height:600px; border:none;"
+        loading="lazy"&gt;&lt;/iframe&gt;</code>
+            <div class="row"><button class="btn" data-copy-el="doc-embed-snippet">📋 複製文件嵌入碼</button></div>
+            <p class="hint" style="margin:0">跟嵌 widget 相反:文件頁要互動,<b>不要</b>加
+            <code>pointer-events:none</code>;高度給足(建議 80vh 且 ≥ 600px),
+            搜尋、試玩按鈕和底部預覽軌才施展得開。</p>
         </div>
     </header>
 
