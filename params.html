@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PokéStroll — URL 參數 API</title>
+<style>
+    /* 版面語彙直接取自 widget 本體的像素素材：
+       對話框的墨線黑 #2b2b2b、泡泡白、星光金 #ecb200、問號藍 #4a6fd8，
+       背景是 sprite 編輯器的淡棋盤格。所有「硬陰影」都是位移 0 模糊，維持點陣感 */
+    :root {
+        --ink: #2b2b2b;
+        --paper: #ffffff;
+        --gold: #ecb200;
+        --gold-soft: #fff3cd;
+        --blue: #4a6fd8;
+        --red: #e8455a;
+        --green: #1e642a;
+        --purple: #641e78;
+        --shadow: rgba(43, 43, 43, .22);
+        --mono: ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+        --sans: 'Segoe UI', 'Noto Sans TC', system-ui, sans-serif;
+        --dock-h: 150px;  /* 底部預覽軌高度，跟 widget 的活動區一致 */
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+        font: 15px/1.75 var(--sans);
+        color: var(--ink);
+        /* sprite 編輯器的透明棋盤格，對比壓到極低當紙面紋理 */
+        background:
+            conic-gradient(#f7f8fa 25%, #fdfdfe 0 50%, #f7f8fa 0 75%, #fdfdfe 0)
+            0 0 / 28px 28px;
+        padding-bottom: calc(var(--dock-h) + 96px); /* 給底部預覽軌讓路 */
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+
+    a { color: var(--blue); }
+    code, .q {
+        font-family: var(--mono);
+        font-size: .92em;
+        background: #f1f3f5;
+        border: 1px solid #dde1e5;
+        padding: 1px 5px;
+    }
+
+    /* ---- Hero：對話框造型的標題，尾巴朝下指向底部散步中的牠們 ---- */
+    header { padding: 44px 0 8px; }
+    .eyebrow {
+        font: 700 12px/1 var(--mono);
+        letter-spacing: .35em;
+        color: #8a8f94;
+        margin: 0 0 18px 4px;
+    }
+    .h1-bubble {
+        display: inline-block;
+        position: relative;
+        background: var(--paper);
+        border: 3px solid var(--ink);
+        box-shadow: 6px 6px 0 var(--shadow);
+        padding: 18px 28px 14px;
+        margin-bottom: 26px;
+    }
+    .h1-bubble::after { /* 尾巴：朝下，指向頁面底部的預覽軌 */
+        content: '';
+        position: absolute;
+        left: 34px;
+        bottom: -12px;
+        width: 16px;
+        height: 16px;
+        background: var(--paper);
+        border-right: 3px solid var(--ink);
+        border-bottom: 3px solid var(--ink);
+        transform: rotate(45deg);
+    }
+    h1 {
+        margin: 0;
+        font: 800 clamp(24px, 4.5vw, 34px)/1.2 var(--mono);
+        letter-spacing: .02em;
+    }
+    h1 .tail-note { color: var(--gold); }
+    .lead { max-width: 640px; margin: 0 0 20px; }
+    .lead b { background: var(--gold-soft); padding: 0 3px; }
+
+    /* ---- 區塊標題：金色像素菱形 + 等寬字 ---- */
+    section { margin-top: 52px; }
+    h2 {
+        font: 800 19px/1.3 var(--mono);
+        margin: 0 0 6px;
+    }
+    h2::before { content: '◆ '; color: var(--gold); }
+    .sec-note { margin: 0 0 16px; color: #5d6368; }
+
+    /* ---- 卡片與按鈕的像素外框 ---- */
+    .card {
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        box-shadow: 4px 4px 0 var(--shadow);
+    }
+    .btn {
+        font: 700 12.5px/1 var(--mono);
+        color: var(--ink);
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        box-shadow: 2px 2px 0 var(--shadow);
+        padding: 7px 10px;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .btn:hover { background: var(--gold-soft); }
+    .btn:active { transform: translate(2px, 2px); box-shadow: none; }
+    .btn.primary { background: var(--gold); }
+    .btn.primary:hover { background: #ffc61a; }
+    .btn:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
+
+    /* ---- 工具列：搜尋 + 分類 ---- */
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+    #search {
+        font: 14px var(--sans);
+        border: 2px solid var(--ink);
+        box-shadow: inset 2px 2px 0 rgba(43,43,43,.08);
+        padding: 8px 10px;
+        width: 240px;
+        max-width: 100%;
+        background: var(--paper);
+    }
+    #chips .btn[aria-pressed="true"] { background: var(--gold); }
+
+    /* ---- 參數表 ---- */
+    .tablewrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 760px; background: var(--paper); }
+    thead th {
+        font: 700 12px/1 var(--mono);
+        letter-spacing: .08em;
+        text-align: left;
+        background: var(--ink);
+        color: #fff;
+        padding: 10px 12px;
+        position: sticky;
+        top: 0;
+    }
+    tbody td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #e6e9ec;
+        vertical-align: top;
+    }
+    tbody tr:hover { background: #fffdf2; }
+    td.name {
+        font: 700 13.5px var(--mono);
+        white-space: nowrap;
+        cursor: copy;
+    }
+    td.name:hover { color: #a37b00; }
+    td.range, td.def { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+    td.desc { min-width: 300px; color: #3c4145; }
+    .badge {
+        display: inline-block;
+        font: 700 10.5px/1 var(--mono);
+        color: #fff;
+        padding: 3px 6px;
+        letter-spacing: .05em;
+    }
+    .badge.int   { background: var(--blue); }
+    .badge.float { background: var(--green); }
+    .badge.enum  { background: var(--purple); }
+    .badge.list  { background: #8c6d1f; }
+    .add {
+        font: 700 14px/1 var(--mono);
+        border: 2px solid var(--ink);
+        background: var(--paper);
+        cursor: pointer;
+        width: 26px; height: 26px;
+        box-shadow: 2px 2px 0 var(--shadow);
+    }
+    .add:hover { background: var(--gold); }
+    .add:active { transform: translate(2px,2px); box-shadow: none; }
+    .hint { font-size: 13px; color: #7a8085; margin: 8px 2px 0; }
+    .hint kbd {
+        font-family: var(--mono); font-size: 11.5px;
+        border: 1px solid #c8cdd2; border-bottom-width: 2px; padding: 0 4px; background: #fff;
+    }
+
+    /* ---- 容錯規則 ---- */
+    .rules { padding: 6px 22px; }
+    .rules ul { margin: 12px 0; padding-left: 2px; list-style: none; }
+    .rules li { padding-left: 20px; position: relative; margin: 7px 0; }
+    .rules li::before { content: '▪'; position: absolute; left: 2px; color: var(--gold); }
+
+    /* ---- 食譜卡 ---- */
+    .recipes {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+        gap: 14px;
+    }
+    .recipe { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .recipe .label { font-weight: 700; }
+    .recipe .q {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        padding: 6px 8px;
+    }
+    #hero-snippet { white-space: pre; line-height: 1.6; } /* 保留 iframe 範例的三行排版 */
+    .recipe .row { display: flex; gap: 8px; margin-top: auto; }
+
+    /* ---- 底部預覽軌：牠們就在這條軌上散步 ---- */
+    #dock {
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        z-index: 50;
+        background: var(--paper);
+        border-top: 3px solid var(--ink);
+    }
+    #dockbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 8px 14px;
+        border-bottom: 1px dashed #d5d9dd;
+    }
+    #dockbar .tag {
+        font: 700 11px/1 var(--mono);
+        letter-spacing: .25em;
+        color: #8a8f94;
+        margin-right: 2px;
+    }
+    #query {
+        flex: 1;
+        min-width: 200px;
+        font: 13px var(--mono);
+        border: 2px solid var(--ink);
+        padding: 7px 9px;
+        background: #fffef8;
+    }
+    #frame {
+        display: block;
+        width: 100%;
+        height: var(--dock-h);
+        border: none;
+        background:
+            conic-gradient(#f4f6f8 25%, #fbfcfd 0 50%, #f4f6f8 0 75%, #fbfcfd 0)
+            0 0 / 22px 22px;
+    }
+
+    /* ---- 「已複製」對話框：跟 widget 的心情泡泡同一套造型 ---- */
+    #toast {
+        position: fixed;
+        z-index: 99;
+        background: var(--paper);
+        border: 3px solid var(--ink);
+        box-shadow: 3px 3px 0 var(--shadow);
+        font: 700 13px/1 var(--mono);
+        padding: 8px 12px;
+        display: none;
+    }
+    #toast::after {
+        content: '';
+        position: absolute;
+        left: 16px; bottom: -8px;
+        width: 10px; height: 10px;
+        background: var(--paper);
+        border-right: 3px solid var(--ink);
+        border-bottom: 3px solid var(--ink);
+        transform: rotate(45deg);
+    }
+    #toast.show { display: block; animation: pop .18s steps(2, end); }
+    @keyframes pop { from { transform: translateY(6px); } to { transform: translateY(0); } }
+    @media (prefers-reduced-motion: reduce) {
+        #toast.show { animation: none; }
+    }
+
+    footer { margin-top: 60px; font-size: 13px; color: #7a8085; }
+    footer p { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+    <header>
+        <p class="eyebrow">POKÉSTROLL 開發者文件</p>
+        <div class="h1-bubble"><h1>URL 參數 API<span class="tail-note"> ?</span></h1></div>
+        <p class="lead">嵌入 PokéStroll 時,在網址後面用 query string 客製行為,<b>不用改任何程式或設定檔</b>。
+        不帶參數就使用預設值;亂帶參數不會弄壞頁面(見容錯規則)。
+        頁面最底下那條就是<b>即時預覽軌</b>——每個參數、每道食譜都能一鍵丟進去看效果。</p>
+        <div class="card recipe" style="max-width:640px">
+            <span class="label">iframe 嵌入範例</span>
+            <code class="q" id="hero-snippet">&lt;iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/?count=5&amp;baseSize=120"
+        style="position:fixed; bottom:0; left:0; width:100%; height:200px;
+               border:none; pointer-events:none;"&gt;&lt;/iframe&gt;</code>
+            <div class="row"><button class="btn" data-copy-el="hero-snippet">📋 複製嵌入碼</button></div>
+        </div>
+    </header>
+
+    <section id="params">
+        <h2>參數總表</h2>
+        <p class="sec-note">共 <span id="param-count"></span> 個參數。點<b>參數名稱</b>直接複製;點列尾的 <code>+</code> 把該參數（帶示範值）加進底部預覽軌。</p>
+        <div class="toolbar">
+            <input id="search" type="search" placeholder="搜尋參數或說明…" aria-label="搜尋參數">
+            <span id="chips"></span>
+        </div>
+        <div class="tablewrap card">
+            <table>
+                <thead>
+                    <tr><th>參數</th><th>型別</th><th>允許範圍</th><th>預設</th><th>說明</th><th></th></tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+        <p class="hint">預設值以部署當下的 <code>config.js</code> 為準;此頁與 <code>PARAMS.md</code>、程式內的參數白名單由 CI 自動檢查同步。</p>
+    </section>
+
+    <section id="rules">
+        <h2>容錯規則</h2>
+        <p class="sec-note">亂帶參數不會弄壞頁面,規則如下(都會在瀏覽器 console 留下警告):</p>
+        <div class="card rules">
+            <ul>
+                <li><b>不在表上的參數</b>:直接無視。</li>
+                <li><b>非數字或超出允許範圍</b>:忽略該參數,使用預設值。</li>
+                <li><b><code>minId</code> &gt; <code>maxId</code></b> 或 <b><code>lookTimeMin</code> &gt; <code>lookTimeMax</code></b>:自動對調。</li>
+                <li><b><code>boundsMin</code> &gt;= <code>boundsMax</code></b>:整組退回預設 0.1 ~ 0.9。</li>
+                <li><b><code>count</code> 超過可抽選的編號數量</b>:自動夾到 <code>maxId - minId + 1</code>(避免抽選卡死)。</li>
+                <li><b><code>ids</code> 內的非法編號</b>:逐一剔除,全部非法才退回隨機抽選。</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="recipes-sec">
+        <h2>範例食譜</h2>
+        <p class="sec-note">按「▶ 預覽」直接在底部軌道看效果,滿意再複製。</p>
+        <div class="recipes" id="recipes"></div>
+    </section>
+
+    <footer>
+        <p>寶可夢圖片來自 <a href="https://github.com/PokeAPI/sprites">PokeAPI sprites</a>;Pokémon 為任天堂 / Creatures Inc. / GAME FREAK inc. 之註冊商標。本專案為粉絲自娛用途。</p>
+    </footer>
+</div>
+
+<!-- 底部預覽軌:widget 本尊直接在文件頁底散步 -->
+<div id="dock">
+    <div id="dockbar">
+        <span class="tag">預覽軌</span>
+        <input id="query" type="text" spellcheck="false"
+               placeholder="count=5&baseSize=120 …(可直接編輯,Enter 套用)" aria-label="預覽用 query string">
+        <button class="btn primary" id="apply">套用</button>
+        <button class="btn" id="reroll" title="同參數重抽一批">🎲 重抽</button>
+        <button class="btn" id="copy-embed">📋 複製嵌入碼</button>
+    </div>
+    <iframe id="frame" title="PokéStroll 即時預覽" src="./pokemon_footer_widget.html"></iframe>
+</div>
+
+<div id="toast" role="status">已複製！</div>
+
+<script>
+    // =========================================================
+    // 參數資料（此區塊由 test/params-doc.test.js 檢查：
+    // name 欄位必須與 PARAMS.md 及 widget 的 QUERY_PARAMS 白名單一致）
+    // sample 是「加進預覽」用的示範值，刻意跟預設值不同才看得出變化
+    // =========================================================
+    const PARAMS = [
+        { name: 'count',          type: 'int',   range: '1 ~ 50',        def: '4',      group: '生成', sample: 'count=8',
+          desc: '同時生成的寶可夢數量' },
+        { name: 'minId',          type: 'int',   range: '1 ~ 1025',      def: '1',      group: '生成', sample: 'minId=152',
+          desc: '隨機抽選的圖鑑編號下限' },
+        { name: 'maxId',          type: 'int',   range: '1 ~ 1025',      def: '649',    group: '生成', sample: 'maxId=151',
+          desc: '隨機抽選的圖鑑編號上限（650 以後沒有動態 GIF，會退回靜態圖）' },
+        { name: 'ids',            type: 'list',  range: '各 1 ~ 1025，最多 50 隻', def: '—', group: '生成', sample: 'ids=25,133,6',
+          desc: '固定生成清單，逗號分隔（如 ids=25,133,6）。設了就無視 count / minId / maxId 的隨機抽選；允許重複編號' },
+        { name: 'baseSpeed',      type: 'float', range: '0 ~ 10',        def: '0.25',   group: '移動與範圍', sample: 'baseSpeed=0.6',
+          desc: '基礎移動速度（px/幀，60fps 基準）' },
+        { name: 'speedVariance',  type: 'float', range: '0 ~ 10',        def: '0.25',   group: '移動與範圍', sample: 'speedVariance=1',
+          desc: '個體間的速度差異上限' },
+        { name: 'boundsMin',      type: 'float', range: '0 ~ 1',         def: '0.1',    group: '移動與範圍', sample: 'boundsMin=0.4',
+          desc: '活動範圍左界（占畫面寬度比例）' },
+        { name: 'boundsMax',      type: 'float', range: '0 ~ 1',         def: '0.9',    group: '移動與範圍', sample: 'boundsMax=0.6',
+          desc: '活動範圍右界（必須大於 boundsMin）' },
+        { name: 'personalSpace',  type: 'int',   range: '0 ~ 1000',      def: '56',     group: '移動與範圍', sample: 'personalSpace=150',
+          desc: '同伴間最小距離 px，太近會掉頭' },
+        { name: 'idleChance',     type: 'float', range: '0 ~ 1',         def: '0.01',   group: '發呆與對話框', sample: 'idleChance=0.05',
+          desc: '每一幀進入發呆狀態的機率' },
+        { name: 'lookTimeMin',    type: 'int',   range: '0 ~ 60000',     def: '2000',   group: '發呆與對話框', sample: 'lookTimeMin=4000',
+          desc: '發呆時間下限（ms）' },
+        { name: 'lookTimeMax',    type: 'int',   range: '0 ~ 60000',     def: '5000',   group: '發呆與對話框', sample: 'lookTimeMax=9000',
+          desc: '發呆時間上限（ms）' },
+        { name: 'bubbleChance',   type: 'float', range: '0 ~ 1',         def: '0.33',   group: '發呆與對話框', sample: 'bubbleChance=1',
+          desc: '發呆時冒出心情對話框的機率（八種圖案隨機）' },
+        { name: 'idleJumpChance', type: 'float', range: '0 ~ 1',         def: '0.003',  group: '發呆與對話框', sample: 'idleJumpChance=0.02',
+          desc: '發呆時每一幀「原地開心跳一下」的機率（預設約半數發呆會跳個一兩下，0 關閉）' },
+        { name: 'bubblePosition', type: 'enum',  range: 'top / side / none', def: 'side', group: '發呆與對話框', sample: 'bubblePosition=top',
+          desc: '對話框位置：top 頭頂正上方、side 面向方向的側邊（尾巴移到靠本體那個下角、鏡像成朝內指回本體；轉向自動換邊，走到畫面邊緣快被裁掉也會自動翻到內側）、none 完全不顯示（空間有限的頁面適用）' },
+        { name: 'bubbleLayer',    type: 'enum',  range: 'front / behind', def: 'front', group: '發呆與對話框', sample: 'bubbleLayer=behind',
+          desc: '對話框在本體的上層（front，像遊戲裡角色講話的對話框，會遮到一點身體）還是下層（behind，完全不遮本體）。注意：只在同一隻的本體之間分層，右邊鄰居的身體仍可能蓋到你的對話框（每隻的堆疊層級按 X 座標排）' },
+        { name: 'bubbleSideGap',  type: 'int',   range: '-20 ~ 50',      def: '-5',     group: '發呆與對話框', sample: 'bubbleSideGap=6',
+          desc: '只在 bubblePosition=side 生效：本體邊緣與對話框的左右空隙。單位是點陣圖像素，會乘上放大倍率（小/中 2x、大 3x）。預設為負數 = 往身體上疊，搭配 bubbleLayer=front 才像在講話；0 = 貼齊邊緣；正數 = 完全不重疊。也會影響「快出畫面翻到內側」的判斷' },
+        { name: 'bubbleSideLift', type: 'int',   range: '-50 ~ 100',     def: '2',      group: '發呆與對話框', sample: 'bubbleSideLift=12',
+          desc: '只在 bubblePosition=side 生效：垂直微調 px。對話框底邊本來錨在身高六成處，這個值再往上加（負數往下）。單位是螢幕 px、不乘放大倍率' },
+        { name: 'shinyChance',    type: 'float', range: '0 ~ 1',         def: '1/100',  group: '色違', sample: 'shinyChance=1',
+          desc: '每一隻獨立擲骰出現色違的機率（預設調得比正作的 1/4096 高很多，直播才熱鬧）。色違登場時必定亮出金色閃光對話框 + 星星四散特效，且該對話框有 4 秒保護期，不會被隨後的心情或被戳的愛心蓋掉' },
+        { name: 'shinyBurstDuration', type: 'int', range: '100 ~ 10000', def: '1400',   group: '色違', sample: 'shinyChance=1&shinyBurstDuration=3000',
+          desc: '色違登場星星特效的飛散＋淡出總時長 ms' },
+        { name: 'hopHeight',      type: 'float', range: '0 ~ 50',        def: '3',      group: '動畫與外觀', sample: 'hopHeight=8',
+          desc: '走路跳步的基礎高度 px' },
+        { name: 'hopVariance',    type: 'float', range: '0 ~ 50',        def: '2',      group: '動畫與外觀', sample: 'hopVariance=6',
+          desc: '個體間的跳步高度差異上限' },
+        { name: 'hopFrequency',   type: 'float', range: '0 ~ 1',         def: '0.005',  group: '動畫與外觀', sample: 'hopFrequency=0.012',
+          desc: '跳步頻率（越小跳越慢）' },
+        { name: 'baseSize',       type: 'int',   range: '16 ~ 512',      def: '128',    group: '動畫與外觀', sample: 'baseSize=200',
+          desc: '「大」體型的顯示高度 px（中 = 0.8 倍、小 = 0.6 倍）' },
+        { name: 'shadowWidthRatio', type: 'float', range: '0 ~ 2',       def: '0.9',    group: '動畫與外觀', sample: 'shadowWidthRatio=1.5',
+          desc: '影子寬度相對寶可夢寬度的比例' },
+    ];
+
+    const RECIPES = [
+        { label: '專案吉祥物固定陣容（皮卡丘＋伊布＋噴火龍）', query: 'ids=25,133,6' },
+        { label: '五隻伊布', query: 'ids=133,133,133,133,133' },
+        { label: '初代御三家世界', query: 'minId=1&maxId=151&count=6' },
+        { label: '寶可夢大遊行', query: 'count=20&baseSpeed=0.4' },
+        { label: '安靜穩重風（少動多發呆，不冒泡）', query: 'baseSpeed=0.1&idleChance=0.03&bubblePosition=none' },
+        { label: '對話框改回頭頂（側邊空間有限時）', query: 'bubblePosition=top' },
+        { label: '對話框不要疊在身體上', query: 'bubbleSideGap=2' },
+        { label: '對話框往身體疊更多', query: 'bubbleSideGap=-14' },
+        { label: '對話框再高一點', query: 'bubbleSideLift=8' },
+        { label: '對話框躲到寶可夢後面', query: 'bubbleLayer=behind' },
+        { label: '全員色違遊行', query: 'shinyChance=1&count=10' },
+        { label: '回到正作原生的色違機率', query: 'shinyChance=0.000244' },
+        { label: '過動兒模式（常發呆、狂跳）', query: 'idleChance=0.03&idleJumpChance=0.02' },
+        { label: '色違煙火放好放滿', query: 'shinyChance=1&shinyBurstDuration=3000' },
+        { label: '巨大化', query: 'baseSize=160&count=2' },
+        { label: '只在畫面右半邊活動', query: 'boundsMin=0.5&boundsMax=0.95' },
+    ];
+
+    // ---------------------------------------------------------
+    // 預覽軌：iframe 指向同資料夾的 widget 本體，
+    // 部署後（/poke-stroll/params.html）與本機 file:// 都直接可用
+    // ---------------------------------------------------------
+    const PROD_BASE = 'https://rd7-ai-gw-02.i17game.net/poke-stroll/';
+    const frame = document.getElementById('frame');
+    const queryInput = document.getElementById('query');
+
+    function currentQuery() {
+        return queryInput.value.trim().replace(/^\?/, '');
+    }
+    function applyPreview(q) {
+        if (q !== undefined) queryInput.value = q;
+        const src = './pokemon_footer_widget.html' + (currentQuery() ? '?' + currentQuery() : '');
+        // 先清空再載入：即使 query 沒變也強制重載（= 重抽一批）
+        frame.src = 'about:blank';
+        requestAnimationFrame(() => { frame.src = src; });
+    }
+    document.getElementById('apply').addEventListener('click', () => applyPreview());
+    document.getElementById('reroll').addEventListener('click', () => applyPreview());
+    queryInput.addEventListener('keydown', e => { if (e.key === 'Enter') applyPreview(); });
+
+    // 嵌入碼：部署環境用「目前網址的目錄」當 base，本機 file:// 則退回正式站網址
+    function embedSnippet() {
+        const base = location.protocol.startsWith('http')
+            ? new URL('.', location.href).href
+            : PROD_BASE;
+        const q = currentQuery();
+        return `<iframe src="${base}${q ? '?' + q : ''}"\n` +
+               `        style="position:fixed; bottom:0; left:0; width:100%; height:200px;\n` +
+               `               border:none; pointer-events:none;"></iframe>`;
+    }
+
+    // ---------------------------------------------------------
+    // 複製 + 「已複製！」像素泡泡
+    // ---------------------------------------------------------
+    const toast = document.getElementById('toast');
+    let toastTimer;
+    function copyText(text, anchorEl) {
+        const done = () => {
+            const r = anchorEl.getBoundingClientRect();
+            toast.style.left = Math.max(8, r.left) + 'px';
+            toast.style.top = Math.max(8, r.top - 46) + 'px';
+            toast.classList.remove('show');
+            void toast.offsetWidth; // 重新觸發動畫
+            toast.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toast.classList.remove('show'), 1000);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+        } else {
+            fallbackCopy(text, done);
+        }
+    }
+    function fallbackCopy(text, done) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) { /* 剪貼簿不可用就算了 */ }
+        ta.remove();
+        done();
+    }
+    document.getElementById('copy-embed').addEventListener('click', e => copyText(embedSnippet(), e.currentTarget));
+    document.querySelectorAll('[data-copy-el]').forEach(btn => {
+        btn.addEventListener('click', e => {
+            const el = document.getElementById(btn.dataset.copyEl);
+            copyText(el.textContent, e.currentTarget);
+        });
+    });
+
+    // ---------------------------------------------------------
+    // 參數表：渲染 + 搜尋 + 分類篩選
+    // ---------------------------------------------------------
+    const GROUPS = ['全部', ...new Set(PARAMS.map(p => p.group))];
+    let activeGroup = '全部';
+    const tbody = document.getElementById('tbody');
+    const badgeLabel = { int: 'INT', float: 'FLOAT', enum: 'ENUM', list: 'LIST' };
+
+    document.getElementById('param-count').textContent = PARAMS.length;
+
+    function renderTable() {
+        const kw = document.getElementById('search').value.trim().toLowerCase();
+        tbody.innerHTML = '';
+        for (const p of PARAMS) {
+            if (activeGroup !== '全部' && p.group !== activeGroup) continue;
+            if (kw && !(p.name.toLowerCase().includes(kw) || p.desc.toLowerCase().includes(kw))) continue;
+            const tr = document.createElement('tr');
+
+            const tdName = document.createElement('td');
+            tdName.className = 'name';
+            tdName.textContent = p.name;
+            tdName.title = '點一下複製參數名稱';
+            tdName.addEventListener('click', e => copyText(p.name, e.currentTarget));
+            tr.appendChild(tdName);
+
+            const tdType = document.createElement('td');
+            tdType.innerHTML = `<span class="badge ${p.type}">${badgeLabel[p.type]}</span>`;
+            tr.appendChild(tdType);
+
+            const tdRange = document.createElement('td');
+            tdRange.className = 'range';
+            tdRange.textContent = p.range;
+            tr.appendChild(tdRange);
+
+            const tdDef = document.createElement('td');
+            tdDef.className = 'def';
+            tdDef.textContent = p.def;
+            tr.appendChild(tdDef);
+
+            const tdDesc = document.createElement('td');
+            tdDesc.className = 'desc';
+            tdDesc.textContent = p.desc;
+            tr.appendChild(tdDesc);
+
+            const tdAdd = document.createElement('td');
+            const add = document.createElement('button');
+            add.className = 'add';
+            add.textContent = '+';
+            add.title = `加進預覽軌：${p.sample}`;
+            add.setAttribute('aria-label', `把 ${p.name} 加進預覽`);
+            add.addEventListener('click', () => {
+                const q = currentQuery();
+                applyPreview(q ? q + '&' + p.sample : p.sample);
+            });
+            tdAdd.appendChild(add);
+            tr.appendChild(tdAdd);
+
+            tbody.appendChild(tr);
+        }
+    }
+
+    const chips = document.getElementById('chips');
+    for (const g of GROUPS) {
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.textContent = g;
+        b.setAttribute('aria-pressed', g === activeGroup);
+        b.addEventListener('click', () => {
+            activeGroup = g;
+            chips.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x.textContent === g));
+            renderTable();
+        });
+        chips.appendChild(b);
+    }
+    document.getElementById('search').addEventListener('input', renderTable);
+    renderTable();
+
+    // ---------------------------------------------------------
+    // 食譜卡
+    // ---------------------------------------------------------
+    const recipesEl = document.getElementById('recipes');
+    for (const r of RECIPES) {
+        const card = document.createElement('div');
+        card.className = 'card recipe';
+
+        const label = document.createElement('span');
+        label.className = 'label';
+        label.textContent = r.label;
+        card.appendChild(label);
+
+        const q = document.createElement('code');
+        q.className = 'q';
+        q.textContent = '?' + r.query;
+        card.appendChild(q);
+
+        const row = document.createElement('div');
+        row.className = 'row';
+        const preview = document.createElement('button');
+        preview.className = 'btn primary';
+        preview.textContent = '▶ 預覽';
+        preview.addEventListener('click', () => applyPreview(r.query));
+        const copy = document.createElement('button');
+        copy.className = 'btn';
+        copy.textContent = '📋 複製';
+        copy.addEventListener('click', e => copyText('?' + r.query, e.currentTarget));
+        row.appendChild(preview);
+        row.appendChild(copy);
+        card.appendChild(row);
+
+        recipesEl.appendChild(card);
+    }
+</script>
+</body>
+</html>
