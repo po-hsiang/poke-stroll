@@ -5,15 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PokéFooter Widget</title>
     <style>
-        /* 設定背景為透明，這是為了讓您可以嵌入到其他網頁中 
+        /* 設定背景為透明，這是為了讓您可以嵌入到其他網頁中
         */
+        :root {
+            /* 深淺色都支援：iframe 要維持「透明」，內外文件的 color-scheme
+               必須一致——嵌入方是暗色頁（color-scheme: dark）而這裡是預設的
+               light 時，瀏覽器會強制在 iframe 後面墊一層不透明白底。
+               宣告兩者皆可，讓 scheme 跟著嵌入方走，暗色亮色頁都嵌得透明 */
+            color-scheme: light dark;
+        }
         body, html {
             margin: 0;
             padding: 0;
             width: 100%;
             height: 100%;
             overflow: hidden; /* 防止出現卷軸 */
-            background-color: transparent; 
+            background-color: transparent;
         }
 
         #app {
