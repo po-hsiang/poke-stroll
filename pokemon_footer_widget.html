@@ -114,6 +114,19 @@
             .ground-flow { animation: none; }
         }
 
+        /* 丟果實餵食：點「空白處」掉下的像素樹果（canvas 畫的，不吃外部素材）。
+           不可點擊——它是被吃的，不是被戳的；縮放錨在底邊中央，
+           被咬小時往地面收，不會浮空 */
+        .berry {
+            position: absolute;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            pointer-events: none;
+            z-index: 20000; /* 蓋在隊伍前面：果實小，被大體型擋住就看不到吃相了 */
+            transform-origin: 50% 100%;
+        }
+
         /* 色違登場的星星粒子：從本體中心向外飛散、漸淡。
            每顆的飛行向量由 JS 用 CSS 變數（--dx / --dy）逐顆指定，
            動畫跑完由 animationend 移除元素 */
@@ -204,6 +217,7 @@
             flybySpeed:       { path: ['flybySpeed'],       type: 'float', min: 1,  max: 100 },
             remote:           { path: ['remote'],           type: 'enum',  values: ['on', 'off'] },
             remoteRateLimit:  { path: ['remoteRateLimit'],  type: 'int',   min: 1,  max: 100 },
+            berry:            { path: ['berry'],            type: 'enum',  values: ['on', 'off'] },
         };
 
         function applyQueryOverrides(config) {
@@ -510,6 +524,53 @@
         }
 
         // ---------------------------------------------------------
+        // 樹果的像素圖 (Berry Sprite)
+        // 參考文柚果的 Bag Sprite：金黃梨形 + 頂上一片綠葉，
+        // 12×14 點陣、canvas 畫一次就快取，一樣不吃外部素材
+        // ---------------------------------------------------------
+        const BERRY_SCALE = 2; // 顯示放大倍率（整數，維持點陣感）
+        const BERRY_ART = [
+            '......kk....',
+            '.....ks.....',
+            '..kk.ks.....',
+            '.kLlkks.....',
+            '.kllLkkk....',
+            '..kkkyYk....',
+            '...kYyyyk...',
+            '..kYYyyydk..',
+            '..kYyyyydk..',
+            '.kYyyyyyddk.',
+            '.kyyyyyyddk.',
+            '.kyyyyyddk..',
+            '..kyyyddk...',
+            '...kkkkk....',
+        ];
+        const BERRY_PALETTE = {
+            k: '#4a3214', // 墨線：深褐
+            s: '#8a5a2b', // 果蒂
+            l: '#7ac74c', // 葉片亮綠
+            L: '#4e8f34', // 葉片暗綠
+            y: '#f5c435', // 果身金黃
+            Y: '#fbe98c', // 受光面
+            d: '#c9952b', // 背光面
+        };
+        let berryURICache = null;
+        function getBerryURI() {
+            if (berryURICache) return berryURICache;
+            const canvas = document.createElement('canvas');
+            canvas.width = BERRY_ART[0].length;
+            canvas.height = BERRY_ART.length;
+            const ctx = canvas.getContext('2d');
+            BERRY_ART.forEach((row, y) => [...row].forEach((ch, x) => {
+                if (BERRY_PALETTE[ch]) {
+                    ctx.fillStyle = BERRY_PALETTE[ch];
+                    ctx.fillRect(x, y, 1, 1);
+                }
+            }));
+            return berryURICache = canvas.toDataURL();
+        }
+
+        // ---------------------------------------------------------
         // 主題地面 (Themed Ground)
         // theme 參數開啟後，在頁面最底鋪一條像素地面，讓散步有地方踩。
         // 貼片是載入時即場生成：頂緣墨線 + 亮色 + 底色，再隨機灑斑點與
@@ -765,7 +826,9 @@
                 // 想開放給訪客要自行拿掉（取捨見 README）
                 this.jumpY = 0; // 點擊跳躍目前的離地高度（與走路跳步疊加）
                 this.jumpV = 0; // 點擊跳躍的垂直速度
-                this.el.addEventListener('click', () => this.poke());
+                // stopPropagation：點到本體就別冒泡到 document——
+                // 那裡掛著「點空白處丟果實」，一次點擊只該有一種解讀
+                this.el.addEventListener('click', e => { e?.stopPropagation(); this.poke(); });
 
                 this.container.appendChild(this.el);
 
@@ -800,6 +863,18 @@
                     this.avoidCrowding(others);
                 } else if (this.state === 'IDLE') {
                     this.idle(deltaTime);
+                } else if (this.state === 'SEEK_BERRY') {
+                    this.seekBerry(deltaTime);
+                } else if (this.state === 'EATING') {
+                    this.eatBerry(deltaTime);
+                } else if (this.state === 'FEED_HEART') {
+                    // 吃完的餘韻：愛心演完整套餵食才算結束（期間不能再丟）
+                    this.bobY *= 0.8;
+                    this.heartTimer -= deltaTime;
+                    if (this.heartTimer <= 0) {
+                        this.state = 'WALKING';
+                        feeder = null; // 卸任 → feedingBusy 解鎖
+                    }
                 }
 
                 // 邊界檢查：只能在 bounds 指定的 X 軸比例區間內活動。
@@ -946,6 +1021,59 @@
             poke() {
                 this.jump();
                 this.showEmote('heart', 1600);
+            }
+
+            // 本體中心的 X 座標（this.x 是左緣）：算「誰離果實最近」用
+            centerX() {
+                return this.x + (this.img.offsetWidth || CONFIG.baseSize * this.sizeScale) / 2;
+            }
+
+            // 被指派去吃果實：不論正在走路還是發呆都放下手邊的事。
+            // 進行中的心情對話框先收起（色違登場閃光的保護期除外——hideEmote 會讓路）
+            startSeekBerry() {
+                this.state = 'SEEK_BERRY';
+                this.idleTimer = 0;
+                this.hideEmote();
+            }
+
+            // 小跑步奔向果實：比散步快一截、跳步節奏也跟著加快。
+            // 到口邊若果實還在半空，就站在底下等它落地（半空中接不到）
+            seekBerry(deltaTime) {
+                if (!berry) { this.state = 'WALKING'; return; } // 果實意外沒了就回去散步
+                const dt = deltaTime / (1000 / 60);
+                const dx = berry.x - this.centerX();
+                if (Math.abs(dx) > 6) {
+                    this.direction = dx > 0 ? 1 : -1;
+                    const step = Math.max(this.speed * 2.5, 1) * dt;
+                    this.x += Math.sign(dx) * Math.min(Math.abs(dx), step);
+                    this.walkPhase += deltaTime * CONFIG.hopFrequency * 2.5 * (this.speed / CONFIG.baseSpeed);
+                    this.bobY = Math.abs(Math.sin(this.walkPhase)) * this.hopHeight;
+                } else {
+                    this.bobY *= 0.8; // 站定等吃
+                    if (berry.state === 'LANDED') {
+                        this.direction = dx >= 0 ? 1 : -1; // 面向果實開動
+                        this.state = 'EATING';
+                        this.eatTimer = 900;
+                    }
+                }
+            }
+
+            // 三口吃掉：果實隨剩餘時間分段縮小（縮放錨在底邊，往地面收），
+            // 最後一口消失 → 開心跳 + 冒愛心，進入 FEED_HEART 收尾
+            eatBerry(deltaTime) {
+                this.bobY *= 0.8;
+                this.eatTimer -= deltaTime;
+                if (berry) {
+                    const bite = this.eatTimer > 600 ? 1 : this.eatTimer > 300 ? 0.72 : 0.45;
+                    berry.el.style.transform = `scale(${bite})`;
+                }
+                if (this.eatTimer <= 0) {
+                    if (berry) { berry.el.remove(); berry = null; }
+                    this.jump();
+                    this.showEmote('heart', 1600); // 色違保護期中會被婉拒，收尾計時照走
+                    this.state = 'FEED_HEART';
+                    this.heartTimer = 1600;
+                }
             }
 
             // 色違登場的慶祝特效：一圈像素星星從本體中心向外炸開、漸淡。
@@ -1197,6 +1325,83 @@
         }
 
         // ---------------------------------------------------------
+        // 丟果實餵食 (Berry Feeding)
+        // 點「寶可夢本體」= 戳戳互動（事件在本體上就被攔下）；
+        // 點「空白處」= 從點擊位置掉下一顆樹果，距離最近的那隻
+        // 不論正在做什麼都會跑過來，三口吃掉 + 冒愛心。
+        // 一次只能有一顆：整套（掉落 → 跑來 → 吃 → 愛心）演完才能再丟
+        // ---------------------------------------------------------
+        let berry = null;    // 場上唯一的果實 { el, x, bottom, vy, state }
+        let feeder = null;   // 被指派來吃的那隻（愛心演完才卸任）
+        let groundLevel = 0; // 果實落點 = 地面抬高量（主題地面），init() 時寫入
+
+        function feedingBusy() {
+            return !!berry || !!feeder;
+        }
+
+        function throwBerry(x, dropBottom) {
+            if ((CONFIG.berry ?? 'on') === 'off') return false;
+            if (feedingBusy()) return false;
+            // 隱形的（sprite 兩段備援都失敗）不算：果實被看不見的東西吃掉太獵奇
+            const eligible = pokemons.filter(p => p.el.style.display !== 'none');
+            if (!eligible.length) return false;
+
+            // 距離最近的那隻放下手邊的事，跑過來吃
+            feeder = eligible.reduce((a, b) =>
+                Math.abs(a.centerX() - x) <= Math.abs(b.centerX() - x) ? a : b);
+
+            // 果實釘在被指派那隻「碰得到」的範圍內：
+            // 活動範圍（bounds）外的點擊，果實會落在最近的可達位置，
+            // 否則牠會在邊界前踏步、永遠搆不到，整套餵食就此卡死
+            const half = (feeder.img.offsetWidth || CONFIG.baseSize * feeder.sizeScale) / 2;
+            const minC = window.innerWidth * CONFIG.bounds.min + half;
+            const maxC = Math.max(minC, window.innerWidth * CONFIG.bounds.max - half);
+            const bx = Math.min(Math.max(x, minC), maxC);
+
+            const w = BERRY_ART[0].length * BERRY_SCALE;
+            const el = document.createElement('img');
+            el.className = 'berry';
+            el.src = getBerryURI();
+            el.style.width = `${w}px`;
+            el.style.left = `${Math.round(bx - w / 2)}px`;
+            const startBottom = Math.max(groundLevel, dropBottom);
+            el.style.bottom = `${Math.round(startBottom)}px`;
+            app.appendChild(el);
+            berry = {
+                el, x: bx, bottom: startBottom, vy: 0,
+                state: startBottom > groundLevel ? 'FALLING' : 'LANDED',
+            };
+
+            feeder.startSeekBerry();
+            return true;
+        }
+
+        // 果實的掉落物理（每一幀由 gameLoop 呼叫）：
+        // 重力手感與點擊跳躍同一套，落地夠快會小彈跳一次
+        function updateBerry(deltaTime) {
+            if (!berry || berry.state !== 'FALLING') return;
+            const dt = deltaTime / (1000 / 60);
+            berry.vy += 0.35 * dt;
+            berry.bottom -= berry.vy * dt;
+            if (berry.bottom <= groundLevel) {
+                berry.bottom = groundLevel;
+                if (berry.vy > 2.5) {
+                    berry.vy = -berry.vy * 0.35; // 彈起（速度衰減）
+                } else {
+                    berry.state = 'LANDED';
+                }
+            }
+            berry.el.style.bottom = `${Math.round(berry.bottom)}px`;
+        }
+
+        // 點擊分流：本體的 click 監聽器會 stopPropagation，
+        // 事件能冒泡到 document 的都是「空白處」。
+        // 座標換算成 bottom 基準（頁面底 = 0），跟其他元素同一套座標系
+        document.addEventListener('click', e => {
+            throwBerry(e.clientX, window.innerHeight - e.clientY);
+        });
+
+        // ---------------------------------------------------------
         // postMessage 遙控 (Remote Control)
         // ---------------------------------------------------------
         // 父頁面（或 OBS 的 wrapper 頁）隔著 iframe 疆界下指令：
@@ -1280,6 +1485,7 @@
         async function init() {
             // 主題地面先鋪（theme=none 不鋪）：寶可夢得知道自己該站多高
             const groundLift = initGround(CONFIG.theme ?? 'none');
+            groundLevel = groundLift; // 丟下來的果實也落在同一個地面上
 
             // URL 有帶 ?ids= 就用固定清單，否則照 count/minId/maxId 隨機抽
             const ids = CONFIG.fixedIds ?? getUniqueRandomIds(CONFIG.count, CONFIG.minId, CONFIG.maxId);
@@ -1307,6 +1513,8 @@
             lastTime = timestamp;
 
             pokemons.forEach(p => p.update(deltaTime, pokemons));
+
+            updateBerry(deltaTime); // 丟下來的果實（有的話）繼續掉
 
             // 客串成員：倒著掃，飛完行程（或載圖全滅）就移除
             for (let i = cameos.length - 1; i >= 0; i--) {

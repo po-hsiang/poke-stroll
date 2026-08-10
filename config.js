@@ -50,6 +50,13 @@ window.POKE_CONFIG = {
     remote: 'on',        // 'off' = 完全不理會遙控訊息
     remoteRateLimit: 10, // 每秒最多處理幾道指令，超過的直接丟棄（防聊天室洗版）
 
+    // ---- 丟果實餵食 ----
+    // 點寶可夢「本體」= 戳戳互動；點「空白處」= 從點擊位置掉下一顆像素樹果，
+    // 距離最近的那隻不論在做什麼都會跑過來，三口吃掉 + 冒愛心。
+    // 一次只能有一顆果實，整套（掉落 → 跑來 → 吃 → 愛心）演完才能再丟下一顆。
+    // OBS 用來源的「互動」視窗玩；iframe 預設 pointer-events: none 點不到（見 README）
+    berry: 'on', // 'off' = 點空白處無事發生
+
     // ---- 移動 ----
     baseSpeed: 0.25,    // 基礎移動速度 (px/幀，以 60fps 為基準)
     speedVariance: 0.25,// 個體間的速度差異上限（實際速度 = baseSpeed ~ baseSpeed + variance）
