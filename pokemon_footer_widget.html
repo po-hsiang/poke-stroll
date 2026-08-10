@@ -70,6 +70,31 @@
             pointer-events: none;
         }
 
+        /* 主題地面（theme 參數）：鋪在頁面最底、所有寶可夢身後的像素地面。
+           貼片是載入時用 canvas 隨機生成的，橫向平鋪；
+           水域與熔岩掛 ground-flow 讓圖樣緩慢橫向流動 */
+        #ground {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 0;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            background-repeat: repeat-x;
+            pointer-events: none;
+        }
+        .ground-flow {
+            animation: ground-flow var(--flow-duration, 20s) linear infinite;
+        }
+        @keyframes ground-flow {
+            to { background-position-x: var(--flow-width, -512px); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .ground-flow { animation: none; }
+        }
+
         /* 色違登場的星星粒子：從本體中心向外飛散、漸淡。
            每顆的飛行向量由 JS 用 CSS 變數（--dx / --dy）逐顆指定，
            動畫跑完由 animationend 移除元素 */
@@ -148,6 +173,7 @@
             personalSpace:    { path: ['personalSpace'],    type: 'int',   min: 0,  max: 1000 },
             baseSize:         { path: ['baseSize'],         type: 'int',   min: 16, max: 512 },
             shadowWidthRatio: { path: ['shadowWidthRatio'], type: 'float', min: 0,  max: 2 },
+            theme:            { path: ['theme'],            type: 'enum',  values: ['none', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava'] },
         };
 
         function applyQueryOverrides(config) {
@@ -452,11 +478,153 @@
         }
 
         // ---------------------------------------------------------
+        // 主題地面 (Themed Ground)
+        // theme 參數開啟後，在頁面最底鋪一條像素地面，讓散步有地方踩。
+        // 貼片是載入時即場生成：頂緣墨線 + 亮色 + 底色，再隨機灑斑點與
+        // 小圖章（花、貝殼、裂縫…），每次重新整理的地面都長得不太一樣。
+        // 一樣是 canvas → dataURL，不吃任何外部素材。
+        // inset = 腳掌「踩進」表面的深度（點陣 px）：
+        // 草會蓋到腳邊、雪會陷進去、水會泡到小腿，岩地就只是站在上面
+        // ---------------------------------------------------------
+        const GROUND_SCALE = 2;      // 顯示放大倍率（整數，維持點陣感）
+        const GROUND_TILE_W = 256;   // 貼片寬（點陣 px），夠寬就看不出重複
+        const GROUND_H = 12;         // 貼片高（點陣 px）
+        const GROUND_THEMES = {
+            grass: {
+                inset: 3,
+                top: ['#245c31', '#8ee06a'],
+                fill: '#47a04f',
+                speckles: [{ color: '#2c6e35', density: 0.06 }, { color: '#8ee06a', density: 0.03 }],
+                stamps: [
+                    { avg: 40, colors: { w: '#ffffff', y: '#ecb200' }, art: ['w.w', '.y.', 'w.w'] }, // 小白花
+                    { avg: 28, colors: { g: '#2c6e35' }, art: ['g.g', 'g.g'] },                      // 草叢短枝
+                ],
+            },
+            water: {
+                inset: 5,
+                flow: 16,
+                top: ['#1b4a7a', '#d8f1ff'],
+                fill: '#3f7fd4',
+                speckles: [{ color: '#6faae8', density: 0.05 }, { color: '#2c62ad', density: 0.04 }],
+                stamps: [
+                    { avg: 36, colors: { w: '#d8f1ff' }, art: ['ww..', '..ww'] }, // 波光
+                ],
+            },
+            snow: {
+                inset: 4,
+                top: ['#8fa8bd', '#ffffff'],
+                fill: '#edf5fb',
+                speckles: [{ color: '#d7e7f2', density: 0.06 }, { color: '#ffffff', density: 0.04 }],
+                stamps: [
+                    { avg: 48, colors: { u: '#b7d4e8' }, art: ['.u.', 'u.u', '.u.'] }, // 冰晶
+                ],
+            },
+            sand: {
+                inset: 2,
+                top: ['#a9803c', '#f7dfa0'],
+                fill: '#e8c979',
+                speckles: [{ color: '#cfa855', density: 0.06 }, { color: '#f7e7b3', density: 0.04 }],
+                stamps: [
+                    { avg: 56, colors: { w: '#fff6e0', d: '#b08a45' }, art: ['.ww.', 'wwdw', '.dd.'] }, // 小貝殼
+                ],
+            },
+            rock: {
+                inset: 1,
+                top: ['#3f3f46', '#a8a8b0'],
+                fill: '#7d7d86',
+                speckles: [{ color: '#5f5f68', density: 0.06 }, { color: '#96969e', density: 0.04 }],
+                stamps: [
+                    { avg: 44, colors: { d: '#4c4c54' }, art: ['d..', '.d.', '..d'] },          // 裂縫
+                    { avg: 60, colors: { l: '#b8b8c0', d: '#5f5f68' }, art: ['.ll.', 'lldd'] }, // 碎石
+                ],
+            },
+            dirt: {
+                inset: 2,
+                top: ['#57390f', '#c89a5b'],
+                fill: '#9a6b38',
+                speckles: [{ color: '#7c5426', density: 0.06 }, { color: '#c89a5b', density: 0.03 }],
+                stamps: [
+                    { avg: 52, colors: { l: '#b9b2a6', d: '#6e6357' }, art: ['ll', 'dd'] }, // 小石子
+                ],
+            },
+            lava: {
+                inset: 1,
+                flow: 40,
+                top: ['#2a1512', '#ff9b2f'],
+                fill: '#45231d',
+                speckles: [
+                    { color: '#ff6b1a', density: 0.05 },
+                    { color: '#ffc63f', density: 0.02 },
+                    { color: '#2a1512', density: 0.05 },
+                ],
+                stamps: [
+                    { avg: 30, colors: { o: '#ff8c1a' }, art: ['oo..', '..oo'] }, // 岩縫火光
+                ],
+            },
+        };
+
+        // 生成主題貼片，回傳 dataURL（GROUND_TILE_W × GROUND_H 點陣 px）
+        function buildGroundTexture(theme) {
+            const canvas = document.createElement('canvas');
+            canvas.width = GROUND_TILE_W;
+            canvas.height = GROUND_H;
+            const ctx = canvas.getContext('2d');
+            theme.top.forEach((color, y) => {
+                ctx.fillStyle = color;
+                ctx.fillRect(0, y, GROUND_TILE_W, 1);
+            });
+            ctx.fillStyle = theme.fill;
+            ctx.fillRect(0, theme.top.length, GROUND_TILE_W, GROUND_H - theme.top.length);
+            for (const s of theme.speckles ?? []) {
+                const n = Math.round(GROUND_TILE_W * (GROUND_H - theme.top.length) * s.density);
+                ctx.fillStyle = s.color;
+                for (let i = 0; i < n; i++) {
+                    ctx.fillRect(randomInt(0, GROUND_TILE_W - 1), randomInt(theme.top.length, GROUND_H - 1), 1, 1);
+                }
+            }
+            for (const st of theme.stamps ?? []) {
+                const n = Math.max(1, Math.round(GROUND_TILE_W / st.avg));
+                for (let i = 0; i < n; i++) {
+                    const ox = randomInt(0, GROUND_TILE_W - st.art[0].length);
+                    const oy = randomInt(theme.top.length, GROUND_H - st.art.length);
+                    st.art.forEach((row, y) => [...row].forEach((ch, x) => {
+                        if (st.colors[ch]) {
+                            ctx.fillStyle = st.colors[ch];
+                            ctx.fillRect(ox + x, oy + y, 1, 1);
+                        }
+                    }));
+                }
+            }
+            return canvas.toDataURL();
+        }
+
+        // 鋪地面。回傳寶可夢要抬高的量（畫面 px）= 地面高度 - 踩入深度。
+        // theme 不存在（none / 打錯字）就不鋪、回傳 0，一切維持原樣
+        function initGround(themeName) {
+            const theme = GROUND_THEMES[themeName];
+            if (!theme) return 0;
+            const displayH = GROUND_H * GROUND_SCALE;
+            const ground = document.createElement('div');
+            ground.id = 'ground';
+            ground.style.height = `${displayH}px`;
+            ground.style.backgroundImage = `url(${buildGroundTexture(theme)})`;
+            ground.style.backgroundSize = `${GROUND_TILE_W * GROUND_SCALE}px ${displayH}px`;
+            if (theme.flow) {
+                // 水與熔岩緩慢橫向流動：一輪位移剛好一張貼片寬，無縫循環
+                ground.className = 'ground-flow';
+                ground.style.setProperty('--flow-width', `-${GROUND_TILE_W * GROUND_SCALE}px`);
+                ground.style.setProperty('--flow-duration', `${theme.flow}s`);
+            }
+            app.appendChild(ground);
+            return Math.max(0, displayH - theme.inset * GROUND_SCALE);
+        }
+
+        // ---------------------------------------------------------
         // 寶可夢類別 (Pokemon Class)
         // 這就像是用 Golang 定義一個 Struct，包含狀態與行為
         // ---------------------------------------------------------
         class Pokemon {
-            constructor(id, container, sizeScale, laneIndex) {
+            constructor(id, container, sizeScale, laneIndex, groundLift = 0) {
                 this.id = id;
                 this.container = container;
                 this.sizeScale = sizeScale;
@@ -490,7 +658,10 @@
                 // DOM 元素建立
                 this.el = document.createElement('div');
                 this.el.className = 'pokemon-container';
-                
+                // 有主題地面時整個容器抬高，站上地面的表面
+                // （影子、對話框、星星都在容器裡，會一起跟上去）
+                if (groundLift) this.el.style.bottom = `${groundLift}px`;
+
                 // 陰影（保留參考，跳起來時要縮小它）。
                 // 寬度以「圖片實際顯示寬度」為準，讓影子跟寶可夢差不多寬；
                 // 圖片載入前先用體型估一個過渡值。
@@ -850,6 +1021,9 @@
         let lastTime = 0;
 
         async function init() {
+            // 主題地面先鋪（theme=none 不鋪）：寶可夢得知道自己該站多高
+            const groundLift = initGround(CONFIG.theme ?? 'none');
+
             // URL 有帶 ?ids= 就用固定清單，否則照 count/minId/maxId 隨機抽
             const ids = CONFIG.fixedIds ?? getUniqueRandomIds(CONFIG.count, CONFIG.minId, CONFIG.maxId);
 
@@ -858,7 +1032,7 @@
 
             // 實例化 Pokemon（index 同時當作出生跑道編號）
             ids.forEach((id, i) => {
-                pokemons.push(new Pokemon(id, app, scales[i], i));
+                pokemons.push(new Pokemon(id, app, scales[i], i, groundLift));
             });
 
             // 啟動動畫迴圈

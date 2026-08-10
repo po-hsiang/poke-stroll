@@ -408,6 +408,8 @@
           desc: '「大」體型的顯示高度 px（中 = 0.8 倍、小 = 0.6 倍）' },
         { name: 'shadowWidthRatio', type: 'float', range: '0 ~ 2',       def: '0.9',    group: '動畫與外觀', sample: 'shadowWidthRatio=1.5',
           desc: '影子寬度相對寶可夢寬度的比例' },
+        { name: 'theme',          type: 'enum',  range: 'none / grass / water / snow / sand / rock / dirt / lava', def: 'none', group: '動畫與外觀', sample: 'theme=grass',
+          desc: '主題地面：在頁面最底鋪一條 24px 高的像素地面，寶可夢會站上去（依地形略微踩進表面：草蓋腳邊、雪會下陷、水泡到小腿、岩地平踩）。水域與熔岩會緩慢流動；貼片圖樣每次載入隨機生成。none = 關閉，維持透明背景' },
     ];
 
     const RECIPES = [
@@ -427,6 +429,9 @@
         { label: '色違煙火放好放滿', query: 'shinyChance=1&shinyBurstDuration=3000' },
         { label: '巨大化', query: 'baseSize=160&count=2' },
         { label: '只在畫面右半邊活動', query: 'boundsMin=0.5&boundsMax=0.95' },
+        { label: '草地散步', query: 'theme=grass' },
+        { label: '海邊戲水（可達鴨一家＋乘龍）', query: 'theme=water&ids=54,55,116,131' },
+        { label: '熔岩試膽（小火龍一家）', query: 'theme=lava&ids=4,5,6' },
     ];
 
     // ---------------------------------------------------------

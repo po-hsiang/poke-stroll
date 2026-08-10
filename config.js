@@ -17,6 +17,14 @@ window.POKE_CONFIG = {
     shinyChance: 1 / 100,
     shinyBurstDuration: 1400, // 色違登場星星特效的飛散＋淡出總時長 ms
 
+    // ---- 主題地面 ----
+    // 在頁面最底鋪一條像素地面（高 24px），讓散步有地方踩，寶可夢會站上去。
+    // 'none' = 關閉（預設，維持全透明背景）；其他選項：
+    // 'grass' 草地 / 'water' 水域 / 'snow' 雪地 / 'sand' 沙灘 /
+    // 'rock' 岩地 / 'dirt' 土徑 / 'lava' 熔岩（水域與熔岩會緩慢流動）
+    // 貼片圖樣載入時隨機生成，每次重新整理都長得不太一樣
+    theme: 'none',
+
     // ---- 移動 ----
     baseSpeed: 0.25,    // 基礎移動速度 (px/幀，以 60fps 為基準)
     speedVariance: 0.25,// 個體間的速度差異上限（實際速度 = baseSpeed ~ baseSpeed + variance）

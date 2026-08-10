@@ -15,8 +15,11 @@ services:
       # /poke-stroll（無尾斜線）先 301 到 /poke-stroll/：
       # 頁面內的 ./config.js 等相對路徑要以「目錄」為基準才解析得到，
       # 少了尾斜線瀏覽器會把資源解析到網站根路徑而 404（API 服務沒差，靜態頁必須處理）
-      - traefik.http.middlewares.${PREFIX_MID_NAME}-slash.redirectregex.regex=^(https?://[^/]+/${ROUTE_PREFIX})$$
-      - traefik.http.middlewares.${PREFIX_MID_NAME}-slash.redirectregex.replacement=$${1}/
+      # 301 的目標「強制」用 https：TLS 在 Traefik 之前就終止了，原本照抄
+      # 請求 scheme（$${1} 含 http://）會把人導去不對外的 80 埠變成死鏈。
+      # 這個閘道只走 https，寫死是正確語意
+      - traefik.http.middlewares.${PREFIX_MID_NAME}-slash.redirectregex.regex=^https?://([^/]+/${ROUTE_PREFIX})$$
+      - traefik.http.middlewares.${PREFIX_MID_NAME}-slash.redirectregex.replacement=https://$${1}/
       - traefik.http.middlewares.${PREFIX_MID_NAME}-slash.redirectregex.permanent=true
       - traefik.http.middlewares.${PREFIX_MID_NAME}-stripprefix.stripprefix.prefixes=/${ROUTE_PREFIX}
       - traefik.http.routers.${CONTAINER_NAME}.middlewares=${PREFIX_MID_NAME}-slash,${PREFIX_MID_NAME}-stripprefix

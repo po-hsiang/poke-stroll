@@ -67,7 +67,15 @@ function makeCanvas() {
             const ctx = {
                 set fillStyle(v) { fillStyle = v; },
                 get fillStyle() { return fillStyle; },
-                fillRect(x, y, w, h) { cells.push({ x, y, color: fillStyle }); },
+                // 依真正的 canvas 語意展開 w×h（心情圖示都是 1×1，
+                // 地面貼片會用整列填色，兩種都要記到格子裡）
+                fillRect(x, y, w = 1, h = 1) {
+                    for (let dy = 0; dy < h; dy++) {
+                        for (let dx = 0; dx < w; dx++) {
+                            cells.push({ x: x + dx, y: y + dy, color: fillStyle });
+                        }
+                    }
+                },
             };
             return ctx;
         },
@@ -147,7 +155,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -707,6 +715,63 @@ group('16. bubbleSideGap 的 URL 參數白名單');
         check('允許負數（可疊回身體上）', spec.min < 0);
         check('路徑指向 bubbleSideGap', JSON.stringify(spec.path) === '["bubbleSideGap"]');
     }
+}
+
+// =========================================================
+group('17. theme 主題地面');
+{
+    check("config.js 預設 theme = 'none'（不鋪地面）", CONFIG.theme === 'none');
+    const spec = T.QUERY_PARAMS?.theme;
+    check('已登記在 QUERY_PARAMS（enum）', spec?.type === 'enum');
+    check('允許值 = none + 7 種地形',
+        JSON.stringify(spec?.values) === JSON.stringify(['none', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava']),
+        JSON.stringify(spec?.values));
+    check('每種地形都有主題定義（none 除外）',
+        (spec?.values ?? []).filter(v => v !== 'none').every(v => T.GROUND_THEMES[v]));
+
+    // none / 打錯字：不鋪地面、抬高 0，一切維持原樣
+    const before = appEl.children.length;
+    check("theme='none' 不鋪地面、抬高 0",
+        T.initGround('none') === 0 && appEl.children.length === before);
+    check('未知主題同樣安全（防拼錯）',
+        T.initGround('rainbow') === 0 && appEl.children.length === before);
+
+    // 鋪草地：元素進場、抬高量 = (貼片高 - 踩入深度) × 倍率
+    const lift = T.initGround('grass');
+    const ground = appEl.children[appEl.children.length - 1];
+    check('鋪了 #ground 元素', ground && ground.id === 'ground');
+    check('地面高度 = 12 × 2 = 24px', ground.style.height === '24px');
+    check('抬高量 = (12 - inset 3) × 2 = 18px', lift === 18, `實際 ${lift}`);
+
+    // 貼片像素：頂緣整列墨線、第二列整列亮色、中段以底色為大宗
+    const uri = (ground.style.backgroundImage.match(/^url\((.+)\)$/) || [])[1];
+    const grid = pixelGrids.get(uri);
+    check('貼片有畫出來（256×12）', grid && grid.length === 12 && grid[0].split('|').length === 256);
+    if (grid) {
+        const t = T.GROUND_THEMES.grass;
+        check('頂緣整列墨線色', grid[0].split('|').every(c => c === t.top[0]));
+        check('第二列整列亮色', grid[1].split('|').every(c => c === t.top[1]));
+        const midRow = grid[6].split('|');
+        check('中段以底色為大宗（斑點與圖章只是點綴）',
+            midRow.filter(c => c === t.fill).length > 256 * 0.6,
+            `底色佔 ${midRow.filter(c => c === t.fill).length}/256`);
+    }
+
+    // 寶可夢站上地面：容器整個抬高（影子、對話框都在容器裡會跟上）
+    const p = new T.Pokemon(25, appEl, 1, 0, lift);
+    check('寶可夢容器 bottom = 抬高量', p.el.style.bottom === '18px', `實際 ${p.el.style.bottom}`);
+    const p2 = new T.Pokemon(25, appEl, 1, 0, 0);
+    check('沒有地面時不動 bottom（維持 CSS 的 0）', p2.el.style.bottom === undefined);
+
+    // 水域：流動動畫 + 踩得更深（inset 5 → 抬高 14px）
+    const waterLift = T.initGround('water');
+    const water = appEl.children[appEl.children.length - 1];
+    check('水域掛上流動動畫 class', water.className === 'ground-flow');
+    check('流動一輪位移 = 貼片顯示寬（無縫循環）',
+        water.style.getPropertyValue('--flow-width') === '-512px',
+        `實際 ${water.style.getPropertyValue('--flow-width')}`);
+    check('水域踩得更深（inset 5 → 抬高 14px）', waterLift === 14, `實際 ${waterLift}`);
+    check('岩地幾乎不下陷（inset 1 → 抬高 22px）', T.initGround('rock') === 22);
 }
 
 console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);

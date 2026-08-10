@@ -44,6 +44,7 @@
 | `personalSpace` | int | 0 ~ 1000 | `56` | 同伴間最小距離 px,太近會掉頭 |
 | `baseSize` | int | 16 ~ 512 | `128` | 「大」體型的顯示高度 px(中 = 0.8 倍、小 = 0.6 倍) |
 | `shadowWidthRatio` | float | 0 ~ 2 | `0.9` | 影子寬度相對寶可夢寬度的比例 |
+| `theme` | enum | `none` / `grass` / `water` / `snow` / `sand` / `rock` / `dirt` / `lava` | `none` | **主題地面**:在頁面最底鋪一條 24px 高的像素地面,寶可夢會站上去(依地形略微踩進表面:草蓋腳邊、雪會下陷、水泡到小腿、岩地平踩)。水域與熔岩會緩慢流動;貼片圖樣每次載入隨機生成。`none` = 關閉,維持透明背景 |
 
 ## 容錯規則
 
@@ -75,3 +76,6 @@
 | 色違煙火放好放滿 | `?shinyChance=1&shinyBurstDuration=3000` |
 | 巨大化 | `?baseSize=160&count=2` |
 | 只在畫面右半邊活動 | `?boundsMin=0.5&boundsMax=0.95` |
+| 草地散步 | `?theme=grass` |
+| 海邊戲水(可達鴨一家+乘龍) | `?theme=water&ids=54,55,116,131` |
+| 熔岩試膽(小火龍一家) | `?theme=lava&ids=4,5,6` |
