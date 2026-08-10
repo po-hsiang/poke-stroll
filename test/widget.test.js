@@ -737,42 +737,52 @@ group('17. theme 主題地面');
     check('未知主題同樣安全（防拼錯）',
         T.initGround('rainbow') === 0 && appEl.children.length === before);
 
-    // 鋪草地：元素進場、抬高量 = (貼片高 - 踩入深度) × 倍率
+    // 鋪草地：元素進場、抬高量 = 地面高度 - 踩入深度 × 倍率
+    check("config.js 預設 themeHeight = 12", CONFIG.themeHeight === 12);
+    check('themeHeight 已登記在 QUERY_PARAMS', T.QUERY_PARAMS?.themeHeight?.type === 'int');
     const lift = T.initGround('grass');
     const ground = appEl.children[appEl.children.length - 1];
     check('鋪了 #ground 元素', ground && ground.id === 'ground');
-    check('地面高度 = 12 × 2 = 24px', ground.style.height === '24px');
-    check('抬高量 = (12 - inset 3) × 2 = 18px', lift === 18, `實際 ${lift}`);
+    check('地面高度 = themeHeight 預設 12px', ground.style.height === '12px');
+    check('抬高量 = 12 - inset 3 × 2 = 6px', lift === 6, `實際 ${lift}`);
 
     // 貼片像素：頂緣整列墨線、第二列整列亮色、中段以底色為大宗
     const uri = (ground.style.backgroundImage.match(/^url\((.+)\)$/) || [])[1];
     const grid = pixelGrids.get(uri);
-    check('貼片有畫出來（256×12）', grid && grid.length === 12 && grid[0].split('|').length === 256);
+    check('貼片有畫出來（256×6）', grid && grid.length === 6 && grid[0].split('|').length === 256);
     if (grid) {
         const t = T.GROUND_THEMES.grass;
         check('頂緣整列墨線色', grid[0].split('|').every(c => c === t.top[0]));
         check('第二列整列亮色', grid[1].split('|').every(c => c === t.top[1]));
-        const midRow = grid[6].split('|');
+        const midRow = grid[4].split('|');
         check('中段以底色為大宗（斑點與圖章只是點綴）',
             midRow.filter(c => c === t.fill).length > 256 * 0.6,
             `底色佔 ${midRow.filter(c => c === t.fill).length}/256`);
     }
 
+    // themeHeight 客製：40px → 高 40、抬高 40 - 6 = 34
+    CONFIG.themeHeight = 40;
+    const tallLift = T.initGround('grass');
+    const tall = appEl.children[appEl.children.length - 1];
+    check('themeHeight=40 → 地面高 40px', tall.style.height === '40px');
+    check('抬高量跟著變（40 - 6 = 34px）', tallLift === 34, `實際 ${tallLift}`);
+    CONFIG.themeHeight = 12;
+
     // 寶可夢站上地面：容器整個抬高（影子、對話框都在容器裡會跟上）
     const p = new T.Pokemon(25, appEl, 1, 0, lift);
-    check('寶可夢容器 bottom = 抬高量', p.el.style.bottom === '18px', `實際 ${p.el.style.bottom}`);
+    check('寶可夢容器 bottom = 抬高量', p.el.style.bottom === '6px', `實際 ${p.el.style.bottom}`);
     const p2 = new T.Pokemon(25, appEl, 1, 0, 0);
     check('沒有地面時不動 bottom（維持 CSS 的 0）', p2.el.style.bottom === undefined);
 
-    // 水域：流動動畫 + 踩得更深（inset 5 → 抬高 14px）
+    // 水域：流動動畫 + 踩得更深（inset 5 → 抬高 2px）
     const waterLift = T.initGround('water');
     const water = appEl.children[appEl.children.length - 1];
     check('水域掛上流動動畫 class', water.className === 'ground-flow');
     check('流動一輪位移 = 貼片顯示寬（無縫循環）',
         water.style.getPropertyValue('--flow-width') === '-512px',
         `實際 ${water.style.getPropertyValue('--flow-width')}`);
-    check('水域踩得更深（inset 5 → 抬高 14px）', waterLift === 14, `實際 ${waterLift}`);
-    check('岩地幾乎不下陷（inset 1 → 抬高 22px）', T.initGround('rock') === 22);
+    check('水域踩得更深（inset 5 → 抬高 2px）', waterLift === 2, `實際 ${waterLift}`);
+    check('岩地幾乎不下陷（inset 1 → 抬高 10px）', T.initGround('rock') === 10);
 }
 
 // =========================================================
@@ -800,7 +810,7 @@ group('18. 客串事件（飛行系/傳說高速橫越）');
     check('flybyDelay 預設 15~20 秒', CONFIG.flybyDelay.min === 15000 && CONFIG.flybyDelay.max === 20000);
     check('flybyChance 預設 0.25', CONFIG.flybyChance === 0.25);
     check('flybyLegendaryChance 預設 0.05（極低）', CONFIG.flybyLegendaryChance === 0.05);
-    check('flybySpeed 預設 14', CONFIG.flybySpeed === 14);
+    check('flybySpeed 預設 5', CONFIG.flybySpeed === 5);
 
     // URL 參數白名單
     for (const [name, pathStr] of [
@@ -821,10 +831,10 @@ group('18. 客串事件（飛行系/傳說高速橫越）');
     CONFIG.shinyChance = 0;
     const c = new T.Cameo(6, 1);
     check('從畫面外出發', c.x < 0 || c.x > 1920, `x=${c.x}`);
-    check('速度 = flybySpeed ±15%', c.speed >= 14 * 0.85 && c.speed <= 14 * 1.15, `實際 ${c.speed}`);
+    check('速度 = flybySpeed ±15%', c.speed >= 5 * 0.85 && c.speed <= 5 * 1.15, `實際 ${c.speed}`);
     const x0 = c.x;
     check('行程中：update 回傳 true 且高速前進',
-        c.update(1000 / 60) === true && Math.abs(c.x - x0) > 10,
+        c.update(1000 / 60) === true && Math.abs(c.x - x0) > 3,
         `一幀移動 ${Math.abs(c.x - x0).toFixed(1)}px`);
     c.x = c.direction === 1 ? 1920 + c.margin + 1 : -c.margin - 1;
     check('飛出對側畫面外 → 回報移除', c.update(16) === false);
@@ -876,6 +886,30 @@ group('18. 客串事件（飛行系/傳說高速橫越）');
     check('動圖失敗 → 退靜態圖', d.img.src.endsWith('/6.png'));
     d.img.onerror();
     check('靜圖也失敗 → 本幀回報移除，不留破圖', d.update(16) === false);
+}
+
+// =========================================================
+group('19. 色違星星特效定時重播');
+{
+    check('config 預設重播間隔 15~20 秒',
+        CONFIG.shinyBurstDelay.min === 15000 && CONFIG.shinyBurstDelay.max === 20000);
+    for (const [name, pathStr] of [
+        ['shinyBurstDelayMin', '["shinyBurstDelay","min"]'],
+        ['shinyBurstDelayMax', '["shinyBurstDelay","max"]'],
+    ]) {
+        const spec = T.QUERY_PARAMS?.[name];
+        check(`${name} 已登記且路徑正確`, !!spec && JSON.stringify(spec.path) === pathStr);
+    }
+
+    const p = newPokemon(25, { shiny: true });
+    p.img.dispatch('load'); // 本體現身 → 放第一輪
+    const stars = () => p.el.children.filter(el => el.className === 'burst-star').length;
+    const first = stars();
+    check('登場先放一輪（10 顆星）', first === 10, `實際 ${first}`);
+    advance(20001);
+    check('15~20 秒後自動重播一輪', stars() >= first + 10, `實際 ${stars()} 顆`);
+    advance(20001);
+    check('之後持續重播、不會只放兩輪', stars() >= first + 20, `實際 ${stars()} 顆`);
 }
 
 console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);

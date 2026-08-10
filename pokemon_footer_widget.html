@@ -180,6 +180,8 @@
             idleJumpChance:   { path: ['idleJumpChance'],   type: 'float', min: 0,  max: 1 },
             shinyChance:      { path: ['shinyChance'],      type: 'float', min: 0,  max: 1 },
             shinyBurstDuration: { path: ['shinyBurstDuration'], type: 'int', min: 100, max: 10000 },
+            shinyBurstDelayMin: { path: ['shinyBurstDelay', 'min'], type: 'int', min: 1000, max: 600000 },
+            shinyBurstDelayMax: { path: ['shinyBurstDelay', 'max'], type: 'int', min: 1000, max: 600000 },
             hopHeight:        { path: ['hopHeight'],        type: 'float', min: 0,  max: 50 },
             hopVariance:      { path: ['hopVariance'],      type: 'float', min: 0,  max: 50 },
             hopFrequency:     { path: ['hopFrequency'],     type: 'float', min: 0,  max: 1 },
@@ -187,6 +189,7 @@
             baseSize:         { path: ['baseSize'],         type: 'int',   min: 16, max: 512 },
             shadowWidthRatio: { path: ['shadowWidthRatio'], type: 'float', min: 0,  max: 2 },
             theme:            { path: ['theme'],            type: 'enum',  values: ['none', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava'] },
+            themeHeight:      { path: ['themeHeight'],      type: 'int',   min: 4,  max: 200 },
             flybyDelayMin:    { path: ['flybyDelay', 'min'], type: 'int',  min: 1000, max: 600000 },
             flybyDelayMax:    { path: ['flybyDelay', 'max'], type: 'int',  min: 1000, max: 600000 },
             flybyChance:      { path: ['flybyChance'],      type: 'float', min: 0,  max: 1 },
@@ -240,6 +243,7 @@
             if (config.minId > config.maxId) [config.minId, config.maxId] = [config.maxId, config.minId];
             if (config.lookTime.min > config.lookTime.max) [config.lookTime.min, config.lookTime.max] = [config.lookTime.max, config.lookTime.min];
             if (config.flybyDelay && config.flybyDelay.min > config.flybyDelay.max) [config.flybyDelay.min, config.flybyDelay.max] = [config.flybyDelay.max, config.flybyDelay.min];
+            if (config.shinyBurstDelay && config.shinyBurstDelay.min > config.shinyBurstDelay.max) [config.shinyBurstDelay.min, config.shinyBurstDelay.max] = [config.shinyBurstDelay.max, config.shinyBurstDelay.min];
             if (config.bounds.min >= config.bounds.max) {
                 console.warn('[PokéFooter] boundsMin 必須小於 boundsMax，已改回預設 0.1 ~ 0.9');
                 config.bounds = { min: 0.1, max: 0.9 };
@@ -507,7 +511,7 @@
         // ---------------------------------------------------------
         const GROUND_SCALE = 2;      // 顯示放大倍率（整數，維持點陣感）
         const GROUND_TILE_W = 256;   // 貼片寬（點陣 px），夠寬就看不出重複
-        const GROUND_H = 12;         // 貼片高（點陣 px）
+        // 貼片高不再寫死：由 CONFIG.themeHeight（畫面 px）換算成列數，見 initGround
         const GROUND_THEMES = {
             grass: {
                 inset: 3,
@@ -582,30 +586,32 @@
             },
         };
 
-        // 生成主題貼片，回傳 dataURL（GROUND_TILE_W × GROUND_H 點陣 px）
-        function buildGroundTexture(theme) {
+        // 生成主題貼片，回傳 dataURL（GROUND_TILE_W × artH 點陣 px）
+        function buildGroundTexture(theme, artH) {
             const canvas = document.createElement('canvas');
             canvas.width = GROUND_TILE_W;
-            canvas.height = GROUND_H;
+            canvas.height = artH;
             const ctx = canvas.getContext('2d');
             theme.top.forEach((color, y) => {
                 ctx.fillStyle = color;
                 ctx.fillRect(0, y, GROUND_TILE_W, 1);
             });
             ctx.fillStyle = theme.fill;
-            ctx.fillRect(0, theme.top.length, GROUND_TILE_W, GROUND_H - theme.top.length);
+            ctx.fillRect(0, theme.top.length, GROUND_TILE_W, artH - theme.top.length);
             for (const s of theme.speckles ?? []) {
-                const n = Math.round(GROUND_TILE_W * (GROUND_H - theme.top.length) * s.density);
+                const n = Math.round(GROUND_TILE_W * (artH - theme.top.length) * s.density);
                 ctx.fillStyle = s.color;
                 for (let i = 0; i < n; i++) {
-                    ctx.fillRect(randomInt(0, GROUND_TILE_W - 1), randomInt(theme.top.length, GROUND_H - 1), 1, 1);
+                    ctx.fillRect(randomInt(0, GROUND_TILE_W - 1), randomInt(theme.top.length, artH - 1), 1, 1);
                 }
             }
             for (const st of theme.stamps ?? []) {
+                // 地面矮到塞不下的圖章直接跳過（超低 themeHeight 時只留斑點質感）
+                if (artH - theme.top.length < st.art.length) continue;
                 const n = Math.max(1, Math.round(GROUND_TILE_W / st.avg));
                 for (let i = 0; i < n; i++) {
                     const ox = randomInt(0, GROUND_TILE_W - st.art[0].length);
-                    const oy = randomInt(theme.top.length, GROUND_H - st.art.length);
+                    const oy = randomInt(theme.top.length, artH - st.art.length);
                     st.art.forEach((row, y) => [...row].forEach((ch, x) => {
                         if (st.colors[ch]) {
                             ctx.fillStyle = st.colors[ch];
@@ -622,11 +628,14 @@
         function initGround(themeName) {
             const theme = GROUND_THEMES[themeName];
             if (!theme) return 0;
-            const displayH = GROUND_H * GROUND_SCALE;
+            // 高度以畫面 px 指定（themeHeight），內部換成 2px 像素格的列數，
+            // 所以實際高度會取到最接近的偶數；最少 3 列（頂緣 2 列 + 至少 1 列底）
+            const artH = Math.max(3, Math.round((CONFIG.themeHeight ?? 12) / GROUND_SCALE));
+            const displayH = artH * GROUND_SCALE;
             const ground = document.createElement('div');
             ground.id = 'ground';
             ground.style.height = `${displayH}px`;
-            ground.style.backgroundImage = `url(${buildGroundTexture(theme)})`;
+            ground.style.backgroundImage = `url(${buildGroundTexture(theme, artH)})`;
             ground.style.backgroundSize = `${GROUND_TILE_W * GROUND_SCALE}px ${displayH}px`;
             if (theme.flow) {
                 // 水與熔岩緩慢橫向流動：一輪位移剛好一張貼片寬，無縫循環
@@ -955,6 +964,11 @@
                     star.addEventListener('animationend', () => star.remove());
                     this.el.appendChild(star);
                 }
+
+                // 每隔一段隨機秒數重播一輪：色違常駐在頁面上，
+                // 開頁那一下沒看到（或中途才進來）的觀眾也不會錯過
+                this.burstTimer = setTimeout(() => this.celebrateShiny(),
+                    randomInt(CONFIG.shinyBurstDelay?.min ?? 15000, CONFIG.shinyBurstDelay?.max ?? 20000));
             }
 
             // 只有站定發呆時才有機會冒心情對話框；走路中不觸發
@@ -1046,7 +1060,7 @@
                 this.dead = false;
                 this.direction = Math.random() > 0.5 ? 1 : -1;
                 // 每次 ±15% 隨機，連續兩次客串速度也不會一模一樣
-                this.speed = (CONFIG.flybySpeed ?? 14) * (0.85 + Math.random() * 0.3);
+                this.speed = (CONFIG.flybySpeed ?? 5) * (0.85 + Math.random() * 0.3);
                 this.isShiny = Math.random() < (CONFIG.shinyChance ?? 0);
                 const shinyDir = this.isShiny ? 'shiny/' : '';
 
