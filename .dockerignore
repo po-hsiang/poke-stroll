@@ -1,5 +1,6 @@
 # Dockerfile 是白名單式 COPY，這裡再擋一層讓 build context 保持乾淨
 .git
+.github
 .gitignore
 .dockerignore
 README.md

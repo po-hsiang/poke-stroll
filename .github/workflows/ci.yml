@@ -1,0 +1,44 @@
+# 每個 push / PR 自動跑：單元測試 + Docker 建置與冒煙測試。
+# 這專案多 session 並行開發，紅綠燈是最便宜的護欄。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: 單元測試（零依賴）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node test/widget.test.js
+
+  docker:
+    name: Docker 建置 + 冒煙測試
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: compose 設定可解析
+        run: docker compose config --quiet
+      - name: 建置 image
+        run: docker build -t poke-stroll-ci .
+      - name: 啟動容器並檢查每個靜態檔與快取標頭
+        run: |
+          docker run -d --rm --name smoke -p 8080:80 poke-stroll-ci
+          sleep 2
+          for f in "" pokemon_footer_widget.html config.js pokemon_heights.js pokemon_types.js; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/$f")
+            if [ "$code" != "200" ]; then echo "FAIL: /$f -> $code"; exit 1; fi
+          done
+          # 快取策略有生效：設定檔要求協商快取、對照表放一天
+          curl -sI http://localhost:8080/config.js          | grep -i "cache-control: no-cache"
+          curl -sI http://localhost:8080/pokemon_heights.js | grep -i "max-age=86400"
+          # README 這類非執行檔不該被烘進 image
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/README.md)
+          if [ "$code" != "404" ]; then echo "FAIL: README.md 不該出現在 image 裡 -> $code"; exit 1; fi
+          docker stop smoke

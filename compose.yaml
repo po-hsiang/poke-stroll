@@ -20,21 +20,29 @@ services:
       - traefik.http.middlewares.${PREFIX_MID_NAME}-slash.redirectregex.permanent=true
       - traefik.http.middlewares.${PREFIX_MID_NAME}-stripprefix.stripprefix.prefixes=/${ROUTE_PREFIX}
       - traefik.http.routers.${CONTAINER_NAME}.middlewares=${PREFIX_MID_NAME}-slash,${PREFIX_MID_NAME}-stripprefix
-      - traefik.basic.port=${PORT}
+      # v2 正式寫法明示後端埠（舊範本的 traefik.basic.port 是 v1 語法，v2 不吃；
+      # 本檔的 middlewares 標籤都是 v2 才有的，代表閘道就是 v2——先前能動全靠
+      # 自動偵測 image 的 EXPOSE 埠，明示比默契可靠）
+      - traefik.http.services.${CONTAINER_NAME}.loadbalancer.server.port=${PORT}
       - traefik.docker.network=${NETWORK}
     networks:
       - ${NETWORK}
+    # 頂層 restart 而非 deploy.restart_policy：後者在非 Swarm 的 compose 下支援度不一。
+    # 無狀態靜態站，unless-stopped 讓主機重開機後也自動回來
+    restart: unless-stopped
+    # wget 是 nginx:alpine 內建的 busybox 版，不用另裝 curl
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     deploy:
       resources:
         limits:
           memory: 128M  # 純 nginx 靜態站，128M 綽綽有餘
         reservations:
           memory: 16M
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-        window: 120s
 
 networks:
   ipa_service_net:
