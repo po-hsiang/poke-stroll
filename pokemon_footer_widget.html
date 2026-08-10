@@ -8,11 +8,13 @@
         /* 設定背景為透明，這是為了讓您可以嵌入到其他網頁中
         */
         :root {
-            /* 深淺色都支援：iframe 要維持「透明」，內外文件的 color-scheme
-               必須一致——嵌入方是暗色頁（color-scheme: dark）而這裡是預設的
-               light 時，瀏覽器會強制在 iframe 後面墊一層不透明白底。
-               宣告兩者皆可，讓 scheme 跟著嵌入方走，暗色亮色頁都嵌得透明 */
-            color-scheme: light dark;
+            /* 釘死 light：iframe 要維持「透明」，內外文件的 color-scheme 必須一致。
+               千萬別改成 light dark——那會讓 widget 在「OS 深色模式 + 嵌入方沒宣告
+               color-scheme」這個最常見的組合下自己解析成 dark，跟嵌入方（light）
+               不一致，瀏覽器直接墊一塊不透明黑底（比白底更糟，踩過一次）。
+               釘死 light 對上所有未宣告的嵌入方；真的宣告了 dark 的頁面（例如本專案
+               的 params.html），請在「iframe 元素」上加 color-scheme: light 對齊 */
+            color-scheme: light;
         }
         body, html {
             margin: 0;

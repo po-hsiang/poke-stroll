@@ -1161,6 +1161,23 @@ group('19. 色違星星特效定時重播');
         T.getBerry().x === minReach, `實際 ${T.getBerry().x}，期望 ${minReach}`);
     CONFIG.idleChance = savedIdleChance;
 
+    // =====================================================
+    group('23. 嵌入透明性守則（color-scheme）');
+    // iframe 要維持透明，內外文件的 color-scheme 必須一致。
+    // 這裡守住兩條血淚教訓：
+    //   0.20.0 widget 沒宣告 → 被宣告 dark 的頁面（params.html）嵌 → 墊白底
+    //   0.20.1 widget 宣告 light dark → OS 深色 + 嵌入方沒宣告 → 墊黑底
+    // 正解：widget 釘死 light；宣告過 dark 的嵌入方在 iframe「元素」上對齊
+    check('widget 釘死 color-scheme: light', /color-scheme:\s*light\s*;/.test(html));
+    check('widget 不得宣告 light dark（OS 深色時會自己變 dark、被墊黑底）',
+        !/color-scheme:\s*light\s+dark/.test(html));
+    const paramsHtml = fs.readFileSync(path.join(ROOT, 'params.html'), 'utf8');
+    check('params.html 預覽軌 iframe 元素有 color-scheme: light 對齊',
+        /#frame\s*\{[^}]*color-scheme:\s*light/.test(paramsHtml));
+    check('params.html 的嵌入範例都帶 color-scheme:light 保險',
+        (paramsHtml.match(/pointer-events:none; color-scheme:light/g) || []).length >= 3,
+        'hero-snippet / remote-snippet / embedSnippet() 都該有');
+
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
     process.exit(fail ? 1 : 0);
 })();

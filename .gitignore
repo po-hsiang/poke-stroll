@@ -3,5 +3,9 @@ Desktop.ini
 *.log
 .DS_Store
 
-# 螢幕截圖（回饋討論用，不進版控）
-Snipaste_*.png
+# 參考用圖檔（sprite 對照圖、螢幕截圖）只留在本機工作目錄，不進版控——
+# 像素素材一律由 canvas 即場生成，repo 裡不該有任何圖檔
+*.png
+*.jpg
+*.jpeg
+*.gif

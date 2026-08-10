@@ -5,8 +5,11 @@
 ```html
 <iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/?count=5&baseSize=120"
         style="position:fixed; bottom:0; left:0; width:100%; height:200px;
-               border:none; pointer-events:none;"></iframe>
+               border:none; pointer-events:none; color-scheme:light;"></iframe>
 ```
+
+> 🌓 `color-scheme:light` 是**透明背景的保險**:iframe 內外的配色方案不一致時,瀏覽器會在
+> iframe 後面墊一塊不透明底(白或黑)。你的頁面若宣告過 `color-scheme: dark`,這一句能讓內外對齊。
 
 不帶參數就使用預設值。本機直接開檔案也支援(`file:///...pokemon_footer_widget.html?count=10`)。
 
@@ -111,7 +114,7 @@ URL 參數是「載入時」的客製;`postMessage` 則是**執行中**的遙控
 ```html
 <iframe id="poke" src="https://rd7-ai-gw-02.i17game.net/poke-stroll/"
         style="position:fixed; bottom:0; left:0; width:100%; height:200px;
-               border:none; pointer-events:none;"></iframe>
+               border:none; pointer-events:none; color-scheme:light;"></iframe>
 <script>
     const poke = document.getElementById('poke');
     function pokeCmd(cmd, extra = {}) {

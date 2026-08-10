@@ -290,6 +290,10 @@
         width: 100%;
         height: var(--dock-h);
         border: none;
+        /* 本頁宣告了 color-scheme: dark，但 widget 釘死 light——
+           在 iframe「元素」上宣告 light 讓內外對齊，透明性才保得住
+           （不一致時瀏覽器會墊不透明底，widget 的透明背景就沒了） */
+        color-scheme: light;
         background:
             conic-gradient(#0c1322 25%, #101a2e 0 50%, #0c1322 0 75%, #101a2e 0)
             0 0 / 22px 22px;
@@ -394,11 +398,13 @@
             <span class="label">嵌 widget 本體(網頁角落的散步隊伍)</span>
             <code class="q" id="hero-snippet">&lt;iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/?count=5&amp;baseSize=120"
         style="position:fixed; bottom:0; left:0; width:100%; height:200px;
-               border:none; pointer-events:none;"&gt;&lt;/iframe&gt;</code>
+               border:none; pointer-events:none; color-scheme:light;"&gt;&lt;/iframe&gt;</code>
             <div class="row"><button class="btn" data-copy-el="hero-snippet">📋 複製嵌入碼</button></div>
             <p class="hint" style="margin:0">背景透明、<code>pointer-events:none</code> 讓點擊穿透,
             不會擋到頁面上的任何按鈕; 參數直接掛在網址後面, 各專案互不影響。
-            想讓訪客戳寶可夢就拿掉 <code>pointer-events:none</code>, 但整個 iframe 矩形都會開始攔截點擊, 請自行取捨。</p>
+            想讓訪客戳寶可夢就拿掉 <code>pointer-events:none</code>, 但整個 iframe 矩形都會開始攔截點擊, 請自行取捨。
+            <code>color-scheme:light</code> 是透明背景的保險: iframe 內外的配色方案不一致時,
+            瀏覽器會在後面墊不透明底——你的頁面若宣告過 <code>color-scheme: dark</code>, 這一句能讓內外對齊。</p>
         </div>
         <div class="card recipe">
             <span class="label">嵌這份說明文件(團隊 wiki / 開發者後台適用)</span>
@@ -439,7 +445,7 @@
             <span class="label">快速開始(嵌入方網頁)</span>
             <code class="codeblock" id="remote-snippet">&lt;iframe id="poke" src="https://rd7-ai-gw-02.i17game.net/poke-stroll/"
         style="position:fixed; bottom:0; left:0; width:100%; height:200px;
-               border:none; pointer-events:none;"&gt;&lt;/iframe&gt;
+               border:none; pointer-events:none; color-scheme:light;"&gt;&lt;/iframe&gt;
 &lt;script&gt;
     const poke = document.getElementById('poke');
     function pokeCmd(cmd, extra = {}) {
@@ -713,7 +719,7 @@
         const q = currentQuery();
         return `<iframe src="${base}${q ? '?' + q : ''}"\n` +
                `        style="position:fixed; bottom:0; left:0; width:100%; height:200px;\n` +
-               `               border:none; pointer-events:none;"></iframe>`;
+               `               border:none; pointer-events:none; color-scheme:light;"></iframe>`;
     }
 
     // ---------------------------------------------------------

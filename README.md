@@ -54,10 +54,14 @@
 ```html
 <iframe src="pokemon_footer_widget.html"
         style="position:fixed; bottom:0; left:0; width:100%; height:200px;
-               border:none; pointer-events:none;"></iframe>
+               border:none; pointer-events:none; color-scheme:light;"></iframe>
 ```
 
 背景透明、滑鼠點擊會穿透,不會擋到你網站上的任何按鈕。
+
+> 🌓 `color-scheme:light` 是**透明背景的保險**:iframe 內外的配色方案不一致時,
+> 瀏覽器會在 iframe 後面墊一塊不透明底(白或黑)。你的頁面若宣告過
+> `color-scheme: dark`,這一句能讓內外對齊、透明照舊。
 
 > 👆 想讓訪客也能戳寶可夢?把 `pointer-events:none` 拿掉即可 —— 但代價是**整個 iframe 矩形**
 > (包含看起來透明的部分)都會開始攔截點擊,蓋在內容上方時請自行取捨。
