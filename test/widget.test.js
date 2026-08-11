@@ -163,7 +163,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerry, feedingBusy, BERRY_ART, BERRY_PALETTE, getBerry: () => berry, getFeeder: () => feeder };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, BERRY_ART, BERRY_PALETTE, getBerries: () => berries };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -1095,7 +1095,7 @@ group('19. 色違星星特效定時重播');
     // 沒有寶可夢：點了也不掉（果實沒人吃）
     T.pokemons.length = 0;
     clickAt(500, 100);
-    check('場上沒人 → 不掉果實', T.getBerry() === null && !T.feedingBusy());
+    check('場上沒人 → 不掉果實', T.getBerries().length === 0 && !T.feedingBusy());
 
     // 陣容：一近一遠
     const near = newPokemon(25, { scale: 0.6 });
@@ -1106,59 +1106,86 @@ group('19. 色違星星特效定時重播');
     // 總開關 off：點了無事發生
     CONFIG.berry = 'off';
     clickAt(1000, 60);
-    check("berry='off' → 點空白處無事發生", T.getBerry() === null && !T.feedingBusy());
+    check("berry='off' → 點空白處無事發生", T.getBerries().length === 0 && !T.feedingBusy());
     CONFIG.berry = 'on';
 
-    // 丟果實：從點擊高度生成、指派最近的那隻
+    // 丟第一顆：從點擊高度生成、指派最近的那隻、冒發現的驚嘆號
     clickAt(1000, 60); // bottom = 200 - 60 = 140
-    check('果實生成（class = berry）', T.getBerry()?.el.className === 'berry');
-    check('生成高度 = 點擊高度', Math.abs(T.getBerry().bottom - 140) < 1, `實際 ${T.getBerry()?.bottom}`);
-    check('餵食鎖生效', T.feedingBusy() === true);
-    check('指派「最近」的那隻（900 vs 200）', T.getFeeder() === near);
+    const b1 = T.getBerries()[0];
+    check('果實生成（class = berry）', b1?.el.className === 'berry');
+    check('生成高度 = 點擊高度', Math.abs(b1.bottom - 140) < 1, `實際 ${b1?.bottom}`);
+    check('餵食進行中', T.feedingBusy() === true);
+    check('指派「最近」的那隻（900 vs 200）', b1.feeder === near);
     check('被指派者進入 SEEK_BERRY', near.state === 'SEEK_BERRY');
+    check('發現果實 → 冒驚嘆號', near.bubbleName === 'exclaim'
+        && near.bubble.style.display === 'block');
 
-    // 鎖定中再點：不生第二顆
-    const firstBerry = T.getBerry();
+    // 第二顆：near 忙碌中不會發現（即使距離比較近），改指派有空的 far
+    clickAt(950, 80); // 離 near(900) 比 far(200) 近
+    check('第二顆可以丟（一人一顆）', T.getBerries().length === 2);
+    const b2 = T.getBerries()[1];
+    check('忙碌中的不會發現 → 指派給有空的那隻', b2.feeder === far && far.state === 'SEEK_BERRY');
+
+    // 上限 = 常駐數量：兩隻都在忙，第三顆丟不出去
     clickAt(400, 100);
-    check('鎖定中再點 → 還是同一顆', T.getBerry() === firstBerry);
+    check('大家都在忙 → 第三顆丟不出去', T.getBerries().length === 2);
 
-    // 掉落物理：重力墜地、落點 = 地面
-    for (let i = 0; i < 400 && T.getBerry().state !== 'LANDED'; i++) T.updateBerry(16);
-    check('果實落地（bottom = 0）', T.getBerry().state === 'LANDED' && T.getBerry().bottom === 0);
+    // 掉落物理：兩顆各自獨立墜地、落點 = 地面
+    for (let i = 0; i < 400 && (b1.state !== 'LANDED' || b2.state !== 'LANDED'); i++) T.updateBerries(16);
+    check('兩顆果實各自落地（bottom = 0）',
+        b1.state === 'LANDED' && b1.bottom === 0 && b2.state === 'LANDED' && b2.bottom === 0);
 
-    // 奔向果實：面向正確、確實在移動
+    // 奔向自己的果實：面向正確、確實在移動
     const seekX0 = near.x;
     near.update(16, T.pokemons);
     check('朝果實方向小跑（面向右、往右移）', near.direction === 1 && near.x > seekX0);
     for (let i = 0; i < 2000 && near.state === 'SEEK_BERRY'; i++) near.update(16, T.pokemons);
     check('抵達果實旁 → 開吃', near.state === 'EATING', `實際 ${near.state}`);
-    check('嘴邊誤差 ≤ 6px', Math.abs(T.getBerry().x - near.centerX()) <= 6);
+    check('嘴邊誤差 ≤ 6px', Math.abs(b1.x - near.centerX()) <= 6);
 
-    // 三口吃掉 → 開心跳 + 愛心 → FEED_HEART 收尾
+    // 三口吃掉 → 開心跳 + 愛心 → FEED_HEART 收尾（只吃自己那顆）
     let shrunk = false;
     for (let i = 0; i < 100 && near.state === 'EATING'; i++) {
         near.update(16, T.pokemons);
-        if (T.getBerry() && T.getBerry().el.style.transform.includes('scale(0.72)')) shrunk = true;
+        if (b1.el.style.transform.includes('scale(0.72)')) shrunk = true;
     }
     check('吃到一半果實有變小（咬痕）', shrunk);
-    check('吃完果實消失', T.getBerry() === null);
+    check('吃完自己那顆消失、別隻的還在',
+        !T.getBerries().includes(b1) && T.getBerries().includes(b2));
     check('吃完開心跳 + 冒愛心', near.jumpV > 0 && near.bubbleName === 'heart');
-    check('愛心期間整套餵食仍鎖定', near.state === 'FEED_HEART' && T.feedingBusy() === true);
+    check('愛心期間仍算忙碌', near.state === 'FEED_HEART' && near.isFeeding());
 
-    // 愛心演完 → 回到散步、解鎖
+    // 愛心中不接新果實：far 也還在半路 → 沒人有空，丟不出去
+    clickAt(890, 100);
+    check('愛心中也不接新果實 → 丟不出去', T.getBerries().length === 1);
+
+    // 愛心演完 → 回到散步，又能發現新果實
     for (let i = 0; i < 110; i++) near.update(16, T.pokemons);
-    check('愛心演完 → 回到 WALKING、解鎖', near.state === 'WALKING' && T.feedingBusy() === false);
+    check('愛心演完 → 回到 WALKING', near.state === 'WALKING' && !near.isFeeding());
+    clickAt(890, 100);
+    check('忙完 → 又能發現新果實', T.getBerries().length === 2
+        && T.getBerries()[1].feeder === near && near.state === 'SEEK_BERRY');
+
+    // 全場收工：兩隻各自吃完自己的那顆 → 場上清空
+    for (let i = 0; i < 3000 && (near.isFeeding() || far.isFeeding()); i++) {
+        T.updateBerries(16);
+        near.update(16, T.pokemons);
+        far.update(16, T.pokemons);
+    }
+    check('全部吃完 → 場上清空、解鎖', T.getBerries().length === 0 && !T.feedingBusy());
 
     // 發呆中被指派：立刻放下手邊的事；活動範圍外的點擊，果實釘到搆得到的位置
+    near.x = 900; far.x = 200;
     far.state = 'IDLE';
     far.idleTimer = 99999;
     far.showEmote('note');
     clickAt(1, 100); // 最左邊：離 far(200) 比 near 近，且在 bounds 左界外
-    check('發呆中也被指派 → 立刻 SEEK_BERRY', T.getFeeder() === far && far.state === 'SEEK_BERRY');
-    check('被指派時心情對話框先收起', far.bubble.style.display === 'none');
+    const b3 = T.getBerries()[0];
+    check('發呆中也被指派 → 立刻 SEEK_BERRY', b3.feeder === far && far.state === 'SEEK_BERRY');
+    check('進行中的心情對話框換成發現的驚嘆號', far.bubbleName === 'exclaim');
     const minReach = 1920 * CONFIG.bounds.min + far.img.offsetWidth / 2;
     check('範圍外的點擊 → 果實釘在搆得到的最近位置',
-        T.getBerry().x === minReach, `實際 ${T.getBerry().x}，期望 ${minReach}`);
+        b3.x === minReach, `實際 ${b3.x}，期望 ${minReach}`);
     CONFIG.idleChance = savedIdleChance;
 
     // =====================================================

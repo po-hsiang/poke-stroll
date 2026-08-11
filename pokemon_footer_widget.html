@@ -746,6 +746,7 @@
                 this.speed = CONFIG.baseSpeed + Math.random() * CONFIG.speedVariance; // 隨機速度差異
                 this.idleTimer = 0;
                 this.avoidCooldown = 0; // 因避讓而掉頭後的冷卻時間
+                this.targetBerry = null; // 正在追的那顆果實（一隻只追一顆）
 
                 // 走路跳步動畫（GIF 本身只有原地待機動畫，沒有腳步，
                 // 補上垂直的小跳躍才不會像滑行）
@@ -870,12 +871,11 @@
                 } else if (this.state === 'EATING') {
                     this.eatBerry(deltaTime);
                 } else if (this.state === 'FEED_HEART') {
-                    // 吃完的餘韻：愛心演完整套餵食才算結束（期間不能再丟）
+                    // 吃完的餘韻：愛心演完這隻的餵食才算結束
                     this.bobY *= 0.8;
                     this.heartTimer -= deltaTime;
                     if (this.heartTimer <= 0) {
-                        this.state = 'WALKING';
-                        feeder = null; // 卸任 → feedingBusy 解鎖
+                        this.state = 'WALKING'; // 忙完了，之後才會發現下一顆果實
                     }
                 }
 
@@ -1030,17 +1030,28 @@
                 return this.x + (this.img.offsetWidth || CONFIG.baseSize * this.sizeScale) / 2;
             }
 
-            // 被指派去吃果實：不論正在走路還是發呆都放下手邊的事。
-            // 進行中的心情對話框先收起（色違登場閃光的保護期除外——hideEmote 會讓路）
-            startSeekBerry() {
-                this.state = 'SEEK_BERRY';
-                this.idleTimer = 0;
-                this.hideEmote();
+            // 餵食流程中（發現 → 跑去 → 吃 → 愛心）：一隻只追一顆，
+            // 期間不會發現其他果實，也不能被指派新的
+            isFeeding() {
+                return this.state === 'SEEK_BERRY'
+                    || this.state === 'EATING'
+                    || this.state === 'FEED_HEART';
             }
 
-            // 小跑步奔向果實：比散步快一截、跳步節奏也跟著加快。
+            // 發現果實：冒出驚嘆號，不論正在走路還是發呆都放下手邊的事。
+            // 驚嘆號被婉拒時（bubblePosition=none 或色違閃光保護期），
+            // 至少把進行中的心情收起（hideEmote 會給保護期讓路）
+            startSeekBerry(target) {
+                this.targetBerry = target;
+                this.state = 'SEEK_BERRY';
+                this.idleTimer = 0;
+                if (!this.showEmote('exclaim', 900)) this.hideEmote();
+            }
+
+            // 小跑步奔向自己的那顆果實：比散步快一截、跳步節奏也跟著加快。
             // 到口邊若果實還在半空，就站在底下等它落地（半空中接不到）
             seekBerry(deltaTime) {
+                const berry = this.targetBerry;
                 if (!berry) { this.state = 'WALKING'; return; } // 果實意外沒了就回去散步
                 const dt = deltaTime / (1000 / 60);
                 const dx = berry.x - this.centerX();
@@ -1065,12 +1076,15 @@
             eatBerry(deltaTime) {
                 this.bobY *= 0.8;
                 this.eatTimer -= deltaTime;
-                if (berry) {
+                if (this.targetBerry) {
                     const bite = this.eatTimer > 600 ? 1 : this.eatTimer > 300 ? 0.72 : 0.45;
-                    berry.el.style.transform = `scale(${bite})`;
+                    this.targetBerry.el.style.transform = `scale(${bite})`;
                 }
                 if (this.eatTimer <= 0) {
-                    if (berry) { berry.el.remove(); berry = null; }
+                    if (this.targetBerry) {
+                        removeBerry(this.targetBerry);
+                        this.targetBerry = null;
+                    }
                     this.jump();
                     this.showEmote('heart', 1600); // 色違保護期中會被婉拒，收尾計時照走
                     this.state = 'FEED_HEART';
@@ -1329,27 +1343,36 @@
         // ---------------------------------------------------------
         // 丟果實餵食 (Berry Feeding)
         // 點「寶可夢本體」= 戳戳互動（事件在本體上就被攔下）；
-        // 點「空白處」= 從點擊位置掉下一顆樹果，距離最近的那隻
-        // 不論正在做什麼都會跑過來，三口吃掉 + 冒愛心。
-        // 一次只能有一顆：整套（掉落 → 跑來 → 吃 → 愛心）演完才能再丟
+        // 點「空白處」= 從點擊位置掉下一顆樹果，距離最近且「有空」的
+        // 那隻冒出驚嘆號發現它，跑過來三口吃掉 + 冒愛心。
+        // 一隻只追一顆：整套（發現 → 跑去 → 吃 → 愛心）演完前
+        // 不會發現其他果實。丟新果實要有隻有空的，這個配對制
+        // 同時就是上限——場上同時最多「常駐數量」顆果實
         // ---------------------------------------------------------
-        let berry = null;    // 場上唯一的果實 { el, x, bottom, vy, state }
-        let feeder = null;   // 被指派來吃的那隻（愛心演完才卸任）
+        let berries = [];    // 場上的果實們 [{ el, x, bottom, vy, state, feeder }]
         let groundLevel = 0; // 果實落點 = 地面抬高量（主題地面），init() 時寫入
 
         function feedingBusy() {
-            return !!berry || !!feeder;
+            return berries.length > 0;
+        }
+
+        // 果實吃完（或意外沒了）的下場：DOM 移除 + 從場上除名
+        function removeBerry(b) {
+            b.el.remove();
+            const i = berries.indexOf(b);
+            if (i >= 0) berries.splice(i, 1);
         }
 
         function throwBerry(x, dropBottom) {
             if ((CONFIG.berry ?? 'on') === 'off') return false;
-            if (feedingBusy()) return false;
-            // 隱形的（sprite 兩段備援都失敗）不算：果實被看不見的東西吃掉太獵奇
-            const eligible = pokemons.filter(p => p.el.style.display !== 'none');
-            if (!eligible.length) return false;
+            // 隱形的（sprite 兩段備援都失敗）不算：果實被看不見的東西吃掉太獵奇；
+            // 餵食流程中的也不算：一隻只追一顆，忙完才會發現下一顆
+            const free = pokemons.filter(p =>
+                p.el.style.display !== 'none' && !p.isFeeding());
+            if (!free.length) return false; // 大家都在忙 → 這顆丟不出去
 
-            // 距離最近的那隻放下手邊的事，跑過來吃
-            feeder = eligible.reduce((a, b) =>
+            // 有空的裡面距離最近的那隻發現果實，跑過來吃
+            const feeder = free.reduce((a, b) =>
                 Math.abs(a.centerX() - x) <= Math.abs(b.centerX() - x) ? a : b);
 
             // 果實釘在被指派那隻「碰得到」的範圍內：
@@ -1369,31 +1392,35 @@
             const startBottom = Math.max(groundLevel, dropBottom);
             el.style.bottom = `${Math.round(startBottom)}px`;
             app.appendChild(el);
-            berry = {
+            const berry = {
                 el, x: bx, bottom: startBottom, vy: 0,
                 state: startBottom > groundLevel ? 'FALLING' : 'LANDED',
+                feeder,
             };
+            berries.push(berry);
 
-            feeder.startSeekBerry();
+            feeder.startSeekBerry(berry);
             return true;
         }
 
-        // 果實的掉落物理（每一幀由 gameLoop 呼叫）：
+        // 果實們的掉落物理（每一幀由 gameLoop 呼叫）：
         // 重力手感與點擊跳躍同一套，落地夠快會小彈跳一次
-        function updateBerry(deltaTime) {
-            if (!berry || berry.state !== 'FALLING') return;
+        function updateBerries(deltaTime) {
             const dt = deltaTime / (1000 / 60);
-            berry.vy += 0.35 * dt;
-            berry.bottom -= berry.vy * dt;
-            if (berry.bottom <= groundLevel) {
-                berry.bottom = groundLevel;
-                if (berry.vy > 2.5) {
-                    berry.vy = -berry.vy * 0.35; // 彈起（速度衰減）
-                } else {
-                    berry.state = 'LANDED';
+            for (const berry of berries) {
+                if (berry.state !== 'FALLING') continue;
+                berry.vy += 0.35 * dt;
+                berry.bottom -= berry.vy * dt;
+                if (berry.bottom <= groundLevel) {
+                    berry.bottom = groundLevel;
+                    if (berry.vy > 2.5) {
+                        berry.vy = -berry.vy * 0.35; // 彈起（速度衰減）
+                    } else {
+                        berry.state = 'LANDED';
+                    }
                 }
+                berry.el.style.bottom = `${Math.round(berry.bottom)}px`;
             }
-            berry.el.style.bottom = `${Math.round(berry.bottom)}px`;
         }
 
         // 點擊分流：本體的 click 監聽器會 stopPropagation，
@@ -1516,7 +1543,7 @@
 
             pokemons.forEach(p => p.update(deltaTime, pokemons));
 
-            updateBerry(deltaTime); // 丟下來的果實（有的話）繼續掉
+            updateBerries(deltaTime); // 丟下來的果實們（有的話）繼續掉
 
             // 客串成員：倒著掃，飛完行程（或載圖全滅）就移除
             for (let i = cameos.length - 1; i >= 0; i--) {
