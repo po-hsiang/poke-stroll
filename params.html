@@ -26,7 +26,7 @@
         --shadow: rgba(0, 0, 0, .5);
         --mono: ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace;
         --sans: 'Segoe UI', 'Noto Sans TC', system-ui, sans-serif;
-        --dock-h: 150px;  /* 底部預覽軌高度，跟 widget 的活動區一致 */
+        --dock-h: 150px;  /* 橫軌模式（上／下）的預覽高度，跟 widget 的活動區一致 */
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
@@ -38,7 +38,7 @@
         background-image:
             conic-gradient(#0e1524 25%, #121b2e 0 50%, #0e1524 0 75%, #121b2e 0);
         background-size: 28px 28px;
-        padding-bottom: calc(var(--dock-h) + 96px); /* 給底部預覽軌讓路 */
+        /* 給預覽區讓路的 padding 依位置模式而定，見下方 body.dock-* */
     }
     .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
 
@@ -60,6 +60,14 @@
         color: var(--muted);
         margin: 0 0 18px 4px;
     }
+    /* 標題列：對話框標題在左，預覽區位置選單靠在右邊 */
+    .h1-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 14px 22px;
+        margin-bottom: 26px;
+    }
     .h1-bubble {
         display: inline-block;
         position: relative;
@@ -67,9 +75,25 @@
         border: 3px solid var(--ink);
         box-shadow: 6px 6px 0 var(--shadow);
         padding: 18px 28px 14px;
-        margin-bottom: 26px;
     }
-    .h1-bubble::after { /* 尾巴：朝下，指向頁面底部的預覽軌 */
+    .dock-pos {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font: 700 13px/1 var(--mono);
+        letter-spacing: .1em;
+        color: var(--muted);
+    }
+    .dock-pos select {
+        font: 700 14px var(--mono);
+        color: var(--ink);
+        background: var(--paper-deep);
+        border: 2px solid var(--ink);
+        box-shadow: 3px 3px 0 var(--shadow);
+        padding: 8px 10px;
+        cursor: pointer;
+    }
+    .h1-bubble::after { /* 尾巴：朝下，指向散步中的牠們 */
         content: '';
         position: absolute;
         left: 34px;
@@ -250,13 +274,53 @@
         white-space: pre;
     }
 
-    /* ---- 底部預覽軌：牠們就在這條軌上散步 ---- */
+    /* ---- 預覽區：牠們就在這裡散步 ----
+       位置由標題旁的選單決定（body.dock-top/bottom/left/right/none）：
+       上／下 = 一條橫軌，跟嵌入頁尾的實際樣子一致，測散步用；
+       左／右 = 滿版直切一半（文件、預覽各半，等寬等高），
+                測飛行軌跡與其他吃整個畫面的效果；
+       無     = 整塊收掉（取代舊的收合鈕） */
     #dock {
         position: fixed;
-        left: 0; right: 0; bottom: 0;
         z-index: 50;
         background: var(--paper);
-        border-top: 3px solid var(--ink);
+    }
+    body.dock-bottom { padding-bottom: calc(var(--dock-h) + 96px); }
+    body.dock-bottom #dock { left: 0; right: 0; bottom: 0; border-top: 3px solid var(--ink); }
+    body.dock-top { padding-top: calc(var(--dock-h) + 96px); }
+    body.dock-top #dock { left: 0; right: 0; top: 0; border-bottom: 3px solid var(--ink); }
+    /* 左／右用 %（不用 vw）：% 跟 body 的排版寬同一套基準，
+       兩邊才會真的均分、不會因為滾動條寬度多出一條橫向捲軸 */
+    body.dock-left { padding-left: 50%; }
+    body.dock-left #dock { left: 0; top: 0; bottom: 0; width: 50%; border-right: 3px solid var(--ink); }
+    body.dock-right { padding-right: 50%; }
+    body.dock-right #dock { right: 0; top: 0; bottom: 0; width: 50%; border-left: 3px solid var(--ink); }
+    body.dock-left #dock, body.dock-right #dock {
+        display: flex;
+        flex-direction: column;
+    }
+    body.dock-left #frame, body.dock-right #frame {
+        height: auto;
+        flex: 1; /* 工具列以下全給 widget：滿高才看得到飛行軌跡 */
+    }
+    body.dock-none #dock { display: none; }
+    /* 窄螢幕塞不下對半切：左／右自動退回下方橫軌（選單記憶不變） */
+    @media (max-width: 720px) {
+        body.dock-left, body.dock-right {
+            padding-left: 0;
+            padding-right: 0;
+            padding-bottom: calc(var(--dock-h) + 96px);
+        }
+        body.dock-left #dock, body.dock-right #dock {
+            left: 0; right: 0; top: auto; bottom: 0;
+            width: auto;
+            border: none;
+            border-top: 3px solid var(--ink);
+        }
+        body.dock-left #frame, body.dock-right #frame {
+            flex: none;
+            height: var(--dock-h);
+        }
     }
     #dockbar {
         display: flex;
@@ -282,9 +346,6 @@
         background: var(--paper-deep);
     }
     #query::placeholder { color: #7788a5; }
-    /* 收合＝只藏 widget 那條軌，工具列留著隨時展開；讓路的 padding 一併縮小 */
-    #dock.collapsed #frame { display: none; }
-    body.dock-collapsed { padding-bottom: 150px; }
     #frame {
         display: block;
         width: 100%;
@@ -330,16 +391,29 @@
     footer p { margin: 4px 0; }
 </style>
 </head>
-<body>
+<!-- 預設右半邊：class 直接寫死在 body 上，JS 載入前就不會版面跳動 -->
+<body class="dock-right">
 <div class="wrap">
 
     <header>
         <p class="eyebrow">POKÉSTROLL 開發者文件</p>
-        <div class="h1-bubble"><h1>API 說明文件<span class="tail-note"> ?</span></h1></div>
+        <div class="h1-row">
+            <div class="h1-bubble"><h1>API 說明文件<span class="tail-note"> ?</span></h1></div>
+            <label class="dock-pos">預覽區
+                <select id="dock-pos" aria-label="預覽區位置">
+                    <option value="top">上方橫軌</option>
+                    <option value="bottom">下方橫軌</option>
+                    <option value="left">左半邊</option>
+                    <option value="right">右半邊</option>
+                    <option value="none">無</option>
+                </select>
+            </label>
+        </div>
         <p class="lead">嵌入 PokéStroll 前後會用到的一切都在這: <b>參數總表</b>(網址掛 query string 客製行為,
         不用改任何程式或設定檔)、<b>iframe 嵌入範例</b>、<b>postMessage 遙控</b>, 用下方頁籤切換。
-        頁面最底下那條是<b>即時預覽軌</b>——每個參數、每道食譜、每道遙控指令都能一鍵丟進去看效果,
-        不用時可以收合。</p>
+        旁邊那塊是<b>即時預覽區</b>——每個參數、每道食譜、每道遙控指令都能一鍵丟進去看效果。
+        位置用標題旁的選單挑: <b>上／下</b>是一條橫軌(跟嵌入頁尾的實際樣子一致),
+        <b>左／右</b>是文件、預覽對半分(滿高畫面, 測飛行軌跡用), 選<b>無</b>就整塊關掉。</p>
         <nav class="tabs" role="tablist" aria-label="文件分頁">
             <button class="tab-btn" role="tab" id="tab-params" aria-controls="panel-params" aria-selected="true">📋 參數總表</button>
             <button class="tab-btn" role="tab" id="tab-embed" aria-controls="panel-embed" aria-selected="false">🖼️ iframe 嵌入範例</button>
@@ -351,7 +425,7 @@
 
     <section id="params">
         <h2>參數總表</h2>
-        <p class="sec-note">共 <span id="param-count"></span> 個參數。點<b>參數名稱</b>直接複製; 點列尾的 <code>+</code> 把該參數（帶示範值）加進底部預覽軌。用下方子頁籤依分類篩選(遙控類參數也在這)。</p>
+        <p class="sec-note">共 <span id="param-count"></span> 個參數。點<b>參數名稱</b>直接複製; 點列尾的 <code>+</code> 把該參數（帶示範值）加進預覽區。用下方子頁籤依分類篩選(遙控類參數也在這)。</p>
         <div class="toolbar">
             <input id="search" type="search" placeholder="搜尋參數或說明…" aria-label="搜尋參數">
             <span id="chips"></span>
@@ -415,7 +489,7 @@
             <div class="row"><button class="btn" data-copy-el="doc-embed-snippet">📋 複製文件嵌入碼</button></div>
             <p class="hint" style="margin:0">跟嵌 widget 相反: 文件頁要互動, <b>不要</b>加
             <code>pointer-events:none</code>; 高度給足(建議 80vh 且 ≥ 600px),
-            搜尋、試玩按鈕和底部預覽軌才施展得開。</p>
+            搜尋、試玩按鈕和預覽區才施展得開。</p>
         </div>
     </section>
     </div>
@@ -429,7 +503,7 @@
         總開關與節流見參數表的 <code>remote</code> / <code>remoteRateLimit</code>。</p>
 
         <div class="card recipe" style="margin-bottom:16px">
-            <span class="label">🕹️ 現場試玩——指令直接打進底部預覽軌</span>
+            <span class="label">🕹️ 現場試玩——指令直接打進預覽區</span>
             <div class="row" style="flex-wrap:wrap">
                 <button class="btn" data-remote='{"cmd":"spawn","id":143}'>🕊️ spawn: 卡比獸飛過</button>
                 <button class="btn" data-remote='{"cmd":"spawn"}'>🎲 spawn: 隨機客串</button>
@@ -528,16 +602,15 @@
     </footer>
 </div>
 
-<!-- 底部預覽軌:widget 本尊直接在文件頁底散步 -->
+<!-- 預覽區:widget 本尊直接在文件頁上散步,位置由標題旁的選單決定 -->
 <div id="dock">
     <div id="dockbar">
-        <span class="tag">預覽軌</span>
+        <span class="tag">預覽</span>
         <input id="query" type="text" spellcheck="false"
                placeholder="count=5&baseSize=120 …(可直接編輯, Enter 套用)" aria-label="預覽用 query string">
         <button class="btn primary" id="apply">套用</button>
         <button class="btn" id="reroll" title="同參數重抽一批">🎲 重抽</button>
         <button class="btn" id="copy-embed">📋 複製嵌入碼</button>
-        <button class="btn" id="dock-toggle" aria-expanded="true" title="收合／展開預覽軌">▾ 收合</button>
     </div>
     <iframe id="frame" title="PokéStroll 即時預覽" src="./pokemon_footer_widget.html"></iframe>
 </div>
@@ -624,7 +697,7 @@
         { name: 'remoteRateLimit', type: 'int',  range: '1 ~ 100',       def: '10',     group: '遙控', sample: 'remoteRateLimit=3',
           desc: '遙控指令節流：每秒最多處理幾道，超額的直接丟棄並回執 rate limited（防聊天室洗版）' },
         { name: 'berry',          type: 'enum',  range: 'on / off',      def: 'on',     group: '互動', sample: 'berry=off',
-          desc: '丟果實餵食總開關：點寶可夢「本體」= 戳戳互動；點「空白處」= 從點擊位置掉下一顆像素樹果，距離最近且有空的那隻會冒出驚嘆號發現它，跑過來三口吃掉 + 冒愛心。一隻只追一顆，流程中（發現 → 跑去 → 吃 → 愛心）不會發現其他果實，所以同時最多「常駐數量」（count）顆；活動範圍外的點擊，果實會落在牠搆得到的最近位置。off = 點空白處無事發生。底部預覽軌可以直接點來玩' },
+          desc: '丟果實餵食總開關：點寶可夢「本體」= 戳戳互動；點「空白處」= 從點擊位置掉下一顆像素樹果，距離最近且有空的那隻會冒出驚嘆號發現它，跑過來三口吃掉 + 冒愛心。一隻只追一顆，流程中（發現 → 跑去 → 吃 → 愛心）不會發現其他果實，所以同時最多「常駐數量」（count）顆；活動範圍外的點擊，果實會落在牠搆得到的最近位置。off = 點空白處無事發生。預覽區可以直接點來玩' },
     ];
 
     const RECIPES = [
@@ -652,7 +725,7 @@
     ];
 
     // ---------------------------------------------------------
-    // 預覽軌：iframe 指向同資料夾的 widget 本體，
+    // 預覽區：iframe 指向同資料夾的 widget 本體，
     // 部署後（/poke-stroll/params.html）與本機 file:// 都直接可用
     // ---------------------------------------------------------
     const PROD_BASE = 'https://rd7-ai-gw-02.i17game.net/poke-stroll/';
@@ -665,7 +738,7 @@
     function applyPreview(q) {
         if (q !== undefined) queryInput.value = q;
         const src = './pokemon_footer_widget.html' + (currentQuery() ? '?' + currentQuery() : '');
-        setDock(false); // 收合中按了預覽 → 自動展開，不然看不到效果
+        ensureDockVisible(); // 預覽被關掉時按了套用 → 自動叫回來，不然看不到效果
         // 先清空再載入：即使 query 沒變也強制重載（= 重抽一批）
         frame.src = 'about:blank';
         requestAnimationFrame(() => { frame.src = src; });
@@ -695,21 +768,30 @@
     showTab(TAB_KEYS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'params');
 
     // ---------------------------------------------------------
-    // 預覽軌收合：預設展開，記住偏好；收合只藏軌道、工具列常駐
+    // 預覽區位置：上／下 = 橫軌（測散步）、左／右 = 對半分
+    //（測飛行軌跡與完整畫面）、無 = 整塊收掉。預設右半邊，記住偏好
     // ---------------------------------------------------------
-    const dock = document.getElementById('dock');
-    const dockToggle = document.getElementById('dock-toggle');
-    function setDock(collapsed) {
-        dock.classList.toggle('collapsed', collapsed);
-        document.body.classList.toggle('dock-collapsed', collapsed);
-        dockToggle.textContent = collapsed ? '▴ 展開' : '▾ 收合';
-        dockToggle.setAttribute('aria-expanded', String(!collapsed));
-        try { localStorage.setItem('pokeDockCollapsed', collapsed ? '1' : '0'); } catch (e) { /* 無痕模式就不記了 */ }
+    const DOCK_POSITIONS = ['top', 'bottom', 'left', 'right', 'none'];
+    const dockPosSelect = document.getElementById('dock-pos');
+    function setDockPos(pos) {
+        if (!DOCK_POSITIONS.includes(pos)) pos = 'right';
+        DOCK_POSITIONS.forEach(p => document.body.classList.toggle('dock-' + p, p === pos));
+        dockPosSelect.value = pos;
+        try {
+            localStorage.setItem('pokeDockPos', pos);
+            localStorage.removeItem('pokeDockCollapsed'); // 舊版收合鈕的偏好已退役
+        } catch (e) { /* 無痕模式就不記了 */ }
     }
-    dockToggle.addEventListener('click', () => setDock(!dock.classList.contains('collapsed')));
-    let dockSaved = null;
-    try { dockSaved = localStorage.getItem('pokeDockCollapsed'); } catch (e) { /* 同上 */ }
-    setDock(dockSaved === '1');
+    dockPosSelect.addEventListener('change', () => setDockPos(dockPosSelect.value));
+    let dockPosSaved = null;
+    try { dockPosSaved = localStorage.getItem('pokeDockPos'); } catch (e) { /* 同上 */ }
+    setDockPos(dockPosSaved ?? 'right');
+
+    // 預覽被關掉（無）的狀態下按了套用／試玩 → 自動回到預設的右半邊，
+    // 不然按了什麼都看不到
+    function ensureDockVisible() {
+        if (document.body.classList.contains('dock-none')) setDockPos('right');
+    }
 
     // 嵌入碼：部署環境用「目前網址的目錄」當 base，本機 file:// 則退回正式站網址
     function embedSnippet() {
@@ -764,13 +846,13 @@
     });
 
     // ---------------------------------------------------------
-    // 遙控試玩：指令打進預覽軌的 iframe，回執即時顯示。
+    // 遙控試玩：指令打進預覽區的 iframe，回執即時顯示。
     // 這一段本身就是「快速開始」範例的活教材——原始碼照抄即可串接
     // ---------------------------------------------------------
     const remoteLog = document.getElementById('remote-log');
     document.querySelectorAll('[data-remote]').forEach(btn => {
         btn.addEventListener('click', () => {
-            setDock(false); // 收合中試玩 → 自動展開，效果與回執一起看
+            ensureDockVisible(); // 預覽被關掉時試玩 → 自動叫回來，效果與回執一起看
             const msg = JSON.parse(btn.dataset.remote);
             frame.contentWindow.postMessage({ ns: 'poke-stroll', ...msg }, '*');
         });
@@ -828,7 +910,7 @@
             const add = document.createElement('button');
             add.className = 'add';
             add.textContent = '+';
-            add.title = `加進預覽軌：${p.sample}`;
+            add.title = `加進預覽區：${p.sample}`;
             add.setAttribute('aria-label', `把 ${p.name} 加進預覽`);
             add.addEventListener('click', () => {
                 const q = currentQuery();
