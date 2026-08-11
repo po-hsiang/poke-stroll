@@ -60,7 +60,7 @@
         color: var(--muted);
         margin: 0 0 18px 4px;
     }
-    /* 標題列：對話框標題在左，預覽區位置選單靠在右邊 */
+    /* 標題列：對話框標題在左，預覽區位置按鈕靠在右邊 */
     .h1-row {
         display: flex;
         align-items: center;
@@ -79,20 +79,13 @@
     .dock-pos {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
         font: 700 13px/1 var(--mono);
         letter-spacing: .1em;
         color: var(--muted);
     }
-    .dock-pos select {
-        font: 700 14px var(--mono);
-        color: var(--ink);
-        background: var(--paper-deep);
-        border: 2px solid var(--ink);
-        box-shadow: 3px 3px 0 var(--shadow);
-        padding: 8px 10px;
-        cursor: pointer;
-    }
+    .dock-pos .btn { padding: 8px 11px; } /* 單字按鈕，胖一點才好按 */
+    .dock-pos .btn[aria-pressed="true"] { background: var(--gold); color: var(--gold-ink); }
     .h1-bubble::after { /* 尾巴：朝下，指向散步中的牠們 */
         content: '';
         position: absolute;
@@ -275,7 +268,7 @@
     }
 
     /* ---- 預覽區：牠們就在這裡散步 ----
-       位置由標題旁的選單決定（body.dock-top/bottom/left/right/none）：
+       位置由標題旁的按鈕決定（body.dock-top/bottom/left/right/none）：
        上／下 = 一條橫軌，跟嵌入頁尾的實際樣子一致，測散步用；
        左／右 = 滿版直切一半（文件、預覽各半，等寬等高），
                 測飛行軌跡與其他吃整個畫面的效果；
@@ -304,7 +297,7 @@
         flex: 1; /* 工具列以下全給 widget：滿高才看得到飛行軌跡 */
     }
     body.dock-none #dock { display: none; }
-    /* 窄螢幕塞不下對半切：左／右自動退回下方橫軌（選單記憶不變） */
+    /* 窄螢幕塞不下對半切：左／右自動退回下方橫軌（按鈕記憶不變） */
     @media (max-width: 720px) {
         body.dock-left, body.dock-right {
             padding-left: 0;
@@ -399,20 +392,18 @@
         <p class="eyebrow">POKÉSTROLL 開發者文件</p>
         <div class="h1-row">
             <div class="h1-bubble"><h1>API 說明文件<span class="tail-note"> ?</span></h1></div>
-            <label class="dock-pos">預覽區
-                <select id="dock-pos" aria-label="預覽區位置">
-                    <option value="top">上方橫軌</option>
-                    <option value="bottom">下方橫軌</option>
-                    <option value="left">左半邊</option>
-                    <option value="right">右半邊</option>
-                    <option value="none">無</option>
-                </select>
-            </label>
+            <div class="dock-pos" role="group" aria-label="預覽區位置">預覽區
+                <button class="btn" data-dock-pos="top" title="預覽區放上方橫軌">上</button>
+                <button class="btn" data-dock-pos="bottom" title="預覽區放下方橫軌">下</button>
+                <button class="btn" data-dock-pos="left" title="預覽區佔左半邊（滿高）">左</button>
+                <button class="btn" data-dock-pos="right" title="預覽區佔右半邊（滿高）">右</button>
+                <button class="btn" data-dock-pos="none" title="關閉預覽區">無</button>
+            </div>
         </div>
         <p class="lead">嵌入 PokéStroll 前後會用到的一切都在這: <b>參數總表</b>(網址掛 query string 客製行為,
         不用改任何程式或設定檔)、<b>iframe 嵌入範例</b>、<b>postMessage 遙控</b>, 用下方頁籤切換。
         旁邊那塊是<b>即時預覽區</b>——每個參數、每道食譜、每道遙控指令都能一鍵丟進去看效果。
-        位置用標題旁的選單挑: <b>上／下</b>是一條橫軌(跟嵌入頁尾的實際樣子一致),
+        位置用標題旁的按鈕挑: <b>上／下</b>是一條橫軌(跟嵌入頁尾的實際樣子一致),
         <b>左／右</b>是文件、預覽對半分(滿高畫面, 測飛行軌跡用), 選<b>無</b>就整塊關掉。</p>
         <nav class="tabs" role="tablist" aria-label="文件分頁">
             <button class="tab-btn" role="tab" id="tab-params" aria-controls="panel-params" aria-selected="true">📋 參數總表</button>
@@ -602,7 +593,7 @@
     </footer>
 </div>
 
-<!-- 預覽區:widget 本尊直接在文件頁上散步,位置由標題旁的選單決定 -->
+<!-- 預覽區:widget 本尊直接在文件頁上散步,位置由標題旁的按鈕決定 -->
 <div id="dock">
     <div id="dockbar">
         <span class="tag">預覽</span>
@@ -772,17 +763,17 @@
     //（測飛行軌跡與完整畫面）、無 = 整塊收掉。預設右半邊，記住偏好
     // ---------------------------------------------------------
     const DOCK_POSITIONS = ['top', 'bottom', 'left', 'right', 'none'];
-    const dockPosSelect = document.getElementById('dock-pos');
+    const dockPosButtons = document.querySelectorAll('[data-dock-pos]');
     function setDockPos(pos) {
         if (!DOCK_POSITIONS.includes(pos)) pos = 'right';
         DOCK_POSITIONS.forEach(p => document.body.classList.toggle('dock-' + p, p === pos));
-        dockPosSelect.value = pos;
+        dockPosButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.dockPos === pos)));
         try {
             localStorage.setItem('pokeDockPos', pos);
             localStorage.removeItem('pokeDockCollapsed'); // 舊版收合鈕的偏好已退役
         } catch (e) { /* 無痕模式就不記了 */ }
     }
-    dockPosSelect.addEventListener('change', () => setDockPos(dockPosSelect.value));
+    dockPosButtons.forEach(b => b.addEventListener('click', () => setDockPos(b.dataset.dockPos)));
     let dockPosSaved = null;
     try { dockPosSaved = localStorage.getItem('pokeDockPos'); } catch (e) { /* 同上 */ }
     setDockPos(dockPosSaved ?? 'right');
