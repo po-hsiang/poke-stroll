@@ -202,6 +202,7 @@
             idleJumpChance:   { path: ['idleJumpChance'],   type: 'float', min: 0,  max: 1 },
             shinyChance:      { path: ['shinyChance'],      type: 'float', min: 0,  max: 1 },
             shinyBurstDuration: { path: ['shinyBurstDuration'], type: 'int', min: 100, max: 10000 },
+            shinyBurstScale:  { path: ['shinyBurstScale'],  type: 'float', min: 0.1, max: 5 },
             shinyBurstDelayMin: { path: ['shinyBurstDelay', 'min'], type: 'int', min: 1000, max: 600000 },
             shinyBurstDelayMax: { path: ['shinyBurstDelay', 'max'], type: 'int', min: 1000, max: 600000 },
             hopHeight:        { path: ['hopHeight'],        type: 'float', min: 0,  max: 50 },
@@ -1113,7 +1114,9 @@
                         // 從本體中央出發：角度沿「上半弧」平均分佈再加小亂數
                         // （不取整圈：往正下方飛會立刻被頁面底邊裁掉），距離依體型放大
                         const angle = Math.PI * (-0.15 + 1.3 * (i / (count - 1))) + (Math.random() - 0.5) * 0.3;
-                        const dist = (26 + Math.random() * 16) * (0.7 + this.sizeScale * 0.5);
+                        // 飛散半徑 = 基礎距離 × 體型 × 全頁倍率（shinyBurstScale 只放大範圍，星星本身大小不變）
+                        const dist = (26 + Math.random() * 16) * (0.7 + this.sizeScale * 0.5)
+                                     * (CONFIG.shinyBurstScale ?? 1);
                         star.style.left = `calc(50% - ${Math.round(w / 2)}px)`;
                         star.style.bottom = `${Math.round(height * 0.5)}px`;
                         star.style.setProperty('--dx', `${Math.round(Math.cos(angle) * dist)}px`);
@@ -1124,7 +1127,7 @@
                 }
 
                 // 每隔一段隨機秒數重播一輪：色違常駐在頁面上，
-                // 開頁那一下沒看到（或中途才進來）的觀眾也不會錯過
+                // 開頁那一下沒看到（或中途才進來）的人也不會錯過
                 this.burstTimer = setTimeout(() => this.celebrateShiny(),
                     randomInt(CONFIG.shinyBurstDelay?.min ?? 15000, CONFIG.shinyBurstDelay?.max ?? 20000));
             }
@@ -1478,7 +1481,7 @@
             },
             // 加入一隻「常駐」成員（會留下來散步，不是路過的客串）：
             // 帶 id 指定誰入隊，不帶就照 minId/maxId 隨機抽。
-            // 上限跟 count 參數同一個天花板，聊天室灌不爆隊伍
+            // 上限跟 count 參數同一個天花板，指令灌不爆隊伍
             join(msg) {
                 if (pokemons.length >= (QUERY_PARAMS.count?.max ?? 50)) {
                     return { ok: false, reason: 'party is full' };
@@ -1560,7 +1563,7 @@
                 console.warn(`[PokéFooter] 未知的遙控指令：${msg.cmd}`);
                 return reply({ ok: false, reason: 'unknown cmd' });
             }
-            // 節流：滑動窗超額就整道丟棄（聊天室洗版時保住渲染效能）
+            // 節流：滑動窗超額就整道丟棄（高頻洗版時保住渲染效能）
             const t = Date.now();
             while (remoteStamps.length && t - remoteStamps[0] >= 1000) remoteStamps.shift();
             if (remoteStamps.length >= (CONFIG.remoteRateLimit ?? 10)) {

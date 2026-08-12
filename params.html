@@ -489,7 +489,7 @@
     <section id="remote-sec">
         <h2>postMessage 遙控</h2>
         <p class="sec-note">URL 參數是「載入時」的客製; <b>postMessage 是執行中的遙控</b>——
-        父頁面隨時能隔著 iframe 疆界下指令(讓觀眾用聊天室指令召喚寶可夢, 就是靠這個)。
+        父頁面隨時能隔著 iframe 疆界下指令(讓使用者從你的介面即時召喚寶可夢, 就是靠這個)。
         它是瀏覽器原生的跨視窗通道, <b>不走網路、不受 CORS 限制</b>, 跨網域 iframe 直接可用。
         總開關與節流見參數表的 <code>remote</code> / <code>remoteRateLimit</code>。</p>
 
@@ -573,35 +573,32 @@
             <ul>
                 <li><b>訊息格式</b>: <code>{ ns: 'poke-stroll', cmd: '…', …參數 }</code>。沒帶 <code>ns</code> 的訊息一律無視——父頁面常有別的 iframe 在互傳訊息, 不是寄給我們的信不拆。</li>
                 <li><b>回執</b>: 每道指令都回 <code>{ ns, re, ok, count?, id?, reason? }</code> 給發送方; <code>reason</code> 可能是 <code>unknown cmd</code> / <code>id must be 1~1025</code> / <code>id not found</code> / <code>cameo pools not loaded</code> / <code>page hidden</code>(背景分頁不演視覺效果) / <code>rate limited</code> / <code>party is full</code> / <code>last one standing</code> / <code>berry is off</code> / <code>everyone is busy</code> / <code>count must be &gt;= 1</code>。</li>
-                <li><b>節流</b>: 每秒最多 <code>remoteRateLimit</code>(預設 10)道, 超額整道丟棄——聊天室洗版也拖不垮渲染。</li>
+                <li><b>節流</b>: 每秒最多 <code>remoteRateLimit</code>(預設 10)道, 超額整道丟棄——高頻灌指令也拖不垮渲染。</li>
                 <li><b>總開關</b>: <code>?remote=off</code> 後完全靜默(連回執都不給, 像沒這功能)。</li>
                 <li><b>刻意不驗 origin</b>: 指令全是無害的視覺效果、無機密無狀態, 最壞情況是有人在他自己的頁面上讓皮卡丘跳舞。要鎖就直接 <code>remote=off</code>。</li>
             </ul>
         </div>
 
         <div class="card recipe">
-            <span class="label">進階: 接聊天室(OBS wrapper 模式)——外部程式碰不到 postMessage, 讓 wrapper 對外連 WebSocket、對內轉譯</span>
-            <code class="codeblock" id="wrapper-snippet">&lt;!-- wrapper.html: OBS 瀏覽器來源載入這一頁(widget 本體完全不用改) --&gt;
+            <span class="label">進階: 接外部程式(wrapper 模式)——瀏覽器外的程式碰不到 postMessage, 讓 wrapper 對外連 WebSocket、對內轉譯</span>
+            <code class="codeblock" id="wrapper-snippet">&lt;!-- wrapper.html: OBS 或任何頁面載入這一頁(widget 本體完全不用改) --&gt;
 &lt;iframe id="poke" src="./pokemon_footer_widget.html"
         style="position:fixed; inset:0; width:100%; height:100%; border:none;"&gt;&lt;/iframe&gt;
 &lt;script&gt;
     const poke = document.getElementById('poke');
-    // Twitch 允許匿名唯讀連聊天室, 零申請零金鑰
-    const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
-    ws.onopen = () =&gt; {
-        ws.send('NICK justinfan12345');   // justinfan+數字 = 官方保留的匿名帳號
-        ws.send('JOIN #你的頻道名稱');
-    };
+    // 對外連你自己的服務: 後台推播、事件匯流排…任何 WebSocket 來源都行
+    const ws = new WebSocket('wss://your-service.example/events');
     ws.onmessage = ev =&gt; {
-        if (ev.data.startsWith('PING')) return ws.send('PONG :tmi.twitch.tv');
-        // 觀眾打「!pokemon 143」→ 客串一隻卡比獸
-        const m = ev.data.match(/PRIVMSG #\S+ :!pokemon (\d{1,4})/);
-        if (m) poke.contentWindow.postMessage(
-            { ns: 'poke-stroll', cmd: 'spawn', id: Number(m[1]) }, '*');
+        // 服務端推 {"cmd":"spawn","id":143} 之類的 JSON 事件, 轉譯成 postMessage;
+        // wrapper 這層先過白名單, 不認識的指令不轉發
+        const m = JSON.parse(ev.data);
+        if (['spawn', 'join', 'leave', 'feed', 'poke', 'burst'].includes(m.cmd)) {
+            poke.contentWindow.postMessage({ ns: 'poke-stroll', ...m }, '*');
+        }
     };
 &lt;/script&gt;</code>
             <div class="row"><button class="btn" data-copy-el="wrapper-snippet">📋 複製 wrapper 範例</button></div>
-            <p class="hint" style="margin:0">widget 端已內建每秒節流; 想更嚴(單一觀眾冷卻、訂閱者限定)就在 wrapper 這層做——平台相關的邏輯全關在 wrapper 裡, widget 永遠不知道 Twitch 存在。</p>
+            <p class="hint" style="margin:0">widget 端已內建每秒節流; 想更嚴(單一使用者冷卻、權限限定)就在 wrapper 這層做——事件來源相關的邏輯全關在 wrapper 裡, widget 完全不用知道指令從哪來。</p>
         </div>
     </section>
     </div>
@@ -673,8 +670,10 @@
           desc: '每一隻獨立擲骰出現色違的機率（預設調得比正作的 1/4096 高很多，直播才熱鬧）。色違登場時必定亮出金色閃光對話框 + 星星四散特效，且該對話框有 4 秒保護期，不會被隨後的心情或被戳的愛心蓋掉' },
         { name: 'shinyBurstDuration', type: 'int', range: '100 ~ 10000', def: '1400',   group: '色違', sample: 'shinyChance=1&shinyBurstDuration=3000',
           desc: '色違星星特效的飛散＋淡出總時長 ms' },
+        { name: 'shinyBurstScale', type: 'float', range: '0.1 ~ 5', def: '1', group: '色違', sample: 'shinyChance=1&shinyBurstScale=2',
+          desc: '色違星星特效的飛散範圍倍率——星星從本體正中心向外炸開，這是炸多遠的倍率：2 範圍加倍、0.5 縮小一半。只調範圍，星星本身大小不變' },
         { name: 'shinyBurstDelayMin', type: 'int', range: '1000 ~ 600000', def: '15000', group: '色違', sample: 'shinyChance=1&shinyBurstDelayMin=3000&shinyBurstDelayMax=5000',
-          desc: '常駐色違的星星特效「定時重播」間隔下限 ms——登場放一輪後，每隔區間內的隨機秒數再放一輪，開頁沒看到或中途進來的觀眾也不會錯過' },
+          desc: '常駐色違的星星特效「定時重播」間隔下限 ms——登場放一輪後，每隔區間內的隨機秒數再放一輪，開頁沒看到或中途進來的人也不會錯過' },
         { name: 'shinyBurstDelayMax', type: 'int', range: '1000 ~ 600000', def: '20000', group: '色違', sample: 'shinyChance=1&shinyBurstDelayMin=3000&shinyBurstDelayMax=5000',
           desc: '重播間隔上限 ms（min > max 自動對調）' },
         { name: 'hopHeight',      type: 'float', range: '0 ~ 50',        def: '3',      group: '動畫與外觀', sample: 'hopHeight=8',
@@ -704,7 +703,7 @@
         { name: 'remote',         type: 'enum',  range: 'on / off',      def: 'on',     group: '遙控', sample: 'remote=off',
           desc: 'postMessage 遙控總開關：off = 完全不理會遙控訊息（連回執都不給）。指令與串接方法見下方「postMessage 遙控」一節' },
         { name: 'remoteRateLimit', type: 'int',  range: '1 ~ 100',       def: '10',     group: '遙控', sample: 'remoteRateLimit=3',
-          desc: '遙控指令節流：每秒最多處理幾道，超額的直接丟棄並回執 rate limited（防聊天室洗版）' },
+          desc: '遙控指令節流：每秒最多處理幾道，超額的直接丟棄並回執 rate limited（防高頻洗版）' },
         { name: 'berry',          type: 'enum',  range: 'on / off',      def: 'on',     group: '互動', sample: 'berry=off',
           desc: '丟果實餵食總開關：點寶可夢「本體」= 戳戳互動；點「空白處」= 從點擊位置掉下一顆像素樹果，距離最近且有空的那隻會冒出驚嘆號發現它，跑過來三口吃掉 + 冒愛心。一隻只追一顆，流程中（發現 → 跑去 → 吃 → 愛心）不會發現其他果實，所以同時最多「常駐數量」（count）顆；活動範圍外的點擊，果實會落在牠搆得到的最近位置。off = 點空白處無事發生。預覽區可以直接點來玩' },
     ];

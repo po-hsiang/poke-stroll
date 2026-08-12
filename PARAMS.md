@@ -46,7 +46,8 @@
 | `idleJumpChance` | float | 0 ~ 1 | `0.003` | 發呆時每一幀「原地開心跳一下」的機率(預設約半數發呆會跳個一兩下,`0` 關閉) |
 | `shinyChance` | float | 0 ~ 1 | `1/100` | 每一隻**獨立**擲骰出現色違的機率(預設調得比正作的 1/4096 高很多,直播才熱鬧)。色違登場時必定亮出金色閃光對話框 + 星星四散特效,而且該對話框有 4 秒**保護期**,不會被登場後隨即發呆的心情或被戳的愛心蓋掉 |
 | `shinyBurstDuration` | int | 100 ~ 10000 | `1400` | 色違星星特效的飛散+淡出總時長 ms |
-| `shinyBurstDelayMin` | int | 1000 ~ 600000 | `15000` | 常駐色違的星星特效**定時重播**間隔下限 ms——登場放一輪後,每隔區間內的隨機秒數再放一輪,開頁沒看到或中途進來的觀眾也不會錯過 |
+| `shinyBurstScale` | float | 0.1 ~ 5 | `1` | 色違星星特效的**飛散範圍倍率**——星星從本體正中心向外炸開,這是炸多遠的倍率:`2` 範圍加倍、`0.5` 縮小一半。只調範圍,星星本身大小不變 |
+| `shinyBurstDelayMin` | int | 1000 ~ 600000 | `15000` | 常駐色違的星星特效**定時重播**間隔下限 ms——登場放一輪後,每隔區間內的隨機秒數再放一輪,開頁沒看到或中途進來的人也不會錯過 |
 | `shinyBurstDelayMax` | int | 1000 ~ 600000 | `20000` | 重播間隔上限 ms(min > max 自動對調) |
 | `bubblePosition` | enum | `top` / `side` / `none` | `side` | 對話框位置:`top` 頭頂正上方、`side` 面向方向的側邊(整框推到身體外側,尾巴移到靠本體那個下角、鏡像成朝內指回本體;轉向時自動換邊,走到畫面邊緣快被裁掉時也會自動翻到內側)、`none` 完全不顯示(空間有限的頁面適用) |
 | `bubbleLayer` | enum | `front` / `behind` | `front` | 對話框在本體的上層(`front`,像遊戲裡角色講話的對話框,會遮到一點身體)還是下層(`behind`,完全不遮本體)。**注意**:只在同一隻的本體之間分層,右邊鄰居的身體仍可能蓋到你的對話框(每隻的堆疊層級是按 X 座標排的) |
@@ -66,7 +67,7 @@
 | `flybyLegendaryChance` | float | 0 ~ 1 | `0.05` | 觸發時抽「**會飛的傳說池**」(9 隻:三聖鳥/洛奇亞/鳳王/烈空坐/雲三家)而非「飛行池」(73 隻飛行系,平均分佈)的機率。兩池全員任一屬性槽都含飛行——固拉多再傳說也不會飛,不會亂入天空 |
 | `flybySpeed` | float | 1 ~ 100 | `5` | 橫越速度 px/幀(60fps 基準),實際每次 ±15% 隨機 |
 | `remote` | enum | `on` / `off` | `on` | **postMessage 遙控**總開關:`off` = 完全不理會遙控訊息(連回執都不給)。指令與串接方法見下方「postMessage 遙控」一節 |
-| `remoteRateLimit` | int | 1 ~ 100 | `10` | 遙控指令節流:每秒最多處理幾道,超額的直接丟棄並回執 `rate limited`(防聊天室洗版) |
+| `remoteRateLimit` | int | 1 ~ 100 | `10` | 遙控指令節流:每秒最多處理幾道,超額的直接丟棄並回執 `rate limited`(防高頻洗版) |
 | `berry` | enum | `on` / `off` | `on` | **丟果實餵食**總開關:點寶可夢「本體」= 戳戳互動;點「空白處」= 從點擊位置掉下一顆像素樹果,距離最近且**有空**的那隻會冒出驚嘆號發現它,跑過來三口吃掉 + 冒愛心。一隻只追一顆,流程中(發現 → 跑去 → 吃 → 愛心)不會發現其他果實,所以同時最多「常駐數量」(`count`)顆;活動範圍外的點擊,果實會落在牠搆得到的最近位置。`off` = 點空白處無事發生 |
 
 ## 容錯規則
@@ -107,7 +108,7 @@
 
 ## postMessage 遙控
 
-URL 參數是「載入時」的客製;`postMessage` 則是**執行中**的遙控——父頁面隨時能隔著 iframe 疆界下指令(讓觀眾用聊天室指令召喚寶可夢,就是靠這個)。postMessage 是瀏覽器原生的跨視窗通道,**不走網路、不受 CORS 限制**,跨網域 iframe 直接可用。
+URL 參數是「載入時」的客製;`postMessage` 則是**執行中**的遙控——父頁面隨時能隔著 iframe 疆界下指令(讓使用者從你的介面即時召喚寶可夢,就是靠這個)。postMessage 是瀏覽器原生的跨視窗通道,**不走網路、不受 CORS 限制**,跨網域 iframe 直接可用。
 
 ### 快速開始(嵌入方網頁)
 
@@ -166,34 +167,31 @@ window.addEventListener('message', e => {
 ### 防護與限制
 
 - **指令白名單**:不認識的指令回 `ok:false`;結構不對的訊息完全無視。
-- **節流**:預設每秒最多 `remoteRateLimit`(10)道,超額整道丟棄——聊天室洗版也拖不垮渲染。
+- **節流**:預設每秒最多 `remoteRateLimit`(10)道,超額整道丟棄——高頻灌指令也拖不垮渲染。
 - **總開關**:`?remote=off` 後完全靜默(連回執都不給,像沒這功能)。
 - 刻意**不驗 origin**:指令全是無害的視覺效果、無機密無狀態,最壞情況是有人在他自己的頁面上讓皮卡丘跳舞。要鎖就用 `remote=off` 整個關閉。
 
-### 進階:接聊天室(OBS wrapper 模式)
+### 進階:接外部程式(wrapper 模式)
 
-聊天 bot 等**外部程式**碰不到 postMessage(不同行程、沒有共同的瀏覽器語境)。做法是讓 OBS 載入一頁薄薄的 wrapper,由它對外連 WebSocket 收聊天訊息、對內轉譯成 postMessage:
+後台服務、bot 等**外部程式**碰不到 postMessage(不同行程、沒有共同的瀏覽器語境)。做法是讓 OBS 或任何頁面載入一頁薄薄的 wrapper,由它對外連 WebSocket 收事件、對內轉譯成 postMessage:
 
 ```html
-<!-- wrapper.html:OBS 瀏覽器來源載入這一頁(widget 本體完全不用改) -->
+<!-- wrapper.html:OBS 或任何頁面載入這一頁(widget 本體完全不用改) -->
 <iframe id="poke" src="./pokemon_footer_widget.html"
         style="position:fixed; inset:0; width:100%; height:100%; border:none;"></iframe>
 <script>
     const poke = document.getElementById('poke');
-    // Twitch 允許匿名唯讀連聊天室,零申請零金鑰
-    const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
-    ws.onopen = () => {
-        ws.send('NICK justinfan12345');   // justinfan+數字 = 官方保留的匿名帳號
-        ws.send('JOIN #你的頻道名稱');
-    };
+    // 對外連你自己的服務:後台推播、事件匯流排…任何 WebSocket 來源都行
+    const ws = new WebSocket('wss://your-service.example/events');
     ws.onmessage = ev => {
-        if (ev.data.startsWith('PING')) return ws.send('PONG :tmi.twitch.tv');
-        // 觀眾打「!pokemon 143」→ 客串一隻卡比獸
-        const m = ev.data.match(/PRIVMSG #\S+ :!pokemon (\d{1,4})/);
-        if (m) poke.contentWindow.postMessage(
-            { ns: 'poke-stroll', cmd: 'spawn', id: Number(m[1]) }, '*');
+        // 服務端推 {"cmd":"spawn","id":143} 之類的 JSON 事件,轉譯成 postMessage;
+        // wrapper 這層先過白名單,不認識的指令不轉發
+        const m = JSON.parse(ev.data);
+        if (['spawn', 'join', 'leave', 'feed', 'poke', 'burst'].includes(m.cmd)) {
+            poke.contentWindow.postMessage({ ns: 'poke-stroll', ...m }, '*');
+        }
     };
 </script>
 ```
 
-widget 端已內建每秒節流;wrapper 想更嚴(單一觀眾冷卻、訂閱者限定)就在這一層做,平台相關的邏輯全關在 wrapper 裡,widget 永遠不知道 Twitch 存在。
+widget 端已內建每秒節流;wrapper 想更嚴(單一使用者冷卻、權限限定)就在這一層做,事件來源相關的邏輯全關在 wrapper 裡,widget 完全不用知道指令從哪來。

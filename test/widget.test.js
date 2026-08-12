@@ -432,6 +432,29 @@ group('10. 星星特效未被波及');
     check(`向下飛的距離都在起飛高度 ${launchY}px 之內（不會被底邊裁掉）`,
         stars.every(s => parseInt(s.style._props['--dy'], 10) <= launchY),
         stars.map(s => s.style._props['--dy']).join(' '));
+
+    // 飛散範圍倍率：2x 的最小半徑要明顯大於 0.5x 的最大半徑
+    //（大體型基礎半徑 26~42 × 1.2：2x 落在 62~101、0.5x 落在 16~26）
+    check('shinyBurstScale 已登記（float 0.1 ~ 5）',
+        T.QUERY_PARAMS?.shinyBurstScale?.type === 'float'
+        && T.QUERY_PARAMS.shinyBurstScale.min === 0.1 && T.QUERY_PARAMS.shinyBurstScale.max === 5);
+    check('config.js 預設 shinyBurstScale = 1', CONFIG.shinyBurstScale === 1);
+    const radius = s => Math.hypot(
+        parseInt(s.style._props['--dx'], 10), parseInt(s.style._props['--dy'], 10));
+    const savedBurstScale = CONFIG.shinyBurstScale;
+    CONFIG.shinyBurstScale = 2;
+    p.celebrateShiny();
+    CONFIG.shinyBurstScale = 0.5;
+    p.celebrateShiny();
+    CONFIG.shinyBurstScale = savedBurstScale;
+    const allStars = p.el.children.filter(c => c.className === 'burst-star');
+    const bigR = allStars.slice(10, 20).map(radius);
+    const smallR = allStars.slice(20, 30).map(radius);
+    check('shinyBurstScale=2 → 半徑加倍（全部 ≥ 60px）',
+        bigR.every(r => r >= 60), bigR.map(Math.round).join(' '));
+    check('shinyBurstScale=0.5 → 半徑縮半（全部 ≤ 27px）',
+        smallR.every(r => r <= 27), smallR.map(Math.round).join(' '));
+    check('倍率只調範圍：每輪仍是 10 顆星星', allStars.length === 30, `實際 ${allStars.length}`);
 }
 
 // =========================================================
