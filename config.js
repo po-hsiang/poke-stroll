@@ -42,13 +42,19 @@ window.POKE_CONFIG = {
     flybyDelay: { min: 15000, max: 20000 }, // 下一次擲骰的間隔區間 ms
     flybyChance: 0.25,           // 每次擲骰真的觸發客串的機率（0 = 整個機制關閉）
     flybyLegendaryChance: 0.05,  // 觸發時抽中「傳說池」而非「飛行池」的機率
+    // 觸發時改派「信使鳥空投」的機率：信使鳥叼著果實橫越，半路鬆爪掉下一顆，
+    // 之後就是一般的餵食流程（最近且有空的那隻冒驚嘆號跑去吃）。
+    // 那一刻沒隻有空就整顆叼走；berry: 'off' 時不派這趟任務。0 = 關閉
+    flybyDeliveryChance: 0.2,
     flybySpeed: 5,               // 橫越速度 px/幀（60fps 基準），實際每次 ±15% 隨機
 
     // ---- postMessage 遙控 ----
     // 父頁面（或 OBS 的 wrapper 頁）可隔著 iframe 用 postMessage 下指令，例：
     //   frame.contentWindow.postMessage({ ns: 'poke-stroll', cmd: 'poke' }, '*')
-    // 指令：spawn 客串一隻（可帶 id）/ poke 開心跳（可帶 id）/ burst 色違星星重播 /
-    //       join 加一隻常駐（可帶 id）/ leave 送走一隻常駐（可帶 id）/ feed 天降果實（可帶 count）。
+    // 指令：spawn 客串一隻（可帶 id；帶 delivery: true 改派信使鳥空投）/
+    //       poke 開心跳（可帶 id）/ burst 色違星星重播 /
+    //       join 加一隻常駐（可帶 id）/ leave 送走一隻常駐（可帶 id）/
+    //       feed 天降果實（可帶 count）/ roster 查詢目前陣容（id/色違/體型）。
     // 每道指令都會回執（{ ns, re, ok, ... }）。串接方法見 PARAMS.md 的
     // 「postMessage 遙控」一節（部署站的 params.html 同步收錄，含現場試玩按鈕）
     remote: 'on',        // 'off' = 完全不理會遙控訊息
@@ -102,6 +108,10 @@ window.POKE_CONFIG = {
 
     // ---- 互動 ----
     personalSpace: 56,   // 同伴間的最小距離 px：前方太近有同伴就掉頭，避免黏在一起
+    // 偶遇打招呼：兩隻擦肩擠進 personalSpace 時，雙方都有空的話有這個機率
+    // 不掉頭、改停下來面對面寒暄（各自冒音符或愛心），聊個一兩秒再轉身走開。
+    // 寒暄完有 8~15 秒冷卻，同一對不會在原地無限寒暄；0 = 關閉
+    greetChance: 0.1,
 
     // ---- 屬性影子 ----
     // 影子寬度 = 寶可夢實際顯示寬度 × 這個比例。

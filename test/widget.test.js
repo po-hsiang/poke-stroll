@@ -163,7 +163,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -1281,7 +1281,204 @@ group('19. 色違星星特效定時重播');
     CONFIG.idleChance = savedIdleChance;
 
     // =====================================================
-    group('23. 嵌入透明性守則（color-scheme）');
+    group('23. 偶遇打招呼');
+    {
+        const savedIdle = CONFIG.idleChance;
+        const savedGreet = CONFIG.greetChance;
+        CONFIG.idleChance = 0;
+
+        check('config 預設 greetChance = 0.1', CONFIG.greetChance === 0.1);
+        check('greetChance 已登記（float 0 ~ 1）',
+            T.QUERY_PARAMS?.greetChance?.type === 'float'
+            && T.QUERY_PARAMS.greetChance.min === 0 && T.QUERY_PARAMS.greetChance.max === 1);
+
+        // 場面：兩隻面對面走近（前一組留下的果實與陣容先清乾淨）
+        T.getBerries().slice().forEach(x => T.removeBerry(x));
+        T.pokemons.length = 0;
+        const ga = newPokemon(25, { scale: 0.6 });
+        const gb = newPokemon(143);
+        ga.x = 500; ga.direction = 1;
+        gb.x = 500 + CONFIG.personalSpace - 10; gb.direction = -1;
+        T.pokemons.push(ga, gb);
+
+        CONFIG.greetChance = 0; // 0 = 關閉：照舊掉頭
+        ga.update(16, T.pokemons);
+        check('greetChance=0 → 照舊掉頭不寒暄', ga.state === 'WALKING' && ga.direction === -1);
+        ga.direction = 1; ga.avoidCooldown = 0;
+
+        CONFIG.greetChance = 1; // 必定寒暄
+        ga.update(16, T.pokemons);
+        check('相遇 → 兩隻都進入 GREETING', ga.state === 'GREETING' && gb.state === 'GREETING');
+        check('面對面（ga 朝右、gb 朝左）', ga.direction === 1 && gb.direction === -1);
+        check('互相記住對方', ga.greetPartner === gb && gb.greetPartner === ga);
+        check('各自冒出音符或愛心', ['note', 'heart'].includes(ga.bubbleName)
+            && ga.bubble.style.display === 'block'
+            && ['note', 'heart'].includes(gb.bubbleName)
+            && gb.bubble.style.display === 'block');
+        check('寒暄時長 1600 ~ 2600ms 且兩隻同步', ga.greetTimer >= 1600 && ga.greetTimer <= 2600
+            && ga.greetTimer === gb.greetTimer);
+        check('寒暄中不算餵食忙碌（果實叫得動牠）', !ga.isFeeding() && !gb.isFeeding());
+
+        // 聊完各自轉身走開 + 進冷卻
+        for (let i = 0; i < 200 && ga.state === 'GREETING'; i++) {
+            ga.update(16, T.pokemons);
+            gb.update(16, T.pokemons);
+        }
+        check('聊完回到 WALKING', ga.state === 'WALKING' && gb.state === 'WALKING');
+        check('各自轉身走開（ga 朝左、gb 朝右）', ga.direction === -1 && gb.direction === 1);
+        check('對話框收起', ga.bubble.style.display === 'none' && gb.bubble.style.display === 'none');
+        check('寒暄進入冷卻（8 ~ 15 秒）', ga.greetCooldown >= 7000 && gb.greetCooldown >= 7000);
+        check('掉頭冷卻也有，不會下一幀又互相觸發', ga.avoidCooldown > 0 && gb.avoidCooldown > 0);
+
+        // 冷卻期內再相遇 → 照舊掉頭
+        ga.x = 500; ga.direction = 1; ga.avoidCooldown = 0;
+        gb.x = 540; gb.direction = -1; gb.avoidCooldown = 0;
+        ga.update(16, T.pokemons);
+        check('冷卻期內 → 不寒暄、照舊掉頭', ga.state === 'WALKING' && ga.direction === -1);
+
+        // 對方在忙（追果實中）→ 不寒暄
+        ga.greetCooldown = 0; gb.greetCooldown = 0;
+        ga.x = 500; ga.direction = 1; ga.avoidCooldown = 0;
+        gb.state = 'SEEK_BERRY';
+        ga.update(16, T.pokemons);
+        check('對方在忙 → 不寒暄、照舊掉頭', ga.state === 'WALKING' && ga.direction === -1);
+        gb.state = 'WALKING';
+
+        // 寒暄中被果實叫走 → 自己去辦正事、對方也解脫
+        ga.greetCooldown = 0; gb.greetCooldown = 0;
+        ga.x = 500; ga.direction = 1; ga.avoidCooldown = 0;
+        gb.x = 540; gb.direction = -1;
+        ga.update(16, T.pokemons);
+        check('（前置）再次寒暄', ga.state === 'GREETING' && gb.state === 'GREETING');
+        clickAt(600, 100); // 離 gb(中心 600) 比 ga(中心 560) 近 → gb 被叫走
+        check('寒暄中被果實叫走 → SEEK_BERRY + 驚嘆號',
+            gb.state === 'SEEK_BERRY' && gb.bubbleName === 'exclaim');
+        check('對方解脫回去散步，不對著空氣講話', ga.state === 'WALKING'
+            && ga.greetPartner === null && ga.bubble.style.display === 'none');
+
+        // 收拾場面
+        T.getBerries().slice().forEach(x => T.removeBerry(x));
+        gb.targetBerry = null; gb.state = 'WALKING';
+        CONFIG.greetChance = savedGreet;
+        CONFIG.idleChance = savedIdle;
+    }
+
+    // =====================================================
+    group('24. 信使鳥空投');
+    {
+        const savedIdle = CONFIG.idleChance;
+        const savedShinyD = CONFIG.shinyChance;
+        const savedDelivery = CONFIG.flybyDeliveryChance;
+        CONFIG.idleChance = 0;
+        CONFIG.shinyChance = 0;
+
+        check('config 預設 flybyDeliveryChance = 0.2', CONFIG.flybyDeliveryChance === 0.2);
+        check('flybyDeliveryChance 已登記（float 0 ~ 1）',
+            T.QUERY_PARAMS?.flybyDeliveryChance?.type === 'float'
+            && T.QUERY_PARAMS.flybyDeliveryChance.min === 0
+            && T.QUERY_PARAMS.flybyDeliveryChance.max === 1);
+
+        // 場面：一隻有空的皮卡丘等著接收
+        T.pokemons.length = 0;
+        const eater = newPokemon(25, { scale: 0.6 });
+        eater.x = 900;
+        T.pokemons.push(eater);
+
+        const c = new T.Cameo(225, 0.8, { delivery: true });
+        check('信使鳥叼著果實出發（果實掛在腳下）', c.delivery === true
+            && c.carried?.className === 'berry' && c.el.children.includes(c.carried));
+        check('投放點在活動範圍內', c.dropX >= 1920 * CONFIG.bounds.min
+            && c.dropX <= 1920 * CONFIG.bounds.max, `dropX=${c.dropX}`);
+
+        // 飛越投放點 → 鬆爪，果實從飛行高度掉落、走一般的餵食流程
+        c.x = c.direction === 1 ? c.dropX + 1 : c.dropX - 1;
+        check('（前置）空投後行程照飛不停', c.update(16) === true);
+        check('飛越投放點 → 鬆爪空投', c.carried === null && T.getBerries().length === 1);
+        check('果實從飛行高度掉落（還在半空）', T.getBerries()[0].state === 'FALLING'
+            && T.getBerries()[0].bottom > 0, `bottom=${T.getBerries()[0]?.bottom}`);
+        check('有空的成員接收：SEEK_BERRY + 驚嘆號', eater.state === 'SEEK_BERRY'
+            && eater.bubbleName === 'exclaim');
+        c.update(16);
+        check('只投這一次，不會再掉第二顆', T.getBerries().length === 1);
+
+        // 大家都在忙 → 不空投，整顆叼走（只試一次，飛過了不回頭）
+        T.getBerries().slice().forEach(x => T.removeBerry(x));
+        eater.targetBerry = null;
+        eater.state = 'EATING'; eater.eatTimer = 99999; // 在忙
+        const c2 = new T.Cameo(225, 0.8, { delivery: true });
+        c2.x = c2.direction === 1 ? c2.dropX + 1 : c2.dropX - 1;
+        c2.update(16);
+        check('大家都在忙 → 不空投、整顆叼走', c2.carried !== null && T.getBerries().length === 0);
+        c2.update(16);
+        check('之後也不再嘗試（投放點已清空）', c2.dropX === null && T.getBerries().length === 0);
+        eater.state = 'WALKING';
+
+        // 排程器整合：flybyDeliveryChance=1 → spawnFlyby 這趟就是空投
+        CONFIG.flybyDeliveryChance = 1;
+        const cameosN1 = T.cameos.length;
+        T.spawnFlyby();
+        await new Promise(r => setImmediate(r));
+        check('flybyDeliveryChance=1 → 客串改派信使鳥空投', T.cameos.length === cameosN1 + 1
+            && T.cameos[T.cameos.length - 1].delivery === true
+            && T.cameos[T.cameos.length - 1].img.src.includes('/225.gif'));
+
+        // berry='off' → 不派空投任務（主 sandbox 沒載名單檔，池也抽不了 → 什麼都不生）
+        CONFIG.berry = 'off';
+        const cameosN2 = T.cameos.length;
+        T.spawnFlyby();
+        await new Promise(r => setImmediate(r));
+        check("berry='off' → 不派空投任務", T.cameos.length === cameosN2);
+        CONFIG.berry = 'on';
+
+        // 遙控 spawn delivery
+        T.remoteStamps.length = 0;
+        const cameosN3 = T.cameos.length;
+        send({ ns: 'poke-stroll', cmd: 'spawn', delivery: true });
+        check('spawn delivery → 回執 ok 且 id = 225',
+            lastReply()?.ok === true && lastReply()?.id === 225);
+        await new Promise(r => setImmediate(r));
+        check('spawn delivery → 客串 +1 且是空投任務', T.cameos.length === cameosN3 + 1
+            && T.cameos[T.cameos.length - 1].delivery === true);
+        CONFIG.berry = 'off';
+        send({ ns: 'poke-stroll', cmd: 'spawn', delivery: true });
+        check("spawn delivery 於 berry='off' → berry is off",
+            lastReply()?.ok === false && lastReply()?.reason === 'berry is off');
+        CONFIG.berry = 'on';
+
+        CONFIG.shinyChance = savedShinyD;
+        CONFIG.flybyDeliveryChance = savedDelivery;
+        CONFIG.idleChance = savedIdle;
+    }
+
+    // =====================================================
+    group('25. roster 查詢');
+    {
+        T.remoteStamps.length = 0;
+        T.pokemons.length = 0;
+        const r1 = newPokemon(25, { scale: 0.6 });
+        const r2 = newPokemon(143, { shiny: true });
+        T.pokemons.push(r1, r2);
+
+        send({ ns: 'poke-stroll', cmd: 'roster' });
+        const rep = lastReply();
+        check('roster → ok 且 count = 2', rep?.ok === true && rep?.re === 'roster' && rep?.count === 2);
+        check('回報每隻的 id / 色違 / 體型', JSON.stringify(rep?.roster) === JSON.stringify([
+            { id: 25, shiny: false, size: 0.6 },
+            { id: 143, shiny: true, size: 1 },
+        ]), JSON.stringify(rep?.roster));
+        check('查詢不動畫面（沒人起跳、狀態不變）', r1.jumpV === 0 && r2.jumpV === 0
+            && r1.state === 'WALKING' && r2.state === 'WALKING');
+
+        // join 之後再查，陣容跟著變（roster 反映的是「當下」）
+        send({ ns: 'poke-stroll', cmd: 'join', id: 7 });
+        await new Promise(r => setImmediate(r));
+        send({ ns: 'poke-stroll', cmd: 'roster' });
+        check('join 後 roster 跟著更新', lastReply()?.count === 3
+            && lastReply()?.roster[2]?.id === 7, JSON.stringify(lastReply()?.roster));
+    }
+
+    // =====================================================
+    group('26. 嵌入透明性守則（color-scheme）');
     // iframe 要維持透明，內外文件的 color-scheme 必須一致。
     // 這裡守住兩條血淚教訓：
     //   0.20.0 widget 沒宣告 → 被宣告 dark 的頁面（params.html）嵌 → 墊白底

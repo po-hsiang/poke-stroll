@@ -57,6 +57,7 @@
 | `hopVariance` | float | 0 ~ 50 | `2` | 個體間的跳步高度差異上限 |
 | `hopFrequency` | float | 0 ~ 1 | `0.005` | 跳步頻率(越小跳越慢) |
 | `personalSpace` | int | 0 ~ 1000 | `56` | 同伴間最小距離 px,太近會掉頭 |
+| `greetChance` | float | 0 ~ 1 | `0.1` | **偶遇打招呼**:兩隻擦肩擠進 `personalSpace` 時,雙方都有空的話有這個機率不掉頭、改停下來**面對面寒暄**(各自冒音符或愛心),聊個一兩秒再轉身走開。寒暄完有 8~15 秒冷卻,同一對不會原地無限寒暄;發呆中也能被搭話,餵食流程中不會。`0` = 關閉 |
 | `baseSize` | int | 16 ~ 512 | `128` | 「大」體型的顯示高度 px(中 = 0.8 倍、小 = 0.6 倍) |
 | `shadowWidthRatio` | float | 0 ~ 2 | `0.9` | 影子寬度相對寶可夢寬度的比例 |
 | `theme` | enum | `none` / `grass` / `water` / `snow` / `sand` / `rock` / `dirt` / `lava` | `none` | **主題地面**:在頁面最底鋪一條像素地面(高度見 `themeHeight`),寶可夢會站上去(依地形略微踩進表面:草蓋腳邊、雪會下陷、水泡到小腿、岩地平踩)。水域與熔岩會緩慢流動;貼片圖樣每次載入隨機生成。`none` = 關閉,維持透明背景 |
@@ -65,6 +66,7 @@
 | `flybyDelayMax` | int | 1000 ~ 600000 | `20000` | 擲骰間隔上限 ms(min > max 自動對調) |
 | `flybyChance` | float | 0 ~ 1 | `0.25` | 每次擲骰真的觸發客串的機率(`0` = 整個機制關閉)。觸發時一隻寶可夢從畫面外**沿隨機斜線航道、浮浮沉沉地**高速橫越(這趟可能左 45% 飛到右 60%,下一趟右 70% 飛到左 50%),不加入常駐陣容;色違吃全頁 `shinyChance`,中了會拖金色星塵尾跡 |
 | `flybyLegendaryChance` | float | 0 ~ 1 | `0.05` | 觸發時抽「**會飛的傳說池**」(9 隻:三聖鳥/洛奇亞/鳳王/烈空坐/雲三家)而非「飛行池」(73 隻飛行系,平均分佈)的機率。兩池全員任一屬性槽都含飛行——固拉多再傳說也不會飛,不會亂入天空 |
+| `flybyDeliveryChance` | float | 0 ~ 1 | `0.2` | 觸發客串時改派「**信使鳥空投**」的機率:信使鳥叼著果實橫越,半路鬆爪掉下一顆,之後就是一般的餵食流程(最近且有空的成員冒驚嘆號跑去吃)。那一刻大家都在忙就整顆叼走不落地;`berry=off` 時不派這趟任務。`0` = 關閉 |
 | `flybySpeed` | float | 1 ~ 100 | `5` | 橫越速度 px/幀(60fps 基準),實際每次 ±15% 隨機 |
 | `remote` | enum | `on` / `off` | `on` | **postMessage 遙控**總開關:`off` = 完全不理會遙控訊息(連回執都不給)。指令與串接方法見下方「postMessage 遙控」一節 |
 | `remoteRateLimit` | int | 1 ~ 100 | `10` | 遙控指令節流:每秒最多處理幾道,超額的直接丟棄並回執 `rate limited`(防高頻洗版) |
@@ -105,6 +107,8 @@
 | 熔岩試膽(小火龍一家) | `?theme=lava&ids=4,5,6` |
 | 客串頻發(展示/測試用) | `?flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000` |
 | 傳說時刻(每次都是傳說級路過) | `?flybyChance=1&flybyLegendaryChance=1&flybyDelayMin=3000&flybyDelayMax=5000` |
+| 信使鳥快遞頻發(每趟客串都空投果實) | `?flybyChance=1&flybyDeliveryChance=1&flybyDelayMin=2000&flybyDelayMax=4000` |
+| 社交花蝴蝶(一擦肩就停下來寒暄) | `?greetChance=1&count=6` |
 
 ## postMessage 遙控
 
@@ -138,12 +142,13 @@ URL 參數是「載入時」的客製;`postMessage` 則是**執行中**的遙控
 
 | 指令 | 參數 | 效果 |
 |------|------|------|
-| `spawn` | `id`(選填,1 ~ 1025) | 客串一隻從畫面外高速橫越。帶 `id` 指定誰路過(**不限飛行系**,遙控的卡比獸也能飛);不帶就照常抽飛行池(含傳說機率那一層)。色違照全頁 `shinyChance` 擲骰 |
+| `spawn` | `id`(選填,1 ~ 1025)<br>`delivery`(選填,true) | 客串一隻從畫面外高速橫越。帶 `id` 指定誰路過(**不限飛行系**,遙控的卡比獸也能飛);不帶就照常抽飛行池(含傳說機率那一層)。帶 `delivery: true` 改派**信使鳥空投**:叼著果實橫越、半路鬆爪掉下一顆(大家都在忙就整顆叼走;`berry=off` 回 `berry is off`)。色違照全頁 `shinyChance` 擲骰 |
 | `poke` | `id`(選填) | 開心跳一下 + 冒愛心(跟滑鼠點擊同一種互動)。帶 `id` 只戳該圖鑑編號的成員,不帶就全員 |
 | `burst` | — | 場上所有**色違**立刻重播星星特效(重播排程會重排,不會越放越密);場上沒有色違就是 `count: 0` |
 | `join` | `id`(選填,1 ~ 1025) | 加入一隻**常駐**成員(會留下來散步,不是路過的客串)。帶 `id` 指定誰入隊,不帶就照 `minId` / `maxId` 隨機抽;回執的 `id` 告訴你誰來了。隊伍上限與 `count` 參數同一個天花板(50),滿了回 `party is full` |
 | `leave` | `id`(選填) | 送走一隻常駐成員。帶 `id` 指定送誰(同編號多隻就送最晚入隊的),不帶就隨機挑;回執的 `id` 告訴你誰走了。**最後一隻不送**(回 `last one standing`);正在追的果實會一併收走,不留孤兒果實 |
 | `feed` | `count`(選填,≥ 1) | 從天上隨機位置降下果實,掉法與點擊空白處丟果實同一套(最近且有空的成員冒驚嘆號跑去吃)。帶 `count` 指定顆數,不帶就隨機;上限都是「**有空的**常駐成員數」(一隻只追一顆),回執的 `count` 是實際掉了幾顆。大家都在忙回 `everyone is busy` |
+| `roster` | — | **查詢**目前常駐陣容,不動畫面。回執帶 `count`(總數)與 `roster` 陣列,每隻是 `{ id, shiny, size }`(圖鑑編號 / 是否色違 / 體型倍率 0.6 小、0.8 中、1 大)。要做陣容面板、投票名單之類的整合,資料從這裡拿 |
 
 ### 回執
 
@@ -160,8 +165,9 @@ window.addEventListener('message', e => {
 |------|------|
 | `re` | 回應的是哪道指令 |
 | `ok` | 是否已執行 |
-| `count` | (`poke` / `burst`)實際作用到幾隻;(`feed`)實際掉了幾顆 |
-| `id` | (`join` / `leave`)實際加入 / 送走的圖鑑編號 |
+| `count` | (`poke` / `burst`)實際作用到幾隻;(`feed`)實際掉了幾顆;(`roster`)常駐總數 |
+| `id` | (`join` / `leave`)實際加入 / 送走的圖鑑編號;(`spawn` 空投)信使鳥的編號 225 |
+| `roster` | (`roster`)常駐陣容陣列,每隻 `{ id, shiny, size }` |
 | `reason` | `ok: false` 時的原因:`unknown cmd` / `id must be 1~1025` / `id not found` / `cameo pools not loaded` / `page hidden`(背景分頁不演視覺效果) / `rate limited` / `party is full` / `last one standing` / `berry is off` / `everyone is busy` / `count must be >= 1` |
 
 ### 防護與限制
@@ -187,7 +193,7 @@ window.addEventListener('message', e => {
         // 服務端推 {"cmd":"spawn","id":143} 之類的 JSON 事件,轉譯成 postMessage;
         // wrapper 這層先過白名單,不認識的指令不轉發
         const m = JSON.parse(ev.data);
-        if (['spawn', 'join', 'leave', 'feed', 'poke', 'burst'].includes(m.cmd)) {
+        if (['spawn', 'join', 'leave', 'feed', 'poke', 'burst', 'roster'].includes(m.cmd)) {
             poke.contentWindow.postMessage({ ns: 'poke-stroll', ...m }, '*');
         }
     };

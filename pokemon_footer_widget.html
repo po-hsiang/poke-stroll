@@ -209,6 +209,7 @@
             hopVariance:      { path: ['hopVariance'],      type: 'float', min: 0,  max: 50 },
             hopFrequency:     { path: ['hopFrequency'],     type: 'float', min: 0,  max: 1 },
             personalSpace:    { path: ['personalSpace'],    type: 'int',   min: 0,  max: 1000 },
+            greetChance:      { path: ['greetChance'],      type: 'float', min: 0,  max: 1 },
             baseSize:         { path: ['baseSize'],         type: 'int',   min: 16, max: 512 },
             shadowWidthRatio: { path: ['shadowWidthRatio'], type: 'float', min: 0,  max: 2 },
             theme:            { path: ['theme'],            type: 'enum',  values: ['none', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava'] },
@@ -217,6 +218,7 @@
             flybyDelayMax:    { path: ['flybyDelay', 'max'], type: 'int',  min: 1000, max: 600000 },
             flybyChance:      { path: ['flybyChance'],      type: 'float', min: 0,  max: 1 },
             flybyLegendaryChance: { path: ['flybyLegendaryChance'], type: 'float', min: 0, max: 1 },
+            flybyDeliveryChance:  { path: ['flybyDeliveryChance'],  type: 'float', min: 0, max: 1 },
             flybySpeed:       { path: ['flybySpeed'],       type: 'float', min: 1,  max: 100 },
             remote:           { path: ['remote'],           type: 'enum',  values: ['on', 'off'] },
             remoteRateLimit:  { path: ['remoteRateLimit'],  type: 'int',   min: 1,  max: 100 },
@@ -748,6 +750,9 @@
                 this.idleTimer = 0;
                 this.avoidCooldown = 0; // 因避讓而掉頭後的冷卻時間
                 this.targetBerry = null; // 正在追的那顆果實（一隻只追一顆）
+                this.greetPartner = null; // 正在寒暄的對象（偶遇打招呼）
+                this.greetTimer = 0;
+                this.greetCooldown = 0; // 寒暄後的冷卻：同一對不會在原地無限寒暄
 
                 // 走路跳步動畫（GIF 本身只有原地待機動畫，沒有腳步，
                 // 補上垂直的小跳躍才不會像滑行）
@@ -853,6 +858,7 @@
             // 每一幀的邏輯更新 (Update Loop)
             update(deltaTime, others) {
                 if (this.avoidCooldown > 0) this.avoidCooldown -= deltaTime;
+                if (this.greetCooldown > 0) this.greetCooldown -= deltaTime;
 
                 // 點擊跳躍：初速 + 重力的迷你拋物線，和走路跳步（|sin| 波）各自獨立計算
                 if (this.jumpV !== 0 || this.jumpY > 0) {
@@ -867,6 +873,11 @@
                     this.avoidCrowding(others);
                 } else if (this.state === 'IDLE') {
                     this.idle(deltaTime);
+                } else if (this.state === 'GREETING') {
+                    // 寒暄中：站定緩緩落地，聊完各自轉身走開
+                    this.bobY *= 0.8;
+                    this.greetTimer -= deltaTime;
+                    if (this.greetTimer <= 0) this.endGreet(true);
                 } else if (this.state === 'SEEK_BERRY') {
                     this.seekBerry(deltaTime);
                 } else if (this.state === 'EATING') {
@@ -1043,6 +1054,7 @@
             // 驚嘆號被婉拒時（bubblePosition=none 或色違閃光保護期），
             // 至少把進行中的心情收起（hideEmote 會給保護期讓路）
             startSeekBerry(target) {
+                this.breakGreet(); // 寒暄中被果實叫走：自己收場、放對方自由
                 this.targetBerry = target;
                 this.state = 'SEEK_BERRY';
                 this.idleTimer = 0;
@@ -1139,6 +1151,48 @@
                 this.showEmote(names[randomInt(0, names.length - 1)]);
             }
 
+            // ---- 偶遇打招呼 (Greeting) ----
+            // 有沒有空停下來寒暄：走路或發呆中、看得見、也不在寒暄冷卻期。
+            // 餵食流程中（isFeeding）與寒暄中的都算沒空
+            canGreet() {
+                return (this.state === 'WALKING' || this.state === 'IDLE')
+                    && this.el.style.display !== 'none'
+                    && this.greetCooldown <= 0;
+            }
+
+            // 進入寒暄：面向對方站定，冒音符或愛心（兩隻各自擲骰，不一定同款）。
+            // 對話框被婉拒時（bubblePosition=none 或色違閃光保護期）至少收起舊心情
+            startGreet(partner, faceDir, duration) {
+                this.greetPartner = partner;
+                this.state = 'GREETING';
+                this.greetTimer = duration;
+                this.idleTimer = 0;
+                this.direction = faceDir;
+                if (!this.showEmote(Math.random() < 0.5 ? 'note' : 'heart', duration)) {
+                    this.hideEmote();
+                }
+            }
+
+            // 結束寒暄回去散步。turnAway = 聊完轉身走開（被打斷時不轉，直接辦正事）；
+            // 掉頭與寒暄都進冷卻——結束時兩隻還在彼此的 personalSpace 裡，
+            // 沒有冷卻的話下一幀就會再互相觸發
+            endGreet(turnAway = false) {
+                if (this.state !== 'GREETING') return;
+                this.state = 'WALKING';
+                this.greetPartner = null;
+                this.hideEmote();
+                if (turnAway) this.direction *= -1;
+                this.avoidCooldown = randomInt(1500, 3000);
+                this.greetCooldown = randomInt(8000, 15000);
+            }
+
+            // 寒暄被打斷（被果實叫走、被遙控送走）：自己收場、也放對方自由，
+            // 別讓對方對著空氣講完整段話
+            breakGreet() {
+                this.greetPartner?.endGreet();
+                this.endGreet();
+            }
+
             // 行進方向的前方太近有同伴就掉頭；掉頭後進入冷卻，
             // 避免在牆角或人群中來回抖動
             avoidCrowding(others) {
@@ -1147,6 +1201,15 @@
                     if (other === this) continue;
                     const dx = other.x - this.x;
                     if (Math.abs(dx) < CONFIG.personalSpace && Math.sign(dx) === this.direction) {
+                        // 偶遇打招呼：雙方都有空的話，小機率不掉頭，
+                        // 改停下來面對面寒暄一下再各走各的
+                        if (this.canGreet() && other.canGreet()
+                            && Math.random() < (CONFIG.greetChance ?? 0)) {
+                            const duration = randomInt(1600, 2600);
+                            this.startGreet(other, Math.sign(dx), duration);
+                            other.startGreet(this, -Math.sign(dx), duration);
+                            break;
+                        }
                         this.direction *= -1;
                         this.avoidCooldown = randomInt(1500, 3000);
                         break;
@@ -1217,8 +1280,11 @@
         // 色違吃全頁同一個 shinyChance，中了會拖著金色星塵尾跡（流星本人）
         // ---------------------------------------------------------
         class Cameo {
-            constructor(id, sizeScale) {
+            constructor(id, sizeScale, opts = {}) {
                 this.dead = false;
+                this.delivery = !!opts.delivery; // 空投任務：叼著果實，半路鬆爪
+                this.carried = null; // 叼著的那顆果實元素
+                this.dropX = null;   // 預定投放點（試過一次就清掉，不回頭）
                 this.direction = Math.random() > 0.5 ? 1 : -1;
                 // 每次 ±15% 隨機，連續兩次客串速度也不會一模一樣
                 this.speed = (CONFIG.flybySpeed ?? 5) * (0.85 + Math.random() * 0.3);
@@ -1270,6 +1336,21 @@
                 this.floatAmp = 3 + Math.random() * 4;          // 3 ~ 7 px
                 this.floatFreq = 0.003 + Math.random() * 0.003; // 相位速度 rad/ms
 
+                // 空投任務：果實掛在腳下跟著飛，投放點在活動範圍內隨機挑
+                // （散步成員才搆得到落點，不會丟到牆外沒人撿）
+                if (this.delivery) {
+                    this.carried = document.createElement('img');
+                    this.carried.className = 'berry';
+                    this.carried.src = getBerryURI();
+                    this.carried.style.width = `${BERRY_ART[0].length * BERRY_SCALE}px`;
+                    this.carried.style.left = '50%';
+                    this.carried.style.transform = 'translateX(-50%)';
+                    this.carried.style.bottom = '-24px'; // 叼在腳下，稍微咬進腳邊
+                    this.el.appendChild(this.carried);
+                    this.dropX = window.innerWidth
+                        * (CONFIG.bounds.min + Math.random() * (CONFIG.bounds.max - CONFIG.bounds.min));
+                }
+
                 app.appendChild(this.el);
                 this.render();
             }
@@ -1291,6 +1372,20 @@
                 }
 
                 this.render();
+
+                // 空投：飛越預定投放點時鬆爪，果實從飛行高度掉下去、
+                // 走一般的餵食流程。這一刻沒隻有空（throwBerry 婉拒）就整顆
+                // 叼走——果實不落在沒人吃的地上；只試這一次，飛過了不回頭
+                if (this.carried && this.dropX !== null
+                    && (this.direction === 1 ? this.x >= this.dropX : this.x <= this.dropX)) {
+                    const w = this.el.offsetWidth || this.height;
+                    if (throwBerry(this.x + w / 2, Math.max(0, this.curBottom - 24))) {
+                        this.carried.remove();
+                        this.carried = null;
+                    }
+                    this.dropX = null;
+                }
+
                 return this.direction === 1
                     ? this.x <= window.innerWidth + this.margin
                     : this.x >= -this.margin;
@@ -1334,7 +1429,17 @@
             }, delay);
         }
 
+        // 信使鳥：叼果實空投的專職快遞員（聖誕鳥送禮的原作梗）
+        const DELIVERY_ID = 225;
+
         async function spawnFlyby() {
+            // 信使鳥空投：小機率這趟客串改派信使鳥叼著果實橫越，半路鬆爪空投，
+            // 落地後就是一般的餵食流程（果實總開關關著就不派這趟任務）
+            if ((CONFIG.berry ?? 'on') !== 'off'
+                && Math.random() < (CONFIG.flybyDeliveryChance ?? 0)) {
+                cameos.push(new Cameo(DELIVERY_ID, await getSizeScale(DELIVERY_ID), { delivery: true }));
+                return;
+            }
             const legendary = Math.random() < (CONFIG.flybyLegendaryChance ?? 0);
             const pool = legendary ? window.POKE_LEGENDARY : window.POKE_FLYING;
             if (!pool || !pool.length) return;
@@ -1450,6 +1555,13 @@
             spawn(msg) {
                 // rAF 停著時生成只會凍在半空，跟排程器同一套背景分頁防護
                 if (document.hidden) return { ok: false, reason: 'page hidden' };
+                // delivery: true → 這趟改派信使鳥叼果實空投（果實關著就送不成）
+                if (msg.delivery) {
+                    if ((CONFIG.berry ?? 'on') === 'off') return { ok: false, reason: 'berry is off' };
+                    getSizeScale(DELIVERY_ID).then(scale =>
+                        cameos.push(new Cameo(DELIVERY_ID, scale, { delivery: true })));
+                    return { ok: true, id: DELIVERY_ID };
+                }
                 if (msg.id !== undefined) {
                     const id = Math.round(Number(msg.id));
                     if (!Number.isFinite(id) || id < 1 || id > 1025) {
@@ -1516,6 +1628,7 @@
                 const [victim] = pokemons.splice(idx, 1);
                 clearTimeout(victim.burstTimer); // 色違的星星重播鏈一併收掉
                 if (victim.targetBerry) removeBerry(victim.targetBerry); // 別留孤兒果實
+                victim.breakGreet(); // 寒暄到一半被送走：放對方自由
                 victim.el.remove();
                 return { ok: true, id: victim.id };
             },
@@ -1546,6 +1659,16 @@
                                    randomInt(Math.round(h * 0.5), Math.round(h * 0.9)))) dropped++;
                 }
                 return { ok: true, count: dropped };
+            },
+            // 盤點常駐陣容（查詢用，不動畫面）：每隻的圖鑑編號、是否色違、
+            // 體型倍率（0.6 小 / 0.8 中 / 1 大）。外部程式要做陣容面板、
+            // 投票名單之類的整合，資料從這裡拿
+            roster() {
+                return {
+                    ok: true,
+                    count: pokemons.length,
+                    roster: pokemons.map(p => ({ id: p.id, shiny: p.isShiny, size: p.sizeScale })),
+                };
             },
         };
 

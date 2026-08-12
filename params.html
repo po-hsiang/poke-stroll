@@ -497,16 +497,20 @@
             <span class="label">🕹️ 現場試玩——指令直接打進預覽區</span>
             <div class="row" style="flex-wrap:wrap">
                 <button class="btn" data-remote='{"cmd":"spawn"}'>🎲 spawn: 隨機客串</button>
+                <button class="btn" data-remote='{"cmd":"spawn","delivery":true}'>🎁 spawn: 信使鳥空投</button>
                 <button class="btn" data-remote='{"cmd":"join"}'>➕ join: 隨機加一隻常駐</button>
                 <button class="btn" data-remote='{"cmd":"leave"}'>➖ leave: 隨機送走一隻</button>
                 <button class="btn" data-remote='{"cmd":"feed"}'>🍐 feed: 天降果實</button>
                 <button class="btn" data-remote='{"cmd":"poke"}'>👆 poke: 全員跳一下</button>
                 <button class="btn" data-remote='{"cmd":"burst"}'>✨ burst: 星星重播</button>
+                <button class="btn" data-remote='{"cmd":"roster"}'>📋 roster: 查陣容</button>
             </div>
             <code class="q" id="remote-log">(按上面的按鈕, widget 的回執會即時顯示在這裡)</code>
             <p class="hint" style="margin:0"><code>burst</code> 要場上有色違才有效果(回執的
             <code>count</code> 會告訴你作用到幾隻)——先按食譜「全員色違遊行」再回來玩;
-            <code>feed</code> 掉的果實數量隨機, 上限是「有空的」常駐成員數(一隻只追一顆)。</p>
+            <code>feed</code> 掉的果實數量隨機, 上限是「有空的」常駐成員數(一隻只追一顆);
+            信使鳥空投時大家都在忙的話, 果實會被整顆叼走不落地;
+            <code>roster</code> 的回執就是目前陣容清單, 直接看下面的回執列。</p>
         </div>
 
         <div class="card recipe" style="margin-bottom:16px">
@@ -537,8 +541,8 @@
                 <tbody>
                     <tr>
                         <td class="name">spawn</td>
-                        <td class="range">id(選填, 1 ~ 1025)</td>
-                        <td class="desc">客串一隻從畫面外高速橫越。帶 <code>id</code> 指定誰路過(<b>不限飛行系</b>, 遙控的卡比獸也能飛); 不帶就照常抽飛行池(含傳說機率那一層)。色違照全頁 <code>shinyChance</code> 擲骰</td>
+                        <td class="range">id(選填, 1 ~ 1025)<br>delivery(選填, true)</td>
+                        <td class="desc">客串一隻從畫面外高速橫越。帶 <code>id</code> 指定誰路過(<b>不限飛行系</b>, 遙控的卡比獸也能飛); 不帶就照常抽飛行池(含傳說機率那一層)。帶 <code>delivery: true</code> 改派<b>信使鳥空投</b>: 叼著果實橫越、半路鬆爪掉下一顆(大家都在忙就整顆叼走; <code>berry=off</code> 回 <code>berry is off</code>)。色違照全頁 <code>shinyChance</code> 擲骰</td>
                     </tr>
                     <tr>
                         <td class="name">poke</td>
@@ -565,6 +569,11 @@
                         <td class="range">count(選填, ≥ 1)</td>
                         <td class="desc">從天上隨機位置降下果實, 掉法與點擊空白處丟果實同一套(最近且有空的成員冒驚嘆號跑去吃)。帶 <code>count</code> 指定顆數, 不帶就隨機; 上限都是「<b>有空的</b>常駐成員數」(一隻只追一顆), 回執的 <code>count</code> 是實際掉了幾顆。大家都在忙回 <code>everyone is busy</code></td>
                     </tr>
+                    <tr>
+                        <td class="name">roster</td>
+                        <td class="range">—</td>
+                        <td class="desc"><b>查詢</b>目前常駐陣容, 不動畫面。回執帶 <code>count</code>(總數)與 <code>roster</code> 陣列, 每隻是 <code>{ id, shiny, size }</code>(圖鑑編號 / 是否色違 / 體型倍率 0.6 小、0.8 中、1 大)。要做陣容面板、投票名單之類的整合, 資料從這裡拿</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -572,7 +581,7 @@
         <div class="card rules" style="margin-bottom:16px">
             <ul>
                 <li><b>訊息格式</b>: <code>{ ns: 'poke-stroll', cmd: '…', …參數 }</code>。沒帶 <code>ns</code> 的訊息一律無視——父頁面常有別的 iframe 在互傳訊息, 不是寄給我們的信不拆。</li>
-                <li><b>回執</b>: 每道指令都回 <code>{ ns, re, ok, count?, id?, reason? }</code> 給發送方; <code>reason</code> 可能是 <code>unknown cmd</code> / <code>id must be 1~1025</code> / <code>id not found</code> / <code>cameo pools not loaded</code> / <code>page hidden</code>(背景分頁不演視覺效果) / <code>rate limited</code> / <code>party is full</code> / <code>last one standing</code> / <code>berry is off</code> / <code>everyone is busy</code> / <code>count must be &gt;= 1</code>。</li>
+                <li><b>回執</b>: 每道指令都回 <code>{ ns, re, ok, count?, id?, roster?, reason? }</code> 給發送方; <code>reason</code> 可能是 <code>unknown cmd</code> / <code>id must be 1~1025</code> / <code>id not found</code> / <code>cameo pools not loaded</code> / <code>page hidden</code>(背景分頁不演視覺效果) / <code>rate limited</code> / <code>party is full</code> / <code>last one standing</code> / <code>berry is off</code> / <code>everyone is busy</code> / <code>count must be &gt;= 1</code>。</li>
                 <li><b>節流</b>: 每秒最多 <code>remoteRateLimit</code>(預設 10)道, 超額整道丟棄——高頻灌指令也拖不垮渲染。</li>
                 <li><b>總開關</b>: <code>?remote=off</code> 後完全靜默(連回執都不給, 像沒這功能)。</li>
                 <li><b>刻意不驗 origin</b>: 指令全是無害的視覺效果、無機密無狀態, 最壞情況是有人在他自己的頁面上讓皮卡丘跳舞。要鎖就直接 <code>remote=off</code>。</li>
@@ -592,7 +601,7 @@
         // 服務端推 {"cmd":"spawn","id":143} 之類的 JSON 事件, 轉譯成 postMessage;
         // wrapper 這層先過白名單, 不認識的指令不轉發
         const m = JSON.parse(ev.data);
-        if (['spawn', 'join', 'leave', 'feed', 'poke', 'burst'].includes(m.cmd)) {
+        if (['spawn', 'join', 'leave', 'feed', 'poke', 'burst', 'roster'].includes(m.cmd)) {
             poke.contentWindow.postMessage({ ns: 'poke-stroll', ...m }, '*');
         }
     };
@@ -648,6 +657,8 @@
           desc: '活動範圍右界（必須大於 boundsMin）' },
         { name: 'personalSpace',  type: 'int',   range: '0 ~ 1000',      def: '56',     group: '移動與範圍', sample: 'personalSpace=150',
           desc: '同伴間最小距離 px，太近會掉頭' },
+        { name: 'greetChance',    type: 'float', range: '0 ~ 1',         def: '0.1',    group: '互動', sample: 'greetChance=1&count=6',
+          desc: '偶遇打招呼：兩隻擦肩擠進 personalSpace 時，雙方都有空的話有這個機率不掉頭、改停下來面對面寒暄（各自冒音符或愛心），聊個一兩秒再轉身走開。寒暄完有 8~15 秒冷卻，同一對不會原地無限寒暄；發呆中也能被搭話，餵食流程中不會。0 = 關閉' },
         { name: 'idleChance',     type: 'float', range: '0 ~ 1',         def: '0.01',   group: '發呆與對話框', sample: 'idleChance=0.05',
           desc: '每一幀進入發呆狀態的機率' },
         { name: 'lookTimeMin',    type: 'int',   range: '0 ~ 60000',     def: '2000',   group: '發呆與對話框', sample: 'lookTimeMin=4000',
@@ -698,6 +709,8 @@
           desc: '每次擲骰真的觸發客串的機率（0 = 整個機制關閉）。觸發時一隻寶可夢從畫面外沿隨機斜線航道、浮浮沉沉地高速橫越（這趟可能左 45% 飛到右 60%，下一趟右 70% 飛到左 50%），不加入常駐陣容；色違吃全頁 shinyChance，中了會拖金色星塵尾跡' },
         { name: 'flybyLegendaryChance', type: 'float', range: '0 ~ 1',   def: '0.05',   group: '客串事件', sample: 'flybyChance=1&flybyLegendaryChance=1',
           desc: '觸發時抽「會飛的傳說池」（9 隻：三聖鳥/洛奇亞/鳳王/烈空坐/雲三家）而非「飛行池」（73 隻飛行系，平均分佈）的機率。兩池全員任一屬性槽都含飛行——固拉多再傳說也不會飛，不會亂入天空' },
+        { name: 'flybyDeliveryChance', type: 'float', range: '0 ~ 1',   def: '0.2',    group: '客串事件', sample: 'flybyChance=1&flybyDeliveryChance=1&flybyDelayMin=2000&flybyDelayMax=4000',
+          desc: '觸發客串時改派「信使鳥空投」的機率：信使鳥叼著果實橫越，半路鬆爪掉下一顆，之後就是一般的餵食流程（最近且有空的成員冒驚嘆號跑去吃）。那一刻大家都在忙就整顆叼走不落地；berry=off 時不派這趟任務。0 = 關閉' },
         { name: 'flybySpeed',     type: 'float', range: '1 ~ 100',       def: '5',      group: '客串事件', sample: 'flybyChance=1&flybySpeed=15',
           desc: '橫越速度 px/幀（60fps 基準），實際每次 ±15% 隨機' },
         { name: 'remote',         type: 'enum',  range: 'on / off',      def: 'on',     group: '遙控', sample: 'remote=off',
@@ -730,6 +743,8 @@
         { label: '熔岩試膽（小火龍一家）', query: 'theme=lava&ids=4,5,6' },
         { label: '客串頻發（展示/測試用）', query: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000' },
         { label: '傳說時刻（每次都是傳說級路過）', query: 'flybyChance=1&flybyLegendaryChance=1&flybyDelayMin=3000&flybyDelayMax=5000' },
+        { label: '信使鳥快遞頻發（每趟客串都空投果實）', query: 'flybyChance=1&flybyDeliveryChance=1&flybyDelayMin=2000&flybyDelayMax=4000' },
+        { label: '社交花蝴蝶（一擦肩就停下來寒暄）', query: 'greetChance=1&count=6' },
     ];
 
     // ---------------------------------------------------------
