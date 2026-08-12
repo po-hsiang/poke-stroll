@@ -726,6 +726,9 @@
         // 寶可夢類別 (Pokemon Class)
         // 這就像是用 Golang 定義一個 Struct，包含狀態與行為
         // ---------------------------------------------------------
+        // 寒暄站位時，兩隻身體邊緣之間留的空隙（畫面 px）
+        const GREET_GAP = 16;
+
         class Pokemon {
             constructor(id, container, sizeScale, laneIndex, groundLift = 0) {
                 this.id = id;
@@ -874,10 +877,7 @@
                 } else if (this.state === 'IDLE') {
                     this.idle(deltaTime);
                 } else if (this.state === 'GREETING') {
-                    // 寒暄中：站定緩緩落地，聊完各自轉身走開
-                    this.bobY *= 0.8;
-                    this.greetTimer -= deltaTime;
-                    if (this.greetTimer <= 0) this.endGreet(true);
+                    this.greet(deltaTime);
                 } else if (this.state === 'SEEK_BERRY') {
                     this.seekBerry(deltaTime);
                 } else if (this.state === 'EATING') {
@@ -1160,15 +1160,64 @@
                     && this.greetCooldown <= 0;
             }
 
-            // 進入寒暄：面向對方站定，冒音符或愛心（兩隻各自擲骰，不一定同款）。
-            // 對話框被婉拒時（bubblePosition=none 或色違閃光保護期）至少收起舊心情
-            startGreet(partner, faceDir, duration) {
+            // 進入寒暄。不是原地開聊：擦肩相遇時兩隻多半疊在一起，
+            // 先各退到「彼此身寬 + 一點空隙」的站位（SPACING），
+            // 雙方都就位、面對面之後才冒對話框開聊（CHAT）
+            startGreet(partner, faceDir, duration, targetX) {
                 this.greetPartner = partner;
                 this.state = 'GREETING';
-                this.greetTimer = duration;
+                this.greetPhase = 'SPACING';
+                this.greetTargetX = targetX;
+                this.greetFace = faceDir;      // 就位後要面向對方的方向
+                this.greetDuration = duration; // 聊多久（開聊那一刻才起跳）
+                this.greetTimer = 4000;        // 讓位的保險絲：站位走不到就整組放棄
                 this.idleTimer = 0;
-                this.direction = faceDir;
-                if (!this.showEmote(Math.random() < 0.5 ? 'note' : 'heart', duration)) {
+                this.hideEmote(); // 對話框等面對面後才出現，先收掉進行中的心情
+            }
+
+            // 寒暄的每一幀（GREETING 狀態）
+            greet(deltaTime) {
+                if (this.greetPhase === 'CHAT') {
+                    // 聊天中：站定緩緩落地，聊完各自轉身走開
+                    this.bobY *= 0.8;
+                    this.greetTimer -= deltaTime;
+                    if (this.greetTimer <= 0) this.endGreet(true);
+                    return;
+                }
+                // 讓位卡住（視窗中途縮放把站位擠到界外之類）就整組放棄，
+                // 別讓兩隻站成雕像
+                this.greetTimer -= deltaTime;
+                if (this.greetTimer <= 0) { this.breakGreet(); return; }
+                const dx = this.greetTargetX - this.x;
+                if (this.greetPhase === 'SPACING' && Math.abs(dx) > 1) {
+                    // 面向移動方向、用小跑步的節奏讓開
+                    const dt = deltaTime / (1000 / 60);
+                    this.direction = dx > 0 ? 1 : -1;
+                    const step = Math.max(this.speed * 2.5, 1) * dt;
+                    this.x += Math.sign(dx) * Math.min(Math.abs(dx), step);
+                    this.walkPhase += deltaTime * CONFIG.hopFrequency * 2.5 * (this.speed / CONFIG.baseSpeed);
+                    this.bobY = Math.abs(Math.sin(this.walkPhase)) * this.hopHeight;
+                    return;
+                }
+                // 就位：站上目標點、轉頭面向對方，等對方也站好
+                this.x = this.greetTargetX;
+                this.greetPhase = 'READY';
+                this.direction = this.greetFace;
+                this.bobY *= 0.8;
+                // 兩隻都就位 → 同一刻開聊（對話框此刻才出現）
+                if (this.greetPartner?.greetPhase === 'READY') {
+                    this.beginChat();
+                    this.greetPartner.beginChat();
+                }
+            }
+
+            // 就位面對面後開聊：冒音符或愛心（兩隻各自擲骰，不一定同款）。
+            // 對話框被婉拒時（bubblePosition=none 或色違閃光保護期）就靜靜相望
+            beginChat() {
+                this.greetPhase = 'CHAT';
+                this.greetTimer = this.greetDuration;
+                this.direction = this.greetFace;
+                if (!this.showEmote(Math.random() < 0.5 ? 'note' : 'heart', this.greetDuration)) {
                     this.hideEmote();
                 }
             }
@@ -1179,6 +1228,7 @@
             endGreet(turnAway = false) {
                 if (this.state !== 'GREETING') return;
                 this.state = 'WALKING';
+                this.greetPhase = null;
                 this.greetPartner = null;
                 this.hideEmote();
                 if (turnAway) this.direction *= -1;
@@ -1202,12 +1252,27 @@
                     const dx = other.x - this.x;
                     if (Math.abs(dx) < CONFIG.personalSpace && Math.sign(dx) === this.direction) {
                         // 偶遇打招呼：雙方都有空的話，小機率不掉頭，
-                        // 改停下來面對面寒暄一下再各走各的
+                        // 改停下來面對面寒暄一下再各走各的。
+                        // 站位以兩隻中心的中點為基準往外讓開：
+                        // 中心距 = 半身寬相加 + 空隙，身體才不會疊在一起；
+                        // 目標都夾回活動範圍，貼著邊界相遇也讓得開
                         if (this.canGreet() && other.canGreet()
                             && Math.random() < (CONFIG.greetChance ?? 0)) {
                             const duration = randomInt(1600, 2600);
-                            this.startGreet(other, Math.sign(dx), duration);
-                            other.startGreet(this, -Math.sign(dx), duration);
+                            const wa = this.img.offsetWidth || CONFIG.baseSize * this.sizeScale;
+                            const wb = other.img.offsetWidth || CONFIG.baseSize * other.sizeScale;
+                            const mid = (this.centerX() + other.centerX()) / 2;
+                            const sep = (wa + wb) / 2 + GREET_GAP; // 站定後的中心距
+                            const side = Math.sign(dx); // 對方在我的哪一側
+                            const clampX = (tx, w) => {
+                                const minX = window.innerWidth * CONFIG.bounds.min;
+                                const maxX = Math.max(minX, window.innerWidth * CONFIG.bounds.max - w);
+                                return Math.min(Math.max(tx, minX), maxX);
+                            };
+                            this.startGreet(other, side, duration,
+                                clampX(mid - side * sep / 2 - wa / 2, wa));
+                            other.startGreet(this, -side, duration,
+                                clampX(mid + side * sep / 2 - wb / 2, wb));
                             break;
                         }
                         this.direction *= -1;

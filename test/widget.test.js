@@ -975,7 +975,6 @@ group('19. 色違星星特效定時重播');
     // 客串排程：隱藏時擲骰作廢（rAF 停著，生出來只會凍在半空累積），
     // 排程照鏈，恢復可見後照常生成。皮卡丘在 stub 身高表裡，不會打網路
     sandbox.window.POKE_FLYING = [25];
-    const savedChance = CONFIG.flybyChance;
     CONFIG.flybyChance = 1; // 每次擲骰必中，測的是可見度那一關
     T.scheduleFlyby();
     sandbox.document.hidden = true;
@@ -986,7 +985,10 @@ group('19. 色違星星特效定時重播');
     advance(20001); // 下一個擲骰時點必到
     await new Promise(r => setImmediate(r));
     check('恢復可見：客串照常生成', T.cameos.length > 0, `實際 ${T.cameos.length} 隻`);
-    CONFIG.flybyChance = savedChance;
+    // 排程鏈停不下來（scheduleFlyby 永遠自我續約），機率直接歸零讓之後的
+    // advance 都空轉——信使鳥空投不需要名單池，光刪 POKE_FLYING 擋不住
+    // 預設 flybyDeliveryChance 的擲骰，客串會隨機亂入後面的測試
+    CONFIG.flybyChance = 0;
     delete sandbox.window.POKE_FLYING;
 
     // =====================================================
@@ -1308,16 +1310,37 @@ group('19. 色違星星特效定時重播');
 
         CONFIG.greetChance = 1; // 必定寒暄
         ga.update(16, T.pokemons);
-        check('相遇 → 兩隻都進入 GREETING', ga.state === 'GREETING' && gb.state === 'GREETING');
-        check('面對面（ga 朝右、gb 朝左）', ga.direction === 1 && gb.direction === -1);
+        check('相遇 → 兩隻都進入 GREETING（先讓位，還不開聊）',
+            ga.state === 'GREETING' && gb.state === 'GREETING'
+            && ga.greetPhase === 'SPACING' && gb.greetPhase === 'SPACING');
+        check('讓位階段還沒有對話框', ga.bubble.style.display === 'none'
+            && gb.bubble.style.display === 'none');
+        // 站位幾何：stub 的 img 寬固定 120，中心 = 目標 x + 60
+        const gaC = ga.greetTargetX + 60, gbC = gb.greetTargetX + 60;
+        check('站位中心距 = 半身寬相加 + 空隙（120 + 16）',
+            gbC - gaC === 136, `實際 ${gbC - gaC}`);
+        check('站位以兩隻中點為基準往外讓開',
+            Math.abs((gaC + gbC) / 2 - (ga.centerX() + gb.centerX()) / 2) < 2,
+            `目標中點 ${(gaC + gbC) / 2}，當下中點 ${(ga.centerX() + gb.centerX()) / 2}`);
         check('互相記住對方', ga.greetPartner === gb && gb.greetPartner === ga);
-        check('各自冒出音符或愛心', ['note', 'heart'].includes(ga.bubbleName)
+        check('寒暄中不算餵食忙碌（果實叫得動牠）', !ga.isFeeding() && !gb.isFeeding());
+
+        // 走到站位 → 面對面 → 同一刻開聊
+        for (let i = 0; i < 400 && ga.greetPhase !== 'CHAT'; i++) {
+            ga.update(16, T.pokemons);
+            gb.update(16, T.pokemons);
+        }
+        check('雙方就位後才開聊', ga.greetPhase === 'CHAT' && gb.greetPhase === 'CHAT');
+        check('站上讓開的位置（身體不重疊、留有空隙）',
+            ga.x === ga.greetTargetX && gb.x === gb.greetTargetX
+            && gb.x - (ga.x + 120) === 16, `間隙 ${gb.x - (ga.x + 120)}`);
+        check('面對面（ga 朝右、gb 朝左）', ga.direction === 1 && gb.direction === -1);
+        check('開聊才冒出音符或愛心', ['note', 'heart'].includes(ga.bubbleName)
             && ga.bubble.style.display === 'block'
             && ['note', 'heart'].includes(gb.bubbleName)
             && gb.bubble.style.display === 'block');
-        check('寒暄時長 1600 ~ 2600ms 且兩隻同步', ga.greetTimer >= 1600 && ga.greetTimer <= 2600
-            && ga.greetTimer === gb.greetTimer);
-        check('寒暄中不算餵食忙碌（果實叫得動牠）', !ga.isFeeding() && !gb.isFeeding());
+        check('聊天時長 1600 ~ 2600ms 且兩隻同款時長', ga.greetDuration >= 1600
+            && ga.greetDuration <= 2600 && ga.greetDuration === gb.greetDuration);
 
         // 聊完各自轉身走開 + 進冷卻
         for (let i = 0; i < 200 && ga.state === 'GREETING'; i++) {
@@ -1356,9 +1379,23 @@ group('19. 色違星星特效定時重播');
         check('對方解脫回去散步，不對著空氣講話', ga.state === 'WALKING'
             && ga.greetPartner === null && ga.bubble.style.display === 'none');
 
-        // 收拾場面
+        // 讓位的保險絲：站位永遠走不到（如視窗中途縮放）就整組放棄
         T.getBerries().slice().forEach(x => T.removeBerry(x));
         gb.targetBerry = null; gb.state = 'WALKING';
+        ga.greetCooldown = 0; gb.greetCooldown = 0;
+        ga.x = 500; ga.direction = 1; ga.avoidCooldown = 0;
+        gb.x = 540; gb.direction = -1; gb.avoidCooldown = 0;
+        ga.update(16, T.pokemons);
+        check('（前置）寒暄成立', ga.state === 'GREETING' && gb.state === 'GREETING');
+        ga.greetTargetX = -99999; // 模擬站位中途變得走不到（邊界檢查會一直把牠釘回來）
+        for (let i = 0; i < 300 && ga.state === 'GREETING'; i++) {
+            ga.update(16, T.pokemons);
+            gb.update(16, T.pokemons);
+        }
+        check('讓位卡住 → 4 秒保險絲放棄寒暄、兩隻都解脫',
+            ga.state === 'WALKING' && gb.state === 'WALKING');
+
+        // 收拾場面
         CONFIG.greetChance = savedGreet;
         CONFIG.idleChance = savedIdle;
     }
