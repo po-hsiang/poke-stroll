@@ -496,14 +496,17 @@
         <div class="card recipe" style="margin-bottom:16px">
             <span class="label">🕹️ 現場試玩——指令直接打進預覽區</span>
             <div class="row" style="flex-wrap:wrap">
-                <button class="btn" data-remote='{"cmd":"spawn","id":143}'>🕊️ spawn: 卡比獸飛過</button>
                 <button class="btn" data-remote='{"cmd":"spawn"}'>🎲 spawn: 隨機客串</button>
+                <button class="btn" data-remote='{"cmd":"join"}'>➕ join: 隨機加一隻常駐</button>
+                <button class="btn" data-remote='{"cmd":"leave"}'>➖ leave: 隨機送走一隻</button>
+                <button class="btn" data-remote='{"cmd":"feed"}'>🍐 feed: 天降果實</button>
                 <button class="btn" data-remote='{"cmd":"poke"}'>👆 poke: 全員跳一下</button>
                 <button class="btn" data-remote='{"cmd":"burst"}'>✨ burst: 星星重播</button>
             </div>
             <code class="q" id="remote-log">(按上面的按鈕, widget 的回執會即時顯示在這裡)</code>
             <p class="hint" style="margin:0"><code>burst</code> 要場上有色違才有效果(回執的
-            <code>count</code> 會告訴你作用到幾隻)——先按食譜「全員色違遊行」再回來玩。</p>
+            <code>count</code> 會告訴你作用到幾隻)——先按食譜「全員色違遊行」再回來玩;
+            <code>feed</code> 掉的果實數量隨機, 上限是「有空的」常駐成員數(一隻只追一顆)。</p>
         </div>
 
         <div class="card recipe" style="margin-bottom:16px">
@@ -547,6 +550,21 @@
                         <td class="range">—</td>
                         <td class="desc">場上所有<b>色違</b>立刻重播星星特效(重播排程會重排, 不會越放越密); 沒有色違就是 <code>count: 0</code></td>
                     </tr>
+                    <tr>
+                        <td class="name">join</td>
+                        <td class="range">id(選填, 1 ~ 1025)</td>
+                        <td class="desc">加入一隻<b>常駐</b>成員(會留下來散步, 不是路過的客串)。帶 <code>id</code> 指定誰入隊, 不帶就照 <code>minId</code> / <code>maxId</code> 隨機抽; 回執的 <code>id</code> 告訴你誰來了。隊伍上限與 <code>count</code> 參數同一個天花板(50), 滿了回 <code>party is full</code></td>
+                    </tr>
+                    <tr>
+                        <td class="name">leave</td>
+                        <td class="range">id(選填)</td>
+                        <td class="desc">送走一隻常駐成員。帶 <code>id</code> 指定送誰(同編號多隻就送最晚入隊的), 不帶就隨機挑; 回執的 <code>id</code> 告訴你誰走了。<b>最後一隻不送</b>(回 <code>last one standing</code>); 正在追的果實會一併收走, 不留孤兒果實</td>
+                    </tr>
+                    <tr>
+                        <td class="name">feed</td>
+                        <td class="range">count(選填, ≥ 1)</td>
+                        <td class="desc">從天上隨機位置降下果實, 掉法與點擊空白處丟果實同一套(最近且有空的成員冒驚嘆號跑去吃)。帶 <code>count</code> 指定顆數, 不帶就隨機; 上限都是「<b>有空的</b>常駐成員數」(一隻只追一顆), 回執的 <code>count</code> 是實際掉了幾顆。大家都在忙回 <code>everyone is busy</code></td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -554,7 +572,7 @@
         <div class="card rules" style="margin-bottom:16px">
             <ul>
                 <li><b>訊息格式</b>: <code>{ ns: 'poke-stroll', cmd: '…', …參數 }</code>。沒帶 <code>ns</code> 的訊息一律無視——父頁面常有別的 iframe 在互傳訊息, 不是寄給我們的信不拆。</li>
-                <li><b>回執</b>: 每道指令都回 <code>{ ns, re, ok, count?, reason? }</code> 給發送方; <code>reason</code> 可能是 <code>unknown cmd</code> / <code>id must be 1~1025</code> / <code>cameo pools not loaded</code> / <code>page hidden</code>(背景分頁不生成) / <code>rate limited</code>。</li>
+                <li><b>回執</b>: 每道指令都回 <code>{ ns, re, ok, count?, id?, reason? }</code> 給發送方; <code>reason</code> 可能是 <code>unknown cmd</code> / <code>id must be 1~1025</code> / <code>id not found</code> / <code>cameo pools not loaded</code> / <code>page hidden</code>(背景分頁不演視覺效果) / <code>rate limited</code> / <code>party is full</code> / <code>last one standing</code> / <code>berry is off</code> / <code>everyone is busy</code> / <code>count must be &gt;= 1</code>。</li>
                 <li><b>節流</b>: 每秒最多 <code>remoteRateLimit</code>(預設 10)道, 超額整道丟棄——聊天室洗版也拖不垮渲染。</li>
                 <li><b>總開關</b>: <code>?remote=off</code> 後完全靜默(連回執都不給, 像沒這功能)。</li>
                 <li><b>刻意不驗 origin</b>: 指令全是無害的視覺效果、無機密無狀態, 最壞情況是有人在他自己的頁面上讓皮卡丘跳舞。要鎖就直接 <code>remote=off</code>。</li>

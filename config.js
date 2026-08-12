@@ -44,7 +44,8 @@ window.POKE_CONFIG = {
     // ---- postMessage 遙控 ----
     // 父頁面（或 OBS 的 wrapper 頁）可隔著 iframe 用 postMessage 下指令，例：
     //   frame.contentWindow.postMessage({ ns: 'poke-stroll', cmd: 'poke' }, '*')
-    // 指令：spawn 客串一隻（可帶 id）/ poke 開心跳（可帶 id）/ burst 色違星星重播。
+    // 指令：spawn 客串一隻（可帶 id）/ poke 開心跳（可帶 id）/ burst 色違星星重播 /
+    //       join 加一隻常駐（可帶 id）/ leave 送走一隻常駐（可帶 id）/ feed 天降果實（可帶 count）。
     // 每道指令都會回執（{ ns, re, ok, ... }）。串接方法見 PARAMS.md 的
     // 「postMessage 遙控」一節（部署站的 params.html 同步收錄，含現場試玩按鈕）
     remote: 'on',        // 'off' = 完全不理會遙控訊息

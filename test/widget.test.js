@@ -163,7 +163,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, BERRY_ART, BERRY_PALETTE, getBerries: () => berries };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -1048,6 +1048,75 @@ group('19. 色違星星特效定時重播');
     check('背景分頁 → spawn 拒收（跟排程器同一套防護）',
         lastReply()?.ok === false && lastReply()?.reason === 'page hidden');
     sandbox.document.hidden = false;
+
+    // join：加一隻常駐（async，flush 微任務再驗收）
+    T.remoteStamps.length = 0;
+    send({ ns: 'poke-stroll', cmd: 'join', id: 7 });
+    check('join id=7 → 回執 ok 且帶 id', lastReply()?.ok === true && lastReply()?.id === 7);
+    await new Promise(r => setImmediate(r));
+    check('join id=7 → 常駐 +1', T.pokemons.length === 3, `實際 ${T.pokemons.length}`);
+    const joined = T.pokemons[2];
+    check('join 生的是常駐 Pokemon（會散步，不是客串）',
+        joined instanceof T.Pokemon && joined.id === 7);
+    send({ ns: 'poke-stroll', cmd: 'join', id: 'abc' });
+    check('join id 非數字 → ok:false', lastReply()?.ok === false);
+    send({ ns: 'poke-stroll', cmd: 'join' });
+    check('join 不帶 id → 隨機抽（minId ~ maxId 內）', lastReply()?.ok === true
+        && lastReply()?.id >= CONFIG.minId && lastReply()?.id <= CONFIG.maxId);
+    await new Promise(r => setImmediate(r));
+    T.pokemons.length = 3; // 隨機加入的那隻退場，固定陣容（pika + snor + joined）繼續測
+    while (T.pokemons.length < T.QUERY_PARAMS.count.max) T.pokemons.push(pika); // 灌滿隊伍
+    send({ ns: 'poke-stroll', cmd: 'join' });
+    check('隊伍滿了 → party is full',
+        lastReply()?.ok === false && lastReply()?.reason === 'party is full');
+    T.pokemons.length = 3;
+
+    // feed：天降果實，「一隻只追一顆」的配對制就是上限
+    T.remoteStamps.length = 0;
+    check('（前置）三隻都有空', T.pokemons.every(p => !p.isFeeding()));
+    send({ ns: 'poke-stroll', cmd: 'feed', count: 99 });
+    check('feed count=99 → 夾到有空的成員數 3',
+        lastReply()?.ok === true && lastReply()?.count === 3);
+    check('場上 3 顆果實、三隻全在忙',
+        T.getBerries().length === 3 && T.pokemons.every(p => p.isFeeding()));
+    check('果實從畫面上半段落下', T.getBerries().every(b => b.bottom >= 100 && b.bottom <= 180));
+    send({ ns: 'poke-stroll', cmd: 'feed' });
+    check('大家都在忙 → everyone is busy',
+        lastReply()?.ok === false && lastReply()?.reason === 'everyone is busy');
+    CONFIG.berry = 'off';
+    send({ ns: 'poke-stroll', cmd: 'feed' });
+    check("feed 於 berry='off' → berry is off", lastReply()?.reason === 'berry is off');
+    CONFIG.berry = 'on';
+    sandbox.document.hidden = true;
+    send({ ns: 'poke-stroll', cmd: 'feed' });
+    check('背景分頁 → feed 拒收', lastReply()?.reason === 'page hidden');
+    sandbox.document.hidden = false;
+    send({ ns: 'poke-stroll', cmd: 'feed', count: 0 });
+    check('feed count=0 → count must be >= 1',
+        lastReply()?.ok === false && lastReply()?.reason === 'count must be >= 1');
+
+    // leave：送走成員，正在追的果實一併收走
+    T.remoteStamps.length = 0;
+    send({ ns: 'poke-stroll', cmd: 'leave', id: 7 });
+    check('leave id=7 → 回執帶 id、常駐 -1',
+        lastReply()?.ok === true && lastReply()?.id === 7 && T.pokemons.length === 2);
+    check('走的那隻追的果實一併收走（3 → 2 顆）', T.getBerries().length === 2);
+    send({ ns: 'poke-stroll', cmd: 'leave', id: 999 });
+    check('leave id 不在場上 → id not found',
+        lastReply()?.ok === false && lastReply()?.reason === 'id not found');
+    send({ ns: 'poke-stroll', cmd: 'leave' });
+    check('leave 不帶 id → 隨機送走一隻（2 → 1）',
+        lastReply()?.ok === true && T.pokemons.length === 1);
+    send({ ns: 'poke-stroll', cmd: 'leave' });
+    check('最後一隻不送 → last one standing',
+        lastReply()?.ok === false && lastReply()?.reason === 'last one standing');
+
+    // 陣容與場面復原：清光果實、回到固定的 pika + snor，給後面的節流測試用
+    T.getBerries().slice().forEach(b => T.removeBerry(b));
+    pika.state = 'WALKING'; pika.targetBerry = null;
+    snor.state = 'WALKING'; snor.targetBerry = null;
+    T.pokemons.length = 0;
+    T.pokemons.push(pika, snor);
 
     // 節流：滑動窗超額整道丟棄
     T.remoteStamps.length = 0;

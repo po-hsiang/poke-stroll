@@ -140,6 +140,9 @@ URL 參數是「載入時」的客製;`postMessage` 則是**執行中**的遙控
 | `spawn` | `id`(選填,1 ~ 1025) | 客串一隻從畫面外高速橫越。帶 `id` 指定誰路過(**不限飛行系**,遙控的卡比獸也能飛);不帶就照常抽飛行池(含傳說機率那一層)。色違照全頁 `shinyChance` 擲骰 |
 | `poke` | `id`(選填) | 開心跳一下 + 冒愛心(跟滑鼠點擊同一種互動)。帶 `id` 只戳該圖鑑編號的成員,不帶就全員 |
 | `burst` | — | 場上所有**色違**立刻重播星星特效(重播排程會重排,不會越放越密);場上沒有色違就是 `count: 0` |
+| `join` | `id`(選填,1 ~ 1025) | 加入一隻**常駐**成員(會留下來散步,不是路過的客串)。帶 `id` 指定誰入隊,不帶就照 `minId` / `maxId` 隨機抽;回執的 `id` 告訴你誰來了。隊伍上限與 `count` 參數同一個天花板(50),滿了回 `party is full` |
+| `leave` | `id`(選填) | 送走一隻常駐成員。帶 `id` 指定送誰(同編號多隻就送最晚入隊的),不帶就隨機挑;回執的 `id` 告訴你誰走了。**最後一隻不送**(回 `last one standing`);正在追的果實會一併收走,不留孤兒果實 |
+| `feed` | `count`(選填,≥ 1) | 從天上隨機位置降下果實,掉法與點擊空白處丟果實同一套(最近且有空的成員冒驚嘆號跑去吃)。帶 `count` 指定顆數,不帶就隨機;上限都是「**有空的**常駐成員數」(一隻只追一顆),回執的 `count` 是實際掉了幾顆。大家都在忙回 `everyone is busy` |
 
 ### 回執
 
@@ -156,8 +159,9 @@ window.addEventListener('message', e => {
 |------|------|
 | `re` | 回應的是哪道指令 |
 | `ok` | 是否已執行 |
-| `count` | (`poke` / `burst`)實際作用到幾隻 |
-| `reason` | `ok: false` 時的原因:`unknown cmd` / `id must be 1~1025` / `cameo pools not loaded` / `page hidden`(背景分頁不生成) / `rate limited` |
+| `count` | (`poke` / `burst`)實際作用到幾隻;(`feed`)實際掉了幾顆 |
+| `id` | (`join` / `leave`)實際加入 / 送走的圖鑑編號 |
+| `reason` | `ok: false` 時的原因:`unknown cmd` / `id must be 1~1025` / `id not found` / `cameo pools not loaded` / `page hidden`(背景分頁不演視覺效果) / `rate limited` / `party is full` / `last one standing` / `berry is off` / `everyone is busy` / `count must be >= 1` |
 
 ### 防護與限制
 
