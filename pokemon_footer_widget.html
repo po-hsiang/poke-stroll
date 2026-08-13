@@ -43,7 +43,7 @@
             /* 注意：這裡「不能」對 transform 掛 transition！
                位置每一幀都在更新，若套上緩動會永遠追不上目標，
                看起來就像在冰上飄移；轉向的鏡像也會經過 scaleX(0) 被壓扁成一條線 */
-            cursor: pointer;
+            cursor: grab; /* 左鍵按下去就抓得起來，游標先把這件事講清楚 */
             pointer-events: auto; /* 讓寶可夢本身可以被互動（如果有的話） */
             will-change: transform;
             /* 長按拖曳用：觸控裝置上別把「按住不放再滑」解讀成捲動手勢，
@@ -237,7 +237,6 @@
             remoteRateLimit:  { path: ['remoteRateLimit'],  type: 'int',   min: 1,  max: 100 },
             berry:            { path: ['berry'],            type: 'enum',  values: ['on', 'off'] },
             drag:             { path: ['drag'],             type: 'enum',  values: ['on', 'off'] },
-            dragHoldTime:     { path: ['dragHoldTime'],     type: 'int',   min: 0,  max: 2000 },
             dragStruggleRate: { path: ['dragStruggleRate'], type: 'float', min: 0,  max: 10 },
         };
 
@@ -853,8 +852,8 @@
 
                 this.el.appendChild(this.img);
 
-                // 點擊互動：戳一下就開心跳一下 + 冒愛心（cursor: pointer 終於名符其實）。
-                // OBS 可用來源的「互動」視窗戳；iframe 預設 pointer-events: none 點不到，
+                // 滑鼠互動（三種按法各司其職，見「滑鼠拖曳」一節的分流表）。
+                // OBS 可用來源的「互動」視窗玩；iframe 預設 pointer-events: none 點不到，
                 // 想開放給訪客要自行拿掉（取捨見 README）
                 this.jumpY = 0; // 點擊跳躍目前的離地高度（與走路跳步疊加）
                 this.jumpV = 0; // 點擊跳躍的垂直速度
@@ -862,22 +861,21 @@
                 this.struggleAngle = 0; // 掙扎中的傾角（度）
                 this.grabDX = 0; // 抓起來那一刻，游標與身體左緣／地面的相對位置
                 this.grabDY = 0;
-                // stopPropagation：點到本體就別冒泡到 document——
-                // 那裡掛著「點空白處丟果實」，一次點擊只該有一種解讀
-                this.el.addEventListener('click', e => {
-                    e?.stopPropagation();
-                    // 剛剛那下是「拖曳的結尾」而不是點擊，戳戳互動跳過這一發
-                    if (swallowClick) { swallowClick = false; return; }
+                // 左鍵按下去的那一刻就抓起來——沒有長按門檻，游標不會先跑掉一段
+                this.el.addEventListener('pointerdown', e => beginDrag(this, e));
+                // 右鍵：擋掉系統選單（「另存圖片」），改演戳戳互動。
+                // 行動裝置的長按也會送 contextmenu，但那時牠已經在手上了，
+                // poke() 的 HELD 防護會擋下來，不會抓著又被戳
+                this.el.addEventListener('contextmenu', e => {
+                    e?.preventDefault?.();
                     this.poke();
                 });
-                // 按住不放就把牠抓起來（長按門檻與後續全在「滑鼠拖曳」一節）
-                this.el.addEventListener('pointerdown', e => beginHold(this, e));
+                // 本體上的左鍵 click 到此為止：別冒泡到 document——
+                // 那裡掛著「點空白處丟果實」，點到身上不該掉果實
+                this.el.addEventListener('click', e => e?.stopPropagation());
                 // sprite 是 <img>，瀏覽器預設可以被原生拖放（會拖出一張半透明鬼影，
                 // 蓋掉我們自己的拖曳、放開手還會被當成外部檔案），直接擋掉
                 this.img.addEventListener('dragstart', e => e?.preventDefault?.());
-                // 右鍵／長按的系統選單（桌機的「另存圖片」、行動裝置的長按選單）
-                // 會直接蓋掉長按抓取，一起擋掉
-                this.el.addEventListener('contextmenu', e => e?.preventDefault?.());
 
                 this.container.appendChild(this.el);
 
@@ -1071,7 +1069,7 @@
                 this.jumpV = 4 * (0.7 + 0.3 * this.sizeScale); // 起跳初速，體型越大跳得越高
             }
 
-            // 被點擊：小跳一下 + 冒愛心，1.6 秒後自動收起。
+            // 被戳（滑鼠右鍵，或遙控 poke 指令）：小跳一下 + 冒愛心，1.6 秒後自動收起。
             // 走路中、發呆中、甚至半空中都可以戳（半空中再戳會重新起跳）。
             // 色違登場閃光的保護期內只跳、不換對話框
             poke() {
@@ -1092,6 +1090,9 @@
                 this.state = 'HELD';
                 this.idleTimer = 0;
                 this.hideEmote();
+                // 掙扎從相位 0 起算：擺盪與抖動都從「不動」開始長出來，
+                // 左鍵輕點一下（抓起來隨即放開）才不會閃一格歪頭
+                this.walkPhase = 0;
                 // 抓起來的那一刻不跳位：先把當下的離地高度接管過來，
                 // 再記住「游標與身體」的相對位置，之後就照這個位移跟著走
                 this.holdY = this.bobY + this.jumpY;
@@ -1637,8 +1638,8 @@
 
         // ---------------------------------------------------------
         // 丟果實餵食 (Berry Feeding)
-        // 點「寶可夢本體」= 戳戳互動（事件在本體上就被攔下）；
-        // 點「空白處」= 從點擊位置掉下一顆樹果，距離最近且「有空」的
+        // 左鍵點「寶可夢本體」= 抓起來（事件在本體上就被攔下）；
+        // 左鍵點「空白處」= 從點擊位置掉下一顆樹果，距離最近且「有空」的
         // 那隻冒出驚嘆號發現它，跑過來三口吃掉 + 冒愛心。
         // 一隻只追一顆：整套（發現 → 跑去 → 吃 → 愛心）演完前
         // 不會發現其他果實。丟新果實要有隻有空的，這個配對制
@@ -1728,16 +1729,19 @@
 
         // ---------------------------------------------------------
         // 滑鼠拖曳 (Drag)
-        // 快速點一下 = 戳戳互動（跳一下 + 冒愛心）；按住超過 dragHoldTime
-        // 就把那一隻「抓起來」跟著游標走，在手上掙扎到放開為止。
+        // 三種按法各司其職，彼此不搶：
+        //   左鍵按本體  = 抓起來拖著走（按下的那一幀就跟手）
+        //   右鍵點本體  = 戳戳互動（跳一下 + 冒愛心）
+        //   左鍵點空白  = 丟一顆果實
+        // 抓取「沒有長按門檻」是刻意的：門檻期間身體不動、游標卻繼續走，
+        // 那段距離會被凍進偏移量裡，之後整段拖曳都差一截（0.30.0 的教訓）。
+        // 按下即抓，偏移量就是你按在身上的那一點，怎麼甩都跟手。
         // 抓在手上的那隻等於暫時離場：不散步、不冒心情對話框、不寒暄、
-        // 也不會被指派果實（canTakeBerry 一條規則管住三個入口）。
+        // 戳不動，也不會被指派果實（canTakeBerry 一條規則管住三個入口）。
         // 游標拉出活動範圍時牠貼著邊界繼續掙扎，不會被拖出場外；
         // 放開手就從當下高度自由落體回地面
         // ---------------------------------------------------------
         let dragTarget = null;    // 正被抓著的那一隻
-        let dragPending = null;   // 按住了、但還沒撐過長按門檻的那一隻
-        let dragHoldTimer = null;
         let dragPointer = { x: 0, bottom: 0 }; // 游標位置（bottom 基準，與其他元素同座標系）
         let swallowClick = false; // 拖曳結束後緊接著那一發 click 要吞掉
 
@@ -1745,43 +1749,30 @@
             dragPointer = { x: e.clientX, bottom: window.innerHeight - e.clientY };
         }
 
-        // 按下去：先當成「可能是長按」，撐過 dragHoldTime 才真的抓起來。
-        // 沒撐過就是一發普通點擊，照舊由 click 監聽器演戳戳互動
-        function beginHold(p, e) {
+        // 左鍵按在本體上：立刻抓起來
+        function beginDrag(p, e) {
             if ((CONFIG.drag ?? 'on') !== 'on') return;
-            if (dragTarget || dragPending) return;        // 一次只抓一隻（多指觸控時後來的那根不理）
-            if (p.el.style.display === 'none') return;    // 隱形的（載圖全滅）抓不到
+            if ((e.button ?? 0) !== 0) return;         // 只認左鍵，右鍵留給戳戳互動
+            if (dragTarget) return;                    // 一次只抓一隻（多指觸控時後來的那根不理）
+            if (p.el.style.display === 'none') return; // 隱形的（載圖全滅）抓不到
             trackPointer(e);
-            dragPending = p;
             // 指標捕獲：游標滑出視窗外也還收得到後續事件，手不會莫名其妙鬆開
             p.el.setPointerCapture?.(e.pointerId);
-            dragHoldTimer = setTimeout(() => {
-                dragHoldTimer = null;
-                dragTarget = dragPending;
-                dragPending = null;
-                dragTarget.grab(dragPointer); // 抓起來的位置用「當下」的游標，不是按下時的
-            }, Math.max(0, CONFIG.dragHoldTime ?? 200));
+            dragTarget = p;
+            p.grab(dragPointer);
         }
 
-        // 放開手（或事件被系統取消、視窗失焦）：計時器收掉，抓著的那隻落地
-        function endHold() {
-            clearTimeout(dragHoldTimer);
-            dragHoldTimer = null;
-            dragPending = null;
+        // 放開手（或事件被系統取消、視窗失焦）：抓著的那隻落地
+        function endDrag() {
             if (!dragTarget) return;
             dragTarget.release();
             dragTarget = null;
-            swallowClick = true; // 放手那一下別又被解讀成戳戳／丟果實
+            swallowClick = true; // 放手那一下別又被解讀成丟果實
         }
 
         // 正被抓著的那隻被遙控 leave 送走時得先鬆手，
         // 否則游標會繼續拖著一個已經從場上除名的元素
         function releaseDrag(p) {
-            if (dragPending === p) {
-                clearTimeout(dragHoldTimer);
-                dragHoldTimer = null;
-                dragPending = null;
-            }
             if (dragTarget === p) {
                 dragTarget.release();
                 dragTarget = null;
@@ -1794,10 +1785,10 @@
             trackPointer(e);
             dragTarget?.dragTo(dragPointer);
         });
-        document.addEventListener('pointerup', endHold);
-        document.addEventListener('pointercancel', endHold);
+        document.addEventListener('pointerup', endDrag);
+        document.addEventListener('pointercancel', endDrag);
         // 視窗失焦（Alt-Tab、切到 OBS 別的來源）：收不到 pointerup 的最後一道保險
-        window.addEventListener('blur', endHold);
+        window.addEventListener('blur', endDrag);
         // 按下的那一刻先把「吞掉下一發 click」的旗子清乾淨：
         // 上一輪若在視窗外放手、根本沒補那發 click，旗子不清會誤傷下一次點擊
         document.addEventListener('pointerdown', () => { swallowClick = false; });

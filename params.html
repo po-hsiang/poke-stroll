@@ -547,7 +547,7 @@
                     <tr>
                         <td class="name">poke</td>
                         <td class="range">id(選填)</td>
-                        <td class="desc">開心跳一下 + 冒愛心(跟滑鼠點擊同一種互動)。帶 <code>id</code> 只戳該圖鑑編號的成員, 不帶就全員; <b>正被滑鼠抓在手上的戳不動</b>, 回執的 <code>count</code> 也不算牠</td>
+                        <td class="desc">開心跳一下 + 冒愛心(跟滑鼠右鍵點本體同一種互動)。帶 <code>id</code> 只戳該圖鑑編號的成員, 不帶就全員; <b>正被滑鼠抓在手上的戳不動</b>, 回執的 <code>count</code> 也不算牠</td>
                     </tr>
                     <tr>
                         <td class="name">burst</td>
@@ -718,11 +718,9 @@
         { name: 'remoteRateLimit', type: 'int',  range: '1 ~ 100',       def: '10',     group: '遙控', sample: 'remoteRateLimit=3',
           desc: '遙控指令節流：每秒最多處理幾道，超額的直接丟棄並回執 rate limited（防高頻洗版）' },
         { name: 'berry',          type: 'enum',  range: 'on / off',      def: 'on',     group: '互動', sample: 'berry=off',
-          desc: '丟果實餵食總開關：點寶可夢「本體」= 戳戳互動；點「空白處」= 從點擊位置掉下一顆像素樹果，距離最近且有空的那隻會冒出驚嘆號發現它，跑過來三口吃掉 + 冒愛心。一隻只追一顆，流程中（發現 → 跑去 → 吃 → 愛心）不會發現其他果實，所以同時最多「常駐數量」（count）顆；活動範圍外的點擊，果實會落在牠搆得到的最近位置。off = 點空白處無事發生。預覽區可以直接點來玩' },
+          desc: '丟果實餵食總開關：左鍵點「空白處」= 從點擊位置掉下一顆像素樹果，距離最近且有空的那隻會冒出驚嘆號發現它，跑過來三口吃掉 + 冒愛心。一隻只追一顆，流程中（發現 → 跑去 → 吃 → 愛心）不會發現其他果實，所以同時最多「常駐數量」（count）顆；活動範圍外的點擊，果實會落在牠搆得到的最近位置。off = 點空白處無事發生（本體的左鍵抓取與右鍵戳戳不受影響）。預覽區可以直接玩：左鍵拖、右鍵戳、點空白處餵果實' },
         { name: 'drag',           type: 'enum',  range: 'on / off',      def: 'on',     group: '互動', sample: 'drag=off',
-          desc: '滑鼠拖曳總開關：快速點一下 = 戳戳互動；按住超過 dragHoldTime 就把那一隻「抓起來」——跟著游標走、在手上掙扎，放開手才自由落體回地面。抓在手上的那隻等於暫時離場：不散步、不冒對話框、不寒暄、戳不動，果實也不會指派給牠（點擊、遙控 feed、信使鳥空投三個入口一致——寧可整顆叼走）。游標拉出活動範圍時牠貼著邊界繼續掙扎，不會被拖出場外。off = 只保留點一下的戳戳互動。預覽區可以直接抓來玩' },
-        { name: 'dragHoldTime',   type: 'int',   range: '0 ~ 2000',      def: '200',    group: '互動', sample: 'dragHoldTime=0',
-          desc: '長按門檻 ms：按住超過這個時間才算「抓起來」，之內放開就是單純點一下。調小 = 一按就黏手，調大 = 要按久一點才抓得起來' },
+          desc: '滑鼠拖曳總開關：左鍵按住本體就把那一隻「抓起來」——按下的那一刻立刻跟手（刻意不設長按門檻：門檻期間身體不動、游標卻繼續走，那段距離會被凍進偏移量裡，整段拖曳都差一截），跟著游標走、在手上掙扎，放開手才自由落體回地面。抓在手上的那隻等於暫時離場：不散步、不冒對話框、不寒暄、戳不動，果實也不會指派給牠（點擊、遙控 feed、信使鳥空投三個入口一致——寧可整顆叼走）。游標拉出活動範圍時牠貼著邊界繼續掙扎，不會被拖出場外。off = 抓不起來，右鍵的戳戳互動不受影響。預覽區可以直接抓來玩' },
         { name: 'dragStruggleRate', type: 'float', range: '0 ~ 10',     def: '2',      group: '互動', sample: 'dragStruggleRate=4',
           desc: '抓在手上時掙扎動畫的倍速（2 = 兩倍快，0 = 抓著但不掙扎）。註：GIF 本身的播放速率瀏覽器不開放 JS 控制，所以掙扎感是 widget 自己畫的擺盪 + 上下抖動，這個值調的是那套動畫' },
     ];
@@ -751,8 +749,8 @@
         { label: '傳說時刻（每次都是傳說級路過）', query: 'flybyChance=1&flybyLegendaryChance=1&flybyDelayMin=3000&flybyDelayMax=5000' },
         { label: '信使鳥快遞頻發（每趟客串都空投果實）', query: 'flybyChance=1&flybyDeliveryChance=1&flybyDelayMin=2000&flybyDelayMax=4000' },
         { label: '社交花蝴蝶（一擦肩就停下來寒暄）', query: 'greetChance=1&count=6' },
-        { label: '一抓就黏手（拖曳門檻最低、掙扎更激烈）', query: 'dragHoldTime=0&dragStruggleRate=4' },
-        { label: '純觀賞（不給抓，只留戳戳互動）', query: 'drag=off' },
+        { label: '掙扎更激烈（抓在手上扭得更兇）', query: 'dragStruggleRate=4' },
+        { label: '純觀賞（不給抓，右鍵仍可戳）', query: 'drag=off' },
     ];
 
     // ---------------------------------------------------------
