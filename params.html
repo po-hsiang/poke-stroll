@@ -467,7 +467,7 @@
             <div class="row"><button class="btn" data-copy-el="hero-snippet">📋 複製嵌入碼</button></div>
             <p class="hint" style="margin:0">背景透明、<code>pointer-events:none</code> 讓點擊穿透,
             不會擋到頁面上的任何按鈕; 參數直接掛在網址後面, 各專案互不影響。
-            想讓訪客戳寶可夢就拿掉 <code>pointer-events:none</code>, 但整個 iframe 矩形都會開始攔截點擊, 請自行取捨。
+            想讓訪客戳、抓寶可夢就拿掉 <code>pointer-events:none</code>, 但整個 iframe 矩形都會開始攔截點擊, 請自行取捨。
             <code>color-scheme:light</code> 是透明背景的保險: iframe 內外的配色方案不一致時,
             瀏覽器會在後面墊不透明底——你的頁面若宣告過 <code>color-scheme: dark</code>, 這一句能讓內外對齊。</p>
         </div>
@@ -547,7 +547,7 @@
                     <tr>
                         <td class="name">poke</td>
                         <td class="range">id(選填)</td>
-                        <td class="desc">開心跳一下 + 冒愛心(跟滑鼠點擊同一種互動)。帶 <code>id</code> 只戳該圖鑑編號的成員, 不帶就全員</td>
+                        <td class="desc">開心跳一下 + 冒愛心(跟滑鼠點擊同一種互動)。帶 <code>id</code> 只戳該圖鑑編號的成員, 不帶就全員; <b>正被滑鼠抓在手上的戳不動</b>, 回執的 <code>count</code> 也不算牠</td>
                     </tr>
                     <tr>
                         <td class="name">burst</td>
@@ -562,12 +562,12 @@
                     <tr>
                         <td class="name">leave</td>
                         <td class="range">id(選填)</td>
-                        <td class="desc">送走一隻常駐成員。帶 <code>id</code> 指定送誰(同編號多隻就送最晚入隊的), 不帶就隨機挑; 回執的 <code>id</code> 告訴你誰走了。<b>最後一隻不送</b>(回 <code>last one standing</code>); 正在追的果實會一併收走, 不留孤兒果實</td>
+                        <td class="desc">送走一隻常駐成員。帶 <code>id</code> 指定送誰(同編號多隻就送最晚入隊的), 不帶就隨機挑; 回執的 <code>id</code> 告訴你誰走了。<b>最後一隻不送</b>(回 <code>last one standing</code>); 正在追的果實會一併收走, 不留孤兒果實; 正被滑鼠抓在手上的會先自動鬆手</td>
                     </tr>
                     <tr>
                         <td class="name">feed</td>
                         <td class="range">count(選填, ≥ 1)</td>
-                        <td class="desc">從天上隨機位置降下果實, 掉法與點擊空白處丟果實同一套(最近且有空的成員冒驚嘆號跑去吃)。帶 <code>count</code> 指定顆數, 不帶就隨機; 上限都是「<b>有空的</b>常駐成員數」(一隻只追一顆), 回執的 <code>count</code> 是實際掉了幾顆。大家都在忙回 <code>everyone is busy</code></td>
+                        <td class="desc">從天上隨機位置降下果實, 掉法與點擊空白處丟果實同一套(最近且有空的成員冒驚嘆號跑去吃)。帶 <code>count</code> 指定顆數, 不帶就隨機; 上限都是「<b>有空的</b>常駐成員數」(一隻只追一顆; 被滑鼠抓在手上的也不算有空), 回執的 <code>count</code> 是實際掉了幾顆。大家都在忙回 <code>everyone is busy</code></td>
                     </tr>
                     <tr>
                         <td class="name">roster</td>
@@ -719,6 +719,12 @@
           desc: '遙控指令節流：每秒最多處理幾道，超額的直接丟棄並回執 rate limited（防高頻洗版）' },
         { name: 'berry',          type: 'enum',  range: 'on / off',      def: 'on',     group: '互動', sample: 'berry=off',
           desc: '丟果實餵食總開關：點寶可夢「本體」= 戳戳互動；點「空白處」= 從點擊位置掉下一顆像素樹果，距離最近且有空的那隻會冒出驚嘆號發現它，跑過來三口吃掉 + 冒愛心。一隻只追一顆，流程中（發現 → 跑去 → 吃 → 愛心）不會發現其他果實，所以同時最多「常駐數量」（count）顆；活動範圍外的點擊，果實會落在牠搆得到的最近位置。off = 點空白處無事發生。預覽區可以直接點來玩' },
+        { name: 'drag',           type: 'enum',  range: 'on / off',      def: 'on',     group: '互動', sample: 'drag=off',
+          desc: '滑鼠拖曳總開關：快速點一下 = 戳戳互動；按住超過 dragHoldTime 就把那一隻「抓起來」——跟著游標走、在手上掙扎，放開手才自由落體回地面。抓在手上的那隻等於暫時離場：不散步、不冒對話框、不寒暄、戳不動，果實也不會指派給牠（點擊、遙控 feed、信使鳥空投三個入口一致——寧可整顆叼走）。游標拉出活動範圍時牠貼著邊界繼續掙扎，不會被拖出場外。off = 只保留點一下的戳戳互動。預覽區可以直接抓來玩' },
+        { name: 'dragHoldTime',   type: 'int',   range: '0 ~ 2000',      def: '200',    group: '互動', sample: 'dragHoldTime=0',
+          desc: '長按門檻 ms：按住超過這個時間才算「抓起來」，之內放開就是單純點一下。調小 = 一按就黏手，調大 = 要按久一點才抓得起來' },
+        { name: 'dragStruggleRate', type: 'float', range: '0 ~ 10',     def: '2',      group: '互動', sample: 'dragStruggleRate=4',
+          desc: '抓在手上時掙扎動畫的倍速（2 = 兩倍快，0 = 抓著但不掙扎）。註：GIF 本身的播放速率瀏覽器不開放 JS 控制，所以掙扎感是 widget 自己畫的擺盪 + 上下抖動，這個值調的是那套動畫' },
     ];
 
     const RECIPES = [
@@ -745,6 +751,8 @@
         { label: '傳說時刻（每次都是傳說級路過）', query: 'flybyChance=1&flybyLegendaryChance=1&flybyDelayMin=3000&flybyDelayMax=5000' },
         { label: '信使鳥快遞頻發（每趟客串都空投果實）', query: 'flybyChance=1&flybyDeliveryChance=1&flybyDelayMin=2000&flybyDelayMax=4000' },
         { label: '社交花蝴蝶（一擦肩就停下來寒暄）', query: 'greetChance=1&count=6' },
+        { label: '一抓就黏手（拖曳門檻最低、掙扎更激烈）', query: 'dragHoldTime=0&dragStruggleRate=4' },
+        { label: '純觀賞（不給抓，只留戳戳互動）', query: 'drag=off' },
     ];
 
     // ---------------------------------------------------------

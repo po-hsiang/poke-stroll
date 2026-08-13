@@ -46,6 +46,17 @@
             cursor: pointer;
             pointer-events: auto; /* 讓寶可夢本身可以被互動（如果有的話） */
             will-change: transform;
+            /* 長按拖曳用：觸控裝置上別把「按住不放再滑」解讀成捲動手勢，
+               也別讓長按選字的反白框跑出來 */
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none; /* iOS 長按跳出的「儲存圖片」選單會蓋掉拖曳 */
+        }
+
+        /* 被抓在手上的那一隻：游標換成「抓握中」 */
+        .pokemon-container.held {
+            cursor: grabbing;
         }
 
         /* 簡單的陰影，增加立體感。
@@ -152,8 +163,10 @@
             width: auto;
             margin-bottom: 1px; /* 腳底抬離底邊 1px，視覺上站進貼底的影子裡 */
             /* 預設寶可夢通常是面向左下方的，這裡不需要額外調整，JS 會控制方向 */
-            transform-origin: center bottom; /* 鏡像與跳躍都以腳底為基準 */
+            transform-origin: center bottom; /* 鏡像與跳躍都以腳底為基準（被抓起來時 JS 會改成身體中心） */
             will-change: transform;
+            /* <img> 預設可以被原生拖放，會拖出一張半透明鬼影蓋掉我們自己的拖曳 */
+            -webkit-user-drag: none;
         }
     </style>
 </head>
@@ -223,6 +236,9 @@
             remote:           { path: ['remote'],           type: 'enum',  values: ['on', 'off'] },
             remoteRateLimit:  { path: ['remoteRateLimit'],  type: 'int',   min: 1,  max: 100 },
             berry:            { path: ['berry'],            type: 'enum',  values: ['on', 'off'] },
+            drag:             { path: ['drag'],             type: 'enum',  values: ['on', 'off'] },
+            dragHoldTime:     { path: ['dragHoldTime'],     type: 'int',   min: 0,  max: 2000 },
+            dragStruggleRate: { path: ['dragStruggleRate'], type: 'float', min: 0,  max: 10 },
         };
 
         function applyQueryOverrides(config) {
@@ -728,6 +744,10 @@
         // ---------------------------------------------------------
         // 寒暄站位時，兩隻身體邊緣之間留的空隙（畫面 px）
         const GREET_GAP = 16;
+        // 被抓在手上時的掙扎動畫：擺動的基礎相位速度（rad/ms）與最大傾角（度）。
+        // GIF 的播放速率瀏覽器不給控制，「掙扎得多快」就靠這兩個值 × dragStruggleRate
+        const STRUGGLE_FREQ = 0.012;
+        const STRUGGLE_TILT = 10;
 
         class Pokemon {
             constructor(id, container, sizeScale, laneIndex, groundLift = 0) {
@@ -838,9 +858,26 @@
                 // 想開放給訪客要自行拿掉（取捨見 README）
                 this.jumpY = 0; // 點擊跳躍目前的離地高度（與走路跳步疊加）
                 this.jumpV = 0; // 點擊跳躍的垂直速度
+                this.holdY = 0; // 被抓在手上時的離地高度（見「滑鼠拖曳」一節）
+                this.struggleAngle = 0; // 掙扎中的傾角（度）
+                this.grabDX = 0; // 抓起來那一刻，游標與身體左緣／地面的相對位置
+                this.grabDY = 0;
                 // stopPropagation：點到本體就別冒泡到 document——
                 // 那裡掛著「點空白處丟果實」，一次點擊只該有一種解讀
-                this.el.addEventListener('click', e => { e?.stopPropagation(); this.poke(); });
+                this.el.addEventListener('click', e => {
+                    e?.stopPropagation();
+                    // 剛剛那下是「拖曳的結尾」而不是點擊，戳戳互動跳過這一發
+                    if (swallowClick) { swallowClick = false; return; }
+                    this.poke();
+                });
+                // 按住不放就把牠抓起來（長按門檻與後續全在「滑鼠拖曳」一節）
+                this.el.addEventListener('pointerdown', e => beginHold(this, e));
+                // sprite 是 <img>，瀏覽器預設可以被原生拖放（會拖出一張半透明鬼影，
+                // 蓋掉我們自己的拖曳、放開手還會被當成外部檔案），直接擋掉
+                this.img.addEventListener('dragstart', e => e?.preventDefault?.());
+                // 右鍵／長按的系統選單（桌機的「另存圖片」、行動裝置的長按選單）
+                // 會直接蓋掉長按抓取，一起擋掉
+                this.el.addEventListener('contextmenu', e => e?.preventDefault?.());
 
                 this.container.appendChild(this.el);
 
@@ -871,7 +908,10 @@
                     if (this.jumpY <= 0) { this.jumpY = 0; this.jumpV = 0; }
                 }
 
-                if (this.state === 'WALKING') {
+                if (this.state === 'HELD') {
+                    // 在手上：位置由游標決定，這裡只演掙扎
+                    this.struggle(deltaTime);
+                } else if (this.state === 'WALKING') {
                     this.walk(deltaTime);
                     this.avoidCrowding(others);
                 } else if (this.state === 'IDLE') {
@@ -902,10 +942,12 @@
                     this.x = minX;
                 } else if (this.x < minX) {
                     this.x = minX;
-                    this.direction = 1; // 撞到左邊界回頭
+                    // 撞到左邊界回頭。被抓著的那隻不轉向：游標拉出界時牠是
+                    // 貼著邊界繼續掙扎，每幀翻面會抖成一團
+                    if (this.state !== 'HELD') this.direction = 1;
                 } else if (this.x > maxX) {
                     this.x = maxX;
-                    this.direction = -1; // 撞到右邊界回頭
+                    if (this.state !== 'HELD') this.direction = -1; // 撞到右邊界回頭
                 }
 
                 this.updateDOM();
@@ -1033,8 +1075,69 @@
             // 走路中、發呆中、甚至半空中都可以戳（半空中再戳會重新起跳）。
             // 色違登場閃光的保護期內只跳、不換對話框
             poke() {
+                if (this.state === 'HELD') return; // 正在手上掙扎，戳不動
                 this.jump();
                 this.showEmote('heart', 1600);
+            }
+
+            // 被抓起來。整隻等於暫時離場：寒暄放對方自由、追到一半的果實收掉
+            // （不留沒人吃的孤兒果實占著上限），對話框也收起來
+            grab(pointer) {
+                if (this.state === 'HELD') return;
+                this.breakGreet();
+                if (this.targetBerry) {
+                    removeBerry(this.targetBerry);
+                    this.targetBerry = null;
+                }
+                this.state = 'HELD';
+                this.idleTimer = 0;
+                this.hideEmote();
+                // 抓起來的那一刻不跳位：先把當下的離地高度接管過來，
+                // 再記住「游標與身體」的相對位置，之後就照這個位移跟著走
+                this.holdY = this.bobY + this.jumpY;
+                this.jumpY = 0;
+                this.jumpV = 0;
+                this.grabDX = pointer.x - this.x;
+                this.grabDY = pointer.bottom - groundLevel - this.holdY;
+                this.el.className = 'pokemon-container held';
+                this.img.style.transformOrigin = '50% 50%'; // 吊在手上：以身體中心為支點擺盪
+                this.dragTo(pointer);
+            }
+
+            // 跟著游標走：面向被拉的方向，X 每一幀還會被 update() 的邊界檢查
+            // 夾回活動範圍（游標拉出界就貼著界線繼續掙扎，不會被拖出場外），
+            // 高度夾在地面與「整隻還看得見」之間
+            dragTo(pointer) {
+                if (this.state !== 'HELD') return;
+                const nx = pointer.x - this.grabDX;
+                if (Math.abs(nx - this.x) > 1) this.direction = nx > this.x ? 1 : -1;
+                this.x = nx;
+                const height = this.img.offsetHeight || CONFIG.baseSize * this.sizeScale;
+                const ceiling = Math.max(0, window.innerHeight - groundLevel - height);
+                this.holdY = Math.min(Math.max(pointer.bottom - groundLevel - this.grabDY, 0), ceiling);
+            }
+
+            // 在手上掙扎的每一幀：高頻的上下抖 + 左右擺盪。
+            // GIF 本身的播放速率瀏覽器不給控制，「掙扎感」是這裡自己畫的，
+            // dragStruggleRate 就是它的倍速（2 = 兩倍快，0 = 不掙扎）
+            struggle(deltaTime) {
+                const rate = Math.max(0, CONFIG.dragStruggleRate ?? 2);
+                this.walkPhase += deltaTime * STRUGGLE_FREQ * rate;
+                this.bobY = Math.abs(Math.sin(this.walkPhase)) * this.hopHeight * 0.6;
+                // 擺盪取一半頻率，跟上下抖錯開，才不會整齊得像機械
+                this.struggleAngle = Math.sin(this.walkPhase * 0.5) * STRUGGLE_TILT;
+            }
+
+            // 放手：把手上的高度交還給跳躍系統，用同一套重力自由落體回地面
+            release() {
+                if (this.state !== 'HELD') return;
+                this.jumpY = this.holdY;
+                this.jumpV = 0;
+                this.holdY = 0;
+                this.struggleAngle = 0;
+                this.state = 'WALKING';
+                this.el.className = 'pokemon-container';
+                this.img.style.transformOrigin = ''; // 交還給 CSS 的 center bottom
             }
 
             // 本體中心的 X 座標（this.x 是左緣）：算「誰離果實最近」用
@@ -1048,6 +1151,16 @@
                 return this.state === 'SEEK_BERRY'
                     || this.state === 'EATING'
                     || this.state === 'FEED_HEART';
+            }
+
+            // 有沒有空接一顆果實：看得見（sprite 兩段備援都失敗的不算，
+            // 果實被看不見的東西吃掉太獵奇）、不在餵食流程中、也不在誰的手上。
+            // 被抓著的那隻等於暫時離場：果實丟給牠會沒人去吃，還占著上限，
+            // 所以點空白處、遙控 feed、信使鳥空投三個入口都問這一句
+            canTakeBerry() {
+                return this.el.style.display !== 'none'
+                    && !this.isFeeding()
+                    && this.state !== 'HELD';
             }
 
             // 發現果實：冒出驚嘆號，不論正在走路還是發呆都放下手邊的事。
@@ -1249,6 +1362,7 @@
                 if (this.avoidCooldown > 0) return;
                 for (const other of others) {
                     if (other === this) continue;
+                    if (other.state === 'HELD') continue; // 被抓在半空的不算路障
                     const dx = other.x - this.x;
                     if (Math.abs(dx) < CONFIG.personalSpace && Math.sign(dx) === this.direction) {
                         // 偶遇打招呼：雙方都有空的話，小機率不掉頭，
@@ -1321,17 +1435,25 @@
 
                 // 原圖面向左邊：direction 1 (向右) -> scaleX(-1) 鏡像
                 const scale = this.direction === 1 ? -1 : 1;
-                const lift = this.bobY + this.jumpY; // 走路跳步 + 點擊跳躍疊加後的離地高度
-                this.img.style.transform = `scaleX(${scale}) translateY(${-lift}px)`;
+                // 走路跳步 + 點擊跳躍 + 被抓在手上的高度，三者疊加後的離地高度
+                const lift = this.bobY + this.jumpY + this.holdY;
+                // 掙扎的傾角接在最後（沒在掙扎時不寫，字串維持原樣）
+                const tilt = this.struggleAngle ? ` rotate(${this.struggleAngle.toFixed(1)}deg)` : '';
+                this.img.style.transform = `scaleX(${scale}) translateY(${-lift}px)${tilt}`;
 
                 // 跳起來時影子縮小、變淡，強化離地的感覺
-                // （走路跳步以自身跳高為滿格；點擊跳躍以 20px 為滿格，取較高者）
-                const airRatio = Math.min(Math.max(this.bobY / this.hopHeight, this.jumpY / 20), 1);
+                // （走路跳步以自身跳高為滿格；離地高度以 20px 為滿格，取較高者）
+                const airRatio = Math.min(
+                    Math.max(this.bobY / this.hopHeight, (this.jumpY + this.holdY) / 20), 1);
                 this.shadow.style.transform = `translateX(-50%) scale(${1 - airRatio * 0.3})`;
                 this.shadow.style.opacity = 1 - airRatio * 0.4;
 
-                // 調整 Z-index 根據 X 軸位置（避免負值造成排序問題）
-                this.el.style.zIndex = Math.max(0, Math.floor(this.x));
+                // 調整 Z-index 根據 X 軸位置（避免負值造成排序問題）。
+                // 被抓在手上的那隻疊到最前面（客串 10000 之上、果實 20000 之下）——
+                // 手上的東西被別人擋住很出戲
+                this.el.style.zIndex = this.state === 'HELD'
+                    ? 15000
+                    : Math.max(0, Math.floor(this.x));
             }
         }
 
@@ -1538,10 +1660,8 @@
 
         function throwBerry(x, dropBottom) {
             if ((CONFIG.berry ?? 'on') === 'off') return false;
-            // 隱形的（sprite 兩段備援都失敗）不算：果實被看不見的東西吃掉太獵奇；
-            // 餵食流程中的也不算：一隻只追一顆，忙完才會發現下一顆
-            const free = pokemons.filter(p =>
-                p.el.style.display !== 'none' && !p.isFeeding());
+            // 有空的定義見 canTakeBerry()：一隻只追一顆，忙完才會發現下一顆
+            const free = pokemons.filter(p => p.canTakeBerry());
             if (!free.length) return false; // 大家都在忙 → 這顆丟不出去
 
             // 有空的裡面距離最近的那隻發現果實，跑過來吃
@@ -1600,8 +1720,87 @@
         // 事件能冒泡到 document 的都是「空白處」。
         // 座標換算成 bottom 基準（頁面底 = 0），跟其他元素同一套座標系
         document.addEventListener('click', e => {
+            // 拖曳的結尾也會補一發 click（放手處若不在本體上，就直接冒到這裡）。
+            // 那不是「點空白處」，別掉果實
+            if (swallowClick) { swallowClick = false; return; }
             throwBerry(e.clientX, window.innerHeight - e.clientY);
         });
+
+        // ---------------------------------------------------------
+        // 滑鼠拖曳 (Drag)
+        // 快速點一下 = 戳戳互動（跳一下 + 冒愛心）；按住超過 dragHoldTime
+        // 就把那一隻「抓起來」跟著游標走，在手上掙扎到放開為止。
+        // 抓在手上的那隻等於暫時離場：不散步、不冒心情對話框、不寒暄、
+        // 也不會被指派果實（canTakeBerry 一條規則管住三個入口）。
+        // 游標拉出活動範圍時牠貼著邊界繼續掙扎，不會被拖出場外；
+        // 放開手就從當下高度自由落體回地面
+        // ---------------------------------------------------------
+        let dragTarget = null;    // 正被抓著的那一隻
+        let dragPending = null;   // 按住了、但還沒撐過長按門檻的那一隻
+        let dragHoldTimer = null;
+        let dragPointer = { x: 0, bottom: 0 }; // 游標位置（bottom 基準，與其他元素同座標系）
+        let swallowClick = false; // 拖曳結束後緊接著那一發 click 要吞掉
+
+        function trackPointer(e) {
+            dragPointer = { x: e.clientX, bottom: window.innerHeight - e.clientY };
+        }
+
+        // 按下去：先當成「可能是長按」，撐過 dragHoldTime 才真的抓起來。
+        // 沒撐過就是一發普通點擊，照舊由 click 監聽器演戳戳互動
+        function beginHold(p, e) {
+            if ((CONFIG.drag ?? 'on') !== 'on') return;
+            if (dragTarget || dragPending) return;        // 一次只抓一隻（多指觸控時後來的那根不理）
+            if (p.el.style.display === 'none') return;    // 隱形的（載圖全滅）抓不到
+            trackPointer(e);
+            dragPending = p;
+            // 指標捕獲：游標滑出視窗外也還收得到後續事件，手不會莫名其妙鬆開
+            p.el.setPointerCapture?.(e.pointerId);
+            dragHoldTimer = setTimeout(() => {
+                dragHoldTimer = null;
+                dragTarget = dragPending;
+                dragPending = null;
+                dragTarget.grab(dragPointer); // 抓起來的位置用「當下」的游標，不是按下時的
+            }, Math.max(0, CONFIG.dragHoldTime ?? 200));
+        }
+
+        // 放開手（或事件被系統取消、視窗失焦）：計時器收掉，抓著的那隻落地
+        function endHold() {
+            clearTimeout(dragHoldTimer);
+            dragHoldTimer = null;
+            dragPending = null;
+            if (!dragTarget) return;
+            dragTarget.release();
+            dragTarget = null;
+            swallowClick = true; // 放手那一下別又被解讀成戳戳／丟果實
+        }
+
+        // 正被抓著的那隻被遙控 leave 送走時得先鬆手，
+        // 否則游標會繼續拖著一個已經從場上除名的元素
+        function releaseDrag(p) {
+            if (dragPending === p) {
+                clearTimeout(dragHoldTimer);
+                dragHoldTimer = null;
+                dragPending = null;
+            }
+            if (dragTarget === p) {
+                dragTarget.release();
+                dragTarget = null;
+            }
+        }
+
+        // 監聽掛在 document 上而不是每隻身上：游標移動速度快過重繪時會滑出本體，
+        // 掛在本體上就會中途斷線
+        document.addEventListener('pointermove', e => {
+            trackPointer(e);
+            dragTarget?.dragTo(dragPointer);
+        });
+        document.addEventListener('pointerup', endHold);
+        document.addEventListener('pointercancel', endHold);
+        // 視窗失焦（Alt-Tab、切到 OBS 別的來源）：收不到 pointerup 的最後一道保險
+        window.addEventListener('blur', endHold);
+        // 按下的那一刻先把「吞掉下一發 click」的旗子清乾淨：
+        // 上一輪若在視窗外放手、根本沒補那發 click，旗子不清會誤傷下一次點擊
+        document.addEventListener('pointerdown', () => { swallowClick = false; });
 
         // ---------------------------------------------------------
         // postMessage 遙控 (Remote Control)
@@ -1643,9 +1842,10 @@
             },
             // 開心跳一下 + 冒愛心：帶 id 只戳該圖鑑編號的成員，不帶就全員
             poke(msg) {
-                const targets = msg.id !== undefined
+                const targets = (msg.id !== undefined
                     ? pokemons.filter(p => p.id === Math.round(Number(msg.id)))
-                    : pokemons;
+                    : pokemons
+                ).filter(p => p.state !== 'HELD'); // 抓在手上的戳不動，回執也不算牠
                 targets.forEach(p => p.poke());
                 return { ok: true, count: targets.length };
             },
@@ -1694,6 +1894,7 @@
                 clearTimeout(victim.burstTimer); // 色違的星星重播鏈一併收掉
                 if (victim.targetBerry) removeBerry(victim.targetBerry); // 別留孤兒果實
                 victim.breakGreet(); // 寒暄到一半被送走：放對方自由
+                releaseDrag(victim);  // 正被抓在手上就先鬆手，游標別拖著除名的元素
                 victim.el.remove();
                 return { ok: true, id: victim.id };
             },
@@ -1711,8 +1912,7 @@
                         return { ok: false, reason: 'count must be >= 1' };
                     }
                 }
-                const free = pokemons.filter(p =>
-                    p.el.style.display !== 'none' && !p.isFeeding()).length;
+                const free = pokemons.filter(p => p.canTakeBerry()).length;
                 if (!free) return { ok: false, reason: 'everyone is busy' };
                 const want = asked === null ? randomInt(1, free) : Math.min(asked, free);
                 let dropped = 0;

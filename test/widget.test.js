@@ -1515,7 +1515,225 @@ group('19. 色違星星特效定時重播');
     }
 
     // =====================================================
-    group('26. 嵌入透明性守則（color-scheme）');
+    group('26. 滑鼠拖曳');
+    {
+        const savedIdle = CONFIG.idleChance;
+        const savedGreetD = CONFIG.greetChance;
+        const savedRate = CONFIG.dragStruggleRate;
+        CONFIG.idleChance = 0;  // 發呆是每幀擲骰，會把「拖曳中狀態不變」的斷言弄翻
+        CONFIG.greetChance = 0;
+
+        // 參數登記 + config 預設
+        check('drag 已登記（enum on/off）',
+            T.QUERY_PARAMS?.drag?.type === 'enum'
+            && JSON.stringify(T.QUERY_PARAMS.drag.values) === '["on","off"]');
+        check('dragHoldTime 已登記（int 0 ~ 2000）',
+            T.QUERY_PARAMS?.dragHoldTime?.type === 'int'
+            && T.QUERY_PARAMS.dragHoldTime.min === 0 && T.QUERY_PARAMS.dragHoldTime.max === 2000);
+        check('dragStruggleRate 已登記（float 0 ~ 10）',
+            T.QUERY_PARAMS?.dragStruggleRate?.type === 'float'
+            && T.QUERY_PARAMS.dragStruggleRate.min === 0 && T.QUERY_PARAMS.dragStruggleRate.max === 10);
+        check("config.js 預設 drag = 'on' / 門檻 200ms / 掙扎 2 倍速",
+            CONFIG.drag === 'on' && CONFIG.dragHoldTime === 200 && CONFIG.dragStruggleRate === 2);
+
+        // 拖曳的事件全掛在 document 上（游標移動快過重繪時會滑出本體）
+        const doc = sandbox.document.listeners;
+        check('document 上掛了 pointermove / pointerup / pointercancel 監聽器',
+            doc.pointermove?.length === 1 && doc.pointerup?.length === 1
+            && doc.pointercancel?.length === 1);
+
+        // 假的滑鼠：clientY 是「由上往下」，widget 內部換算成 bottom 基準
+        const press = (p, x, y) => {
+            p.el.listeners.pointerdown.forEach(fn => fn({ clientX: x, clientY: y, pointerId: 1 }));
+            (doc.pointerdown || []).forEach(fn => fn({ clientX: x, clientY: y, pointerId: 1 }));
+        };
+        const move = (x, y) => (doc.pointermove || []).forEach(fn => fn({ clientX: x, clientY: y }));
+        const up = () => (doc.pointerup || []).forEach(fn => fn());
+        const clickOn = p => p.el.listeners.click.forEach(fn => fn({ stopPropagation() {} }));
+
+        T.pokemons.length = 0;
+        const d = newPokemon(25, { scale: 1 });
+        d.x = 500; d.bobY = 0; d.jumpY = 0; d.jumpV = 0;
+        T.pokemons.push(d);
+        check('本體掛了 pointerdown、擋掉原生拖放與長按選單',
+            d.el.listeners.pointerdown?.length === 1 && d.img.listeners.dragstart?.length === 1
+            && d.el.listeners.contextmenu?.length === 1);
+
+        // 快速點一下（沒撐到門檻就放開）＝ 照舊的戳戳互動
+        press(d, 560, 150);
+        advance(100); // < dragHoldTime
+        up();
+        clickOn(d);
+        check('快速點一下 → 跳一下 + 冒愛心（不會被抓起來）',
+            d.state === 'WALKING' && d.jumpV > 0 && d.bubbleName === 'heart');
+
+        // 長按 → 抓起來。抓的那一刻不跳位：游標與身體的相對位置被記下來
+        d.x = 500; d.jumpV = 0; d.jumpY = 0; d.bobY = 0;
+        press(d, 560, 150); // 按在身體右側 60px 處，離地 50px
+        advance(200);
+        check('按住超過門檻 → 抓起來（HELD + 抓握游標）',
+            d.state === 'HELD' && d.el.className === 'pokemon-container held');
+        check('抓起來的那一刻不跳位', d.x === 500 && d.holdY === 0);
+        check('抓起來會收掉進行中的對話框', d.bubble.style.display === 'none');
+
+        // 跟著游標走：面向被拉的方向，垂直也跟著抬起來
+        move(660, 150);
+        check('游標往右移 → 跟著走、面向右', d.x === 600 && d.direction === 1);
+        move(560, 150);
+        check('游標往左移 → 跟著走、面向左', d.x === 500 && d.direction === -1);
+        move(560, 100);
+        check('游標抬高 → 跟著離地', d.holdY === 50, `holdY=${d.holdY}`);
+        move(560, 0);
+        check('抬到畫面外 → 高度夾在「整隻還看得見」（200 - 128 = 72）',
+            d.holdY === 72, `holdY=${d.holdY}`);
+
+        // 掙扎：高頻擺盪，rate 就是倍速
+        d.walkPhase = 0;
+        d.update(16, T.pokemons);
+        const phase1 = d.walkPhase;
+        check('掙扎中：相位前進、身體傾斜（0 < |角度| ≤ 10 度）',
+            phase1 > 0 && d.struggleAngle !== 0 && Math.abs(d.struggleAngle) <= 10,
+            `phase=${phase1} angle=${d.struggleAngle}`);
+        check('離地高度與傾角都畫進 transform',
+            d.img.style.transform.includes('translateY(-') && d.img.style.transform.includes('rotate('),
+            d.img.style.transform);
+        check('抓在手上的疊到最前面（z-index 15000）', d.el.style.zIndex === 15000);
+        CONFIG.dragStruggleRate = 1;
+        d.walkPhase = 0;
+        d.update(16, T.pokemons);
+        check('dragStruggleRate = 2 剛好是 1 的兩倍速',
+            Math.abs(phase1 - d.walkPhase * 2) < 1e-9, `2x=${phase1} 1x=${d.walkPhase}`);
+        CONFIG.dragStruggleRate = 0;
+        d.walkPhase = 0;
+        d.update(16, T.pokemons);
+        check('dragStruggleRate = 0 → 抓著但不掙扎',
+            d.walkPhase === 0 && d.struggleAngle === 0 && d.bobY === 0);
+        CONFIG.dragStruggleRate = 2;
+
+        // 邊界：游標拉出活動範圍，貼著界線繼續掙扎（不掉落、也不翻面）
+        move(1900, 150);
+        d.direction = 1;
+        d.update(16, T.pokemons);
+        check('游標拉出右邊界 → 貼著界線（1920 × 0.9 - 120 = 1608）',
+            d.x === 1608, `x=${d.x}`);
+        check('貼邊界時不掉落、也不翻面', d.state === 'HELD' && d.direction === 1);
+        move(0, 150);
+        d.update(16, T.pokemons);
+        check('游標拉出左邊界 → 貼著界線（1920 × 0.1 = 192）', d.x === 192, `x=${d.x}`);
+
+        // 抓在手上的等於暫時離場：不散步、戳不動、不寒暄
+        move(560, 100);
+        const heldX = d.x;
+        for (let i = 0; i < 30; i++) d.update(16, T.pokemons);
+        check('抓著時不會自己散步（X 只由游標決定）', d.x === heldX && d.state === 'HELD');
+        d.jumpV = 0;
+        d.bubbleName = null;
+        d.poke();
+        check('抓著時戳不動（不跳、不冒對話框）',
+            d.jumpV === 0 && d.bubble.style.display === 'none');
+        check('抓著時沒空寒暄', d.canGreet() === false);
+
+        // 同伴不會把「抓在半空的那隻」當路障
+        const walker = newPokemon(143, { scale: 1 });
+        walker.x = d.x - 20; walker.direction = 1; walker.avoidCooldown = 0;
+        T.pokemons.push(walker);
+        walker.update(16, T.pokemons);
+        check('同伴不會被半空中的那隻逼掉頭', walker.direction === 1);
+        T.pokemons.splice(T.pokemons.indexOf(walker), 1);
+
+        // 果實：抓著的那隻不算「有空」——三個入口一致（點擊 / 遙控 feed / 空投）
+        check('抓著的那隻不接果實（canTakeBerry = false）', d.canTakeBerry() === false);
+        check('場上只剩牠 → 點空白處丟不出果實',
+            T.throwBerry(500, 100) === false && T.getBerries().length === 0);
+        T.remoteStamps.length = 0;
+        send({ ns: 'poke-stroll', cmd: 'feed', count: 1 });
+        check("遙控 feed → 'everyone is busy'",
+            lastReply()?.ok === false && lastReply()?.reason === 'everyone is busy');
+        send({ ns: 'poke-stroll', cmd: 'poke' });
+        check('遙控 poke 跳過抓在手上的（count = 0）', lastReply()?.count === 0);
+        const cd = new T.Cameo(225, 0.8, { delivery: true });
+        cd.x = cd.direction === 1 ? cd.dropX + 1 : cd.dropX - 1;
+        cd.update(16);
+        check('信使鳥飛過投放點 → 沒人有空，整顆叼走',
+            cd.carried !== null && T.getBerries().length === 0);
+        cd.el.remove();
+
+        // 放手：從當下高度自由落體回地面，落地後恢復散步
+        const dropFrom = d.holdY;
+        up();
+        check('放手 → 回到散步、把高度交還給重力',
+            d.state === 'WALKING' && d.jumpY === dropFrom && d.holdY === 0
+            && d.el.className === 'pokemon-container');
+        for (let i = 0; i < 200 && d.jumpY > 0; i++) d.update(16, T.pokemons);
+        check('落地（jumpY 歸零、傾角收乾淨）', d.jumpY === 0 && d.struggleAngle === 0);
+        check('放手那一發 click 被吞掉（不戳、不丟果實）', (() => {
+            d.jumpV = 0;
+            clickOn(d);                       // 拖曳結尾補的那一發
+            const pokedByDrag = d.jumpV > 0;
+            clickOn(d);                       // 下一次才是真的點擊
+            return !pokedByDrag && d.jumpV > 0;
+        })());
+
+        // 追果實追到一半被抓走：果實一併收掉，不留沒人吃的孤兒占著上限
+        d.state = 'WALKING'; d.x = 500; d.bobY = 0; d.jumpY = 0; d.jumpV = 0;
+        check('（前置）果實丟得出去', T.throwBerry(500, 100) === true
+            && d.state === 'SEEK_BERRY' && T.getBerries().length === 1);
+        press(d, 500, 150);
+        advance(200);
+        check('追果實中被抓走 → 果實一併收掉',
+            d.state === 'HELD' && d.targetBerry === null && T.getBerries().length === 0);
+        up();
+
+        // 寒暄中被抓走：對方也放自由，不會對著空氣講完
+        const ga2 = newPokemon(25, { scale: 0.6 });
+        const gb2 = newPokemon(25, { scale: 0.6 });
+        ga2.x = 500; gb2.x = 640;
+        ga2.startGreet(gb2, 1, 2000, 500);
+        gb2.startGreet(ga2, -1, 2000, 640);
+        press(ga2, 500, 150);
+        advance(200);
+        check('寒暄中被抓走 → 對方也解脫',
+            ga2.state === 'HELD' && gb2.state === 'WALKING' && gb2.greetPartner === null);
+        up();
+
+        // 遙控 leave 把抓著的那隻送走：先鬆手，游標別再拖著除名的元素
+        T.pokemons.length = 0;
+        const victim = newPokemon(25, { scale: 0.6 });
+        victim.x = 500;
+        T.pokemons.push(victim, newPokemon(143, { scale: 1 }));
+        press(victim, 500, 150);
+        advance(200);
+        check('（前置）抓在手上', victim.state === 'HELD');
+        T.remoteStamps.length = 0;
+        send({ ns: 'poke-stroll', cmd: 'leave', id: 25 });
+        check('遙控 leave 送走抓著的那隻 → 自動鬆手',
+            lastReply()?.ok === true && victim.state === 'WALKING');
+        const goneX = victim.x;
+        move(900, 150);
+        check('鬆手後游標不再拖著牠', victim.x === goneX);
+        up();
+
+        // 總開關：drag='off' 只保留點一下的戳戳互動
+        CONFIG.drag = 'off';
+        T.pokemons.length = 0;
+        const off = newPokemon(25, { scale: 0.6 });
+        off.x = 500; off.jumpV = 0;
+        T.pokemons.push(off);
+        press(off, 500, 150);
+        advance(500);
+        check("drag='off' → 長按也抓不起來", off.state === 'WALKING');
+        up();
+        clickOn(off);
+        check("drag='off' → 點一下照樣戳得動", off.jumpV > 0 && off.bubbleName === 'heart');
+        CONFIG.drag = 'on';
+
+        CONFIG.dragStruggleRate = savedRate;
+        CONFIG.greetChance = savedGreetD;
+        CONFIG.idleChance = savedIdle;
+    }
+
+    // =====================================================
+    group('27. 嵌入透明性守則（color-scheme）');
     // iframe 要維持透明，內外文件的 color-scheme 必須一致。
     // 這裡守住兩條血淚教訓：
     //   0.20.0 widget 沒宣告 → 被宣告 dark 的頁面（params.html）嵌 → 墊白底
