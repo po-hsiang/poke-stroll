@@ -163,7 +163,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -1750,6 +1750,7 @@ group('19. 色違星星特效定時重播');
         const savedIdle = CONFIG.idleChance;
         const savedGreetS = CONFIG.greetChance;
         const savedSnatch = CONFIG.snatchChance;
+        const savedSnatchD = CONFIG.snatchDistance;
         const savedShinyS = CONFIG.shinyChance;
         CONFIG.idleChance = 0;   // 隨機發呆/寒暄會把狀態斷言弄翻，整組關掉
         CONFIG.greetChance = 0;
@@ -1759,71 +1760,116 @@ group('19. 色違星星特效定時重播');
         check('snatchChance 已登記（float 0 ~ 1）',
             T.QUERY_PARAMS?.snatchChance?.type === 'float'
             && T.QUERY_PARAMS.snatchChance.min === 0 && T.QUERY_PARAMS.snatchChance.max === 1);
-        check('config.js 預設 snatchChance = 0.15', CONFIG.snatchChance === 0.15);
+        check('snatchDistance 已登記（int 0 ~ 2000）',
+            T.QUERY_PARAMS?.snatchDistance?.type === 'int'
+            && T.QUERY_PARAMS.snatchDistance.min === 0
+            && T.QUERY_PARAMS.snatchDistance.max === 2000);
+        check('config.js 預設 snatchChance = 0.25 / snatchDistance = 300',
+            CONFIG.snatchChance === 0.25 && CONFIG.snatchDistance === 300);
 
-        // 場面：一近一遠
+        // 場面：一近一遠；追果實速度釘死 1px/幀，觸發時序才可斷言
         T.getBerries().slice().forEach(b => T.removeBerry(b));
         T.pokemons.length = 0;
         const witness = newPokemon(25, { scale: 0.6 });
         const other = newPokemon(143, { scale: 1 });
-        witness.x = 900; other.x = 200;
+        witness.x = 900; witness.speed = 0.4; // 小跑步 = 0.4 × 2.5 = 1px/幀
+        other.x = 200;
         T.pokemons.push(witness, other);
+        const resetField = () => {
+            T.getBerries().slice().forEach(b => T.removeBerry(b));
+            witness.targetBerry = null; witness.state = 'WALKING'; witness.x = 900;
+            other.targetBerry = null; other.state = 'WALKING'; other.x = 200;
+        };
 
-        // 飛行池沒載到 → 必中的骰也不搶，照常餵食（此刻主 sandbox 沒載名單檔）
-        CONFIG.snatchChance = 1;
-        clickAt(1000, 60);
-        check('飛行池沒載到 → 不搶、照常餵食', T.getSnatch() === null
-            && T.getBerries()[0]?.feeder === witness && witness.state === 'SEEK_BERRY');
-        T.getBerries().slice().forEach(b => T.removeBerry(b));
-        witness.targetBerry = null; witness.state = 'WALKING';
-
-        // snatchChance=0 → 永不搶
+        // 門檻內 = 絕對安全：距離 40px，必中的骰也不埋伏筆
         sandbox.window.POKE_FLYING = [18]; // 比雕：單一元素池，抽誰是確定的
-        CONFIG.snatchChance = 0;
-        clickAt(1000, 60);
-        check('snatchChance=0 → 照常餵食', T.getSnatch() === null
-            && T.getBerries()[0]?.feeder === witness);
-        T.getBerries().slice().forEach(b => T.removeBerry(b));
-        witness.targetBerry = null; witness.state = 'WALKING';
-
-        // 必中：點右半邊 → 賊鳥從右側畫面外、飛行高度帶進場俯衝
         CONFIG.snatchChance = 1;
-        clickAt(1300, 60); // bottom = 140；離 witness(中心 960) 較近
-        const s = T.getSnatch();
+        clickAt(1000, 60); // witness 中心 960 → 距離 40 ≤ 300
+        check('門檻內 → 不埋伏筆、正常餵食', T.getPending() === null && T.getSnatch() === null
+            && T.getBerries()[0]?.feeder === witness && witness.state === 'SEEK_BERRY');
+        resetField();
+
+        // 門檻可調：拉高到 500 後，440px 的丟法也安全
+        CONFIG.snatchDistance = 500;
+        clickAt(1400, 60); // 距離 440
+        check('門檻拉高到 500 → 440px 的丟法也安全', T.getPending() === null);
+        resetField();
+        CONFIG.snatchDistance = 300;
+
+        // 機率 0 → 超過門檻也不埋
+        CONFIG.snatchChance = 0;
+        clickAt(1400, 60);
+        check('snatchChance=0 → 不埋伏筆', T.getPending() === null);
+        resetField();
+        CONFIG.snatchChance = 1;
+
+        // 飛行池沒載到 → 不埋（名單檔是獨立檔案，可能被拿掉）
+        delete sandbox.window.POKE_FLYING;
+        clickAt(1400, 60);
+        check('飛行池沒載到 → 不埋伏筆', T.getPending() === null);
+        resetField();
+        sandbox.window.POKE_FLYING = [18];
+
+        // 遙控 feed / 信使鳥空投走的 throwBerry 不帶旗 → 永不被盯上
+        check('（前置）直接呼叫 throwBerry（同遙控/空投路徑）成功',
+            T.throwBerry(1400, 100) === true);
+        check('不帶旗的果實不會被盯上（點擊限定）', T.getPending() === null);
+        resetField();
+
+        // 正式開演：超過門檻 + 必中 → 埋伏筆，但畫面看不出任何異狀
+        clickAt(1400, 60); // 距離 440 > 300 → 觸發點 = 剩 220
         const sb = T.getBerries()[0];
-        check('觸發搶食：賊鳥進場開始俯衝', !!s && s.phase === 'DIVE');
-        check('果實照樣生成但「無主」（不指派 feeder）', !!sb && sb.feeder === null);
+        check('伏筆已埋（賊鳥還沒出來）', T.getPending() !== null && T.getSnatch() === null);
+        check('被盯上的那隻照常起跑（看不出異狀）',
+            witness.state === 'SEEK_BERRY' && sb.feeder === witness
+            && witness.bubbleName === 'exclaim');
+
+        // 追到一半：賊鳥進場、再冒一次驚嘆號、原地停步、果實變無主
+        witness.hideEmote(); // 先收掉發現時的驚嘆號，才驗得出「再冒一次」
+        let guard = 0;
+        while (!T.getSnatch() && guard++ < 2000) {
+            T.updateBerries(16);
+            witness.update(16, T.pokemons);
+            T.updateSnatch(16);
+        }
+        const s = T.getSnatch();
+        check('走完一半路程 → 賊鳥進場', !!s && s.phase === 'DIVE', `guard=${guard}`);
+        const remaining = Math.abs(witness.centerX() - sb.x);
+        check('觸發點 = 剩一半距離（220px ±2）', Math.abs(remaining - 220) <= 2,
+            `remaining=${remaining}`);
+        check('再冒一次驚嘆號、原地停步', witness.state === 'SNATCH_WATCH'
+            && witness.bubbleName === 'exclaim' && witness.bubble.style.display === 'block');
+        check('果實變無主（不會被任何隻接手）', sb.feeder === null
+            && witness.targetBerry === null);
+        check('其他成員照常散步（世界不為一顆果實停下來）', other.state === 'WALKING');
+
+        // 賊鳥的進場幾何與速度（0.33.0 放慢版）
         check('從果實那一側的畫面外進場（右半邊 → 右側、面向左）',
             s.x > 1920 && s.direction === -1, `x=${s.x}`);
         check('進場高度在客串的飛行高度帶（視窗高 45%~75%）',
             s.bottom >= 90 && s.bottom <= 150, `bottom=${s.bottom}`);
-        check('俯衝比巡航快（flybySpeed × 2.2 ±10%）',
-            s.speed >= 5 * 2.2 * 0.9 - 1e-9 && s.speed <= 5 * 2.2 * 1.1 + 1e-9,
+        check('俯衝 = 巡航 × 1.4（±10%）',
+            s.speed >= 5 * 1.4 * 0.9 - 1e-9 && s.speed <= 5 * 1.4 * 1.1 + 1e-9,
             `speed=${s.speed}`);
+        check('遠走 = 巡航 × 1.6（與俯衝共用同一次變異抽選）',
+            Math.abs(s.fleeSpeed / s.speed - 1.6 / 1.4) < 1e-9, `flee=${s.fleeSpeed}`);
         check('主角時刻蓋過全場（z-index 20001、沿用 cameo 樣式不可點）',
             s.el.style.zIndex === 20001 && s.el.className === 'cameo');
 
-        // 目擊者：最近且有空的那隻站定 + 驚嘆號；其他成員照常散步
-        check('最近有空的那隻成為目擊者：站定 + 驚嘆號',
-            witness.state === 'SNATCH_WATCH' && witness.bubbleName === 'exclaim'
-            && witness.bubble.style.display === 'block');
-        check('其他成員照常散步（世界不為一顆果實停下來）', other.state === 'WALKING');
+        // 目擊中：站著看戲、不接新果實；一次只演一場
         const wx = witness.x;
         for (let i = 0; i < 20; i++) witness.update(16, T.pokemons);
         check('目擊中站在原地看戲', witness.x === wx && witness.state === 'SNATCH_WATCH');
         check('目擊中不接新果實（canTakeBerry = false）', witness.canTakeBerry() === false);
-
-        // 一次只演一場：進行中再丟 → 走一般餵食（指派給剩下有空的那隻）
-        clickAt(250, 60);
-        check('搶食進行中再丟 → 一般餵食、不出第二隻賊鳥',
-            T.getSnatch() === s && T.getBerries().length === 2
-            && T.getBerries()[1].feeder === other);
+        clickAt(700, 60); // 離 other(中心 260) 440px > 門檻，但場次進行中
+        check('場次進行中再丟 → 正常餵食、不疊第二場',
+            T.getPending() === null && T.getSnatch() === s
+            && T.getBerries().length === 2 && T.getBerries()[1].feeder === other);
         T.removeBerry(T.getBerries()[1]);
         other.targetBerry = null; other.state = 'WALKING';
 
-        // 俯衝到 V 字底部叼走：homing 每一幀朝果實「當下」位置修正，
-        // 果實同時在掉；先落地就俯衝到地面叼起
-        let guard = 0;
+        // 俯衝到 V 字底部叼走（homing 每一幀朝果實「當下」位置修正）
+        guard = 0;
         while (s.phase === 'DIVE' && guard++ < 3000) { T.updateBerries(16); T.updateSnatch(16); }
         check('俯衝到位 → 叼走果實', s.phase === 'FLEE' && s.carrying === true, `guard=${guard}`);
         check('叼取點 = 果實正上方、腳下叼取高度',
@@ -1835,20 +1881,33 @@ group('19. 色違星星特效定時重播');
         check('叼走那一刻目擊者換成一團黑線', witness.bubbleName === 'scribble'
             && witness.bubble.style.display === 'block');
 
-        // 遠走高飛：往對側斜上、越飛越小、尾段變淡，演完自動清場
+        // 遠走高飛：恆速直線 + 鏡像 V 字 + 透視縮小淡出
         const x0 = s.x, b0 = s.bottom;
         T.updateSnatch(16);
+        const dx1 = x0 - s.x, dy1 = s.bottom - b0;
+        check('遠走方向 = 進場的橫向（往左）且爬升', dx1 > 0 && dy1 > 0,
+            `dx=${dx1} dy=${dy1}`);
+        const x1 = s.x, b1 = s.bottom;
+        T.updateSnatch(16);
+        check('恆定速度（連續兩幀位移一致）',
+            Math.abs((x1 - s.x) - dx1) < 1e-9 && Math.abs((s.bottom - b1) - dy1) < 1e-9);
+        check('速率 = 遠走段速度', Math.abs(Math.hypot(dx1, dy1) - s.fleeSpeed * 0.96) < 1e-6,
+            `實際 ${Math.hypot(dx1, dy1)}`);
+        // 鏡像：爬升斜率 = 俯衝段（進場點 → 叼取點）跌下來的斜率
+        const run = Math.abs(x0 - s.startX);
+        const rise = Math.max(Math.abs(b0 - s.startBottom), run * 0.25);
+        check('V 字鏡像：爬升角 = 俯衝角', Math.abs(dy1 / dx1 - rise / run) < 1e-9,
+            `爬升 ${dy1 / dx1}，俯衝 ${rise / run}`);
         const scaleOf = () => Number((s.el.style.transform.match(/scale\(([\d.]+)\)/) || [])[1]);
-        check('遠走方向 = 進場的橫向（往左）且爬升', s.x < x0 && s.bottom > b0,
-            `x ${x0}→${s.x}, bottom ${b0}→${s.bottom}`);
-        const s1 = scaleOf();
-        check('透視縮小（近快遠慢的 1/(1+kt)）', s1 > 0 && s1 < 1, `scale=${s1}`);
+        check('透視縮小走 1/(1+3t)', Math.abs(scaleOf() - 1 / (1 + 3 * s.fleeT)) < 0.001,
+            `scale=${scaleOf()} t=${s.fleeT}`);
         for (let i = 0; i < 30; i++) T.updateSnatch(16);
-        check('持續變小、也開始變淡', scaleOf() < s1 && Number(s.el.style.opacity) < 1,
+        check('持續變小、也開始變淡（比 0.32.0 慢）',
+            scaleOf() < 1 && scaleOf() > 0.55 && Number(s.el.style.opacity) < 1,
             `scale=${scaleOf()} opacity=${s.el.style.opacity}`);
         guard = 0;
         while (T.getSnatch() && guard++ < 300) T.updateSnatch(16);
-        check('演完自動清場（1.8 秒）', T.getSnatch() === null, `guard=${guard}`);
+        check('淡完或飛出畫面 → 自動清場', T.getSnatch() === null, `guard=${guard}`);
 
         // 目擊者沮喪 2.6 秒才回去散步；黑線對話框到時自動收起
         guard = 0;
@@ -1856,49 +1915,103 @@ group('19. 色違星星特效定時重播');
         check('沮喪計時走完 → 回去散步', witness.state === 'WALKING', `guard=${guard}`);
         advance(2601);
         check('黑線對話框自動收起', witness.bubble.style.display === 'none');
+        resetField();
 
-        // 載圖全滅 → 這場取消：無主果實收掉、目擊者立刻解脫
-        witness.x = 900; other.x = 200;
-        clickAt(1000, 60);
+        // 伏筆期的取消：追到一半被滑鼠抓走（果實一併收掉）→ 這齣不演
+        clickAt(1400, 60);
+        check('（前置）伏筆已埋', T.getPending() !== null);
+        witness.grab({ x: witness.x + 10, bottom: 60 });
+        T.updateSnatch(16);
+        check('追到一半被抓走 → 伏筆作廢、賊鳥不出來',
+            T.getPending() === null && T.getSnatch() === null && T.getBerries().length === 0);
+        witness.release();
+        resetField();
+
+        // 伏筆期的取消：已經站到嘴邊開吃（門檻 0 + 丟在腳邊的極端組合，
+        // 6px 的路程永遠走不到「剩 3px」——seekBerry 在 6px 內就站定了）
+        CONFIG.snatchDistance = 0;
+        clickAt(966, 199); // 距離 6 > 0 有埋；bottom = 1，一落地就開吃
+        check('（前置）貼臉的伏筆也埋得下', T.getPending() !== null);
+        guard = 0;
+        while (witness.state !== 'EATING' && guard++ < 50) {
+            T.updateBerries(16);
+            witness.update(16, T.pokemons);
+            T.updateSnatch(16);
+        }
+        T.updateSnatch(16);
+        check('站到嘴邊開吃 → 伏筆作廢（太晚了，搶不到）',
+            witness.state === 'EATING' && T.getPending() === null && T.getSnatch() === null);
+        resetField();
+        CONFIG.snatchDistance = 300;
+
+        // 防禦：俯衝到一半果實意外沒了 → 空爪轉遠走、目擊者直接解脫
+        clickAt(1400, 60);
+        guard = 0;
+        while (!T.getSnatch() && guard++ < 2000) {
+            T.updateBerries(16);
+            witness.update(16, T.pokemons);
+            T.updateSnatch(16);
+        }
         const s2 = T.getSnatch();
         check('（前置）第二場開演', !!s2 && witness.state === 'SNATCH_WATCH');
-        s2.img.onerror();
-        check('動圖失敗 → 退靜態圖（同一隻賊鳥）', s2.img.src.endsWith('/18.png'));
-        s2.img.onerror();
+        T.removeBerry(T.getBerries()[0]); // 硬把果實抽走（現行規則到不了，防禦路徑）
+        T.updateSnatch(16);
+        check('果實沒了 → 空爪轉遠走、目擊者不演沮喪',
+            s2.phase === 'FLEE' && s2.carrying === false
+            && witness.state === 'WALKING' && witness.bubbleName !== 'scribble');
+        guard = 0;
+        while (T.getSnatch() && guard++ < 300) T.updateSnatch(16);
+        check('空爪遠走也會自動清場', T.getSnatch() === null, `guard=${guard}`);
+        resetField();
+
+        // 載圖全滅 → 這場取消：無主果實收掉、目擊者立刻解脫
+        clickAt(1400, 60);
+        guard = 0;
+        while (!T.getSnatch() && guard++ < 2000) {
+            T.updateBerries(16);
+            witness.update(16, T.pokemons);
+            T.updateSnatch(16);
+        }
+        const s3 = T.getSnatch();
+        check('（前置）第三場開演', !!s3 && witness.state === 'SNATCH_WATCH');
+        s3.img.onerror();
+        check('動圖失敗 → 退靜態圖（同一隻賊鳥）', s3.img.src.endsWith('/18.png'));
+        s3.img.onerror();
         T.updateSnatch(16);
         check('靜圖也失敗 → 這場取消：清場 + 無主果實收掉',
             T.getSnatch() === null && T.getBerries().length === 0);
         check('目擊者立刻解脫，不對著空氣沮喪',
             witness.state === 'WALKING' && witness.bubble.style.display === 'none');
+        resetField();
 
         // 果實在左半邊 → 從左側進場（進場側跟著果實走）
-        clickAt(300, 60); // 離 other(中心 260) 較近
-        const s3 = T.getSnatch();
+        other.x = 1500; // witness(中心 960) 是離左邊點擊最近的
+        clickAt(400, 60); // 距離 560 > 300
+        guard = 0;
+        while (!T.getSnatch() && guard++ < 2000) {
+            T.updateBerries(16);
+            witness.update(16, T.pokemons);
+            T.updateSnatch(16);
+        }
+        const s4 = T.getSnatch();
         check('果實在左半邊 → 從左側畫面外進場、鏡像面向右',
-            !!s3 && s3.direction === 1 && s3.x < 0
-            && s3.img.style.transform === 'scaleX(-1)', `x=${s3?.x}`);
-        check('目擊者是離果實最近的有空成員', other.state === 'SNATCH_WATCH'
-            && witness.state === 'WALKING');
-        s3.img.onerror(); s3.img.onerror(); // 快速收掉這場，別讓它拖到後面的斷言
+            !!s4 && s4.direction === 1 && s4.x < 0
+            && s4.img.style.transform === 'scaleX(-1)', `x=${s4?.x}`);
+        s4.img.onerror(); s4.img.onerror(); // 快速收掉這場
         T.updateSnatch(16);
-        check('取消收場也放目擊者自由', other.state === 'WALKING');
+        check('取消收場也放目擊者自由', witness.state === 'WALKING');
+        resetField();
 
-        // 大家都在忙 → 搶食也不演（一般餵食丟不出去的情境，搶食不例外）
-        witness.state = 'EATING'; other.state = 'EATING';
-        clickAt(1000, 60);
-        check('大家都在忙 → 不演、也不掉果實',
-            T.getSnatch() === null && T.getBerries().length === 0);
-        witness.state = 'WALKING'; other.state = 'WALKING';
-
-        // berry='off' → 整套（含搶食）關閉
+        // berry='off' → 整套關閉（丟不出果實，自然也沒有搶食）
         CONFIG.berry = 'off';
-        clickAt(1000, 60);
-        check("berry='off' → 不搶也不掉果實",
-            T.getSnatch() === null && T.getBerries().length === 0);
+        clickAt(1400, 60);
+        check("berry='off' → 沒果實也沒伏筆", T.getPending() === null
+            && T.getSnatch() === null && T.getBerries().length === 0);
         CONFIG.berry = 'on';
 
         delete sandbox.window.POKE_FLYING;
         CONFIG.snatchChance = savedSnatch;
+        CONFIG.snatchDistance = savedSnatchD;
         CONFIG.shinyChance = savedShinyS;
         CONFIG.greetChance = savedGreetS;
         CONFIG.idleChance = savedIdle;
