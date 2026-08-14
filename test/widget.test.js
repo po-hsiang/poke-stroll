@@ -161,6 +161,12 @@ const configSrc = fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8');
 vm.runInNewContext(configSrc, sandbox);
 const CONFIG = sandbox.window.POKE_CONFIG;
 
+// config 預設的地面主題另存一份給第 17 組驗證，隨即釘回 'none'：
+// 主程式一載入就會跑 init() → initGround(CONFIG.theme)，預設的 'random'
+// 會讓 groundLevel 隨機，果實落點、抓取高度……一票斷言全會翻車
+const DEFAULT_THEME = CONFIG.theme;
+CONFIG.theme = 'none';
+
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
     source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch };',
@@ -751,14 +757,14 @@ group('16. bubbleSideGap 的 URL 參數白名單');
 // =========================================================
 group('17. theme 主題地面');
 {
-    check("config.js 預設 theme = 'none'（不鋪地面）", CONFIG.theme === 'none');
+    check("config.js 預設 theme = 'random'（每次載入隨機抽一種）", DEFAULT_THEME === 'random');
     const spec = T.QUERY_PARAMS?.theme;
     check('已登記在 QUERY_PARAMS（enum）', spec?.type === 'enum');
-    check('允許值 = none + 7 種地形',
-        JSON.stringify(spec?.values) === JSON.stringify(['none', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava']),
+    check('允許值 = none + random + 7 種地形',
+        JSON.stringify(spec?.values) === JSON.stringify(['none', 'random', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava']),
         JSON.stringify(spec?.values));
-    check('每種地形都有主題定義（none 除外）',
-        (spec?.values ?? []).filter(v => v !== 'none').every(v => T.GROUND_THEMES[v]));
+    check('每種地形都有主題定義（none / random 除外）',
+        (spec?.values ?? []).filter(v => v !== 'none' && v !== 'random').every(v => T.GROUND_THEMES[v]));
 
     // none / 打錯字：不鋪地面、抬高 0，一切維持原樣
     const before = appEl.children.length;
@@ -766,6 +772,18 @@ group('17. theme 主題地面');
         T.initGround('none') === 0 && appEl.children.length === before);
     check('未知主題同樣安全（防拼錯）',
         T.initGround('rainbow') === 0 && appEl.children.length === before);
+
+    // random：載入時擲一次骰，隨機池 = 七種地形 + 'none'（無地板也抽得到）
+    const origRandom = Math.random;
+    Math.random = () => 0; // randomInt(0, 7) → 0 → 池子第一種（草地）
+    check("theme='random' 抽到地形 → 正常鋪（抬高 > 0）", T.initGround('random') > 0);
+    Math.random = () => 0.999; // → 7 → 池子最後一格 'none'
+    const beforeNone = appEl.children.length;
+    check("theme='random' 也抽得到無地板（抬高 0、不鋪元素）",
+        T.initGround('random') === 0 && appEl.children.length === beforeNone);
+    Math.random = origRandom;
+    check("'random' 不是地形定義（靠 initGround 解析，不靠查表）",
+        T.GROUND_THEMES.random === undefined);
 
     // 鋪草地：元素進場、抬高量 = 地面高度 - 踩入深度 × 倍率
     check("config.js 預設 themeHeight = 12", CONFIG.themeHeight === 12);
@@ -1752,6 +1770,8 @@ group('19. 色違星星特效定時重播');
         const savedSnatch = CONFIG.snatchChance;
         const savedSnatchD = CONFIG.snatchDistance;
         const savedShinyS = CONFIG.shinyChance;
+        const savedRates = [CONFIG.snatchDiveRate, CONFIG.snatchFleeRate,
+            CONFIG.snatchShrinkRate, CONFIG.snatchFadeRate];
         CONFIG.idleChance = 0;   // 隨機發呆/寒暄會把狀態斷言弄翻，整組關掉
         CONFIG.greetChance = 0;
         CONFIG.shinyChance = 0;
@@ -1764,8 +1784,17 @@ group('19. 色違星星特效定時重播');
             T.QUERY_PARAMS?.snatchDistance?.type === 'int'
             && T.QUERY_PARAMS.snatchDistance.min === 0
             && T.QUERY_PARAMS.snatchDistance.max === 2000);
-        check('config.js 預設 snatchChance = 0.25 / snatchDistance = 300',
-            CONFIG.snatchChance === 0.25 && CONFIG.snatchDistance === 300);
+        check('四段倍率已登記（速度 0.2~10、縮淡 0~10，皆 float）',
+            T.QUERY_PARAMS?.snatchDiveRate?.type === 'float'
+            && T.QUERY_PARAMS.snatchDiveRate.min === 0.2 && T.QUERY_PARAMS.snatchDiveRate.max === 10
+            && T.QUERY_PARAMS?.snatchFleeRate?.min === 0.2 && T.QUERY_PARAMS.snatchFleeRate.max === 10
+            && T.QUERY_PARAMS?.snatchShrinkRate?.min === 0 && T.QUERY_PARAMS.snatchShrinkRate.max === 10
+            && T.QUERY_PARAMS?.snatchFadeRate?.min === 0 && T.QUERY_PARAMS.snatchFadeRate.max === 10);
+        check('config.js 預設 snatchChance = 0.25 / snatchDistance = 150',
+            CONFIG.snatchChance === 0.25 && CONFIG.snatchDistance === 150);
+        check('config.js 預設四段倍率 = 俯衝 1.6 / 遠走 1.8 / 縮小 1 / 變淡 1',
+            CONFIG.snatchDiveRate === 1.6 && CONFIG.snatchFleeRate === 1.8
+            && CONFIG.snatchShrinkRate === 1 && CONFIG.snatchFadeRate === 1);
 
         // 場面：一近一遠；追果實速度釘死 1px/幀，觸發時序才可斷言
         T.getBerries().slice().forEach(b => T.removeBerry(b));
@@ -1784,7 +1813,7 @@ group('19. 色違星星特效定時重播');
         // 門檻內 = 絕對安全：距離 40px，必中的骰也不埋伏筆
         sandbox.window.POKE_FLYING = [18]; // 比雕：單一元素池，抽誰是確定的
         CONFIG.snatchChance = 1;
-        clickAt(1000, 60); // witness 中心 960 → 距離 40 ≤ 300
+        clickAt(1000, 60); // witness 中心 960 → 距離 40 ≤ 150
         check('門檻內 → 不埋伏筆、正常餵食', T.getPending() === null && T.getSnatch() === null
             && T.getBerries()[0]?.feeder === witness && witness.state === 'SEEK_BERRY');
         resetField();
@@ -1794,7 +1823,7 @@ group('19. 色違星星特效定時重播');
         clickAt(1400, 60); // 距離 440
         check('門檻拉高到 500 → 440px 的丟法也安全', T.getPending() === null);
         resetField();
-        CONFIG.snatchDistance = 300;
+        CONFIG.snatchDistance = 150;
 
         // 機率 0 → 超過門檻也不埋
         CONFIG.snatchChance = 0;
@@ -1817,7 +1846,7 @@ group('19. 色違星星特效定時重播');
         resetField();
 
         // 正式開演：超過門檻 + 必中 → 埋伏筆，但畫面看不出任何異狀
-        clickAt(1400, 60); // 距離 440 > 300 → 觸發點 = 剩 220
+        clickAt(1400, 60); // 距離 440 > 150 → 觸發點 = 剩 220
         const sb = T.getBerries()[0];
         check('伏筆已埋（賊鳥還沒出來）', T.getPending() !== null && T.getSnatch() === null);
         check('被盯上的那隻照常起跑（看不出異狀）',
@@ -1843,18 +1872,30 @@ group('19. 色違星星特效定時重播');
             && witness.targetBerry === null);
         check('其他成員照常散步（世界不為一顆果實停下來）', other.state === 'WALKING');
 
-        // 賊鳥的進場幾何與速度（0.33.0 放慢版）
+        // 賊鳥的進場幾何與速度（預設倍率：俯衝 1.6、遠走 1.8）
         check('從果實那一側的畫面外進場（右半邊 → 右側、面向左）',
             s.x > 1920 && s.direction === -1, `x=${s.x}`);
         check('進場高度在客串的飛行高度帶（視窗高 45%~75%）',
             s.bottom >= 90 && s.bottom <= 150, `bottom=${s.bottom}`);
-        check('俯衝 = 巡航 × 1.4（±10%）',
-            s.speed >= 5 * 1.4 * 0.9 - 1e-9 && s.speed <= 5 * 1.4 * 1.1 + 1e-9,
+        check('俯衝 = 巡航 × snatchDiveRate 1.6（±10%）',
+            s.speed >= 5 * 1.6 * 0.9 - 1e-9 && s.speed <= 5 * 1.6 * 1.1 + 1e-9,
             `speed=${s.speed}`);
-        check('遠走 = 巡航 × 1.6（與俯衝共用同一次變異抽選）',
-            Math.abs(s.fleeSpeed / s.speed - 1.6 / 1.4) < 1e-9, `flee=${s.fleeSpeed}`);
+        check('遠走 = 巡航 × snatchFleeRate 1.8（與俯衝共用同一次變異抽選）',
+            Math.abs(s.fleeSpeed / s.speed - 1.8 / 1.6) < 1e-9, `flee=${s.fleeSpeed}`);
+        check('等待保險絲跟著航程重算（8 秒基底 + 俯衝預估）',
+            witness.watchTimer > 9000 && witness.watchTimer < 10500,
+            `watchTimer=${witness.watchTimer}`);
         check('主角時刻蓋過全場（z-index 20001、沿用 cameo 樣式不可點）',
             s.el.style.zIndex === 20001 && s.el.className === 'cameo');
+
+        // 倍率真的吃 CONFIG（直接建構驗速度，不用跑整場）
+        CONFIG.snatchDiveRate = 4; CONFIG.snatchFleeRate = 8;
+        const fast = new T.Snatcher(18, 0.8, { x: 1400, bottom: 0 }, null);
+        check('速度倍率可調：dive×4 / flee×8 立即生效',
+            fast.speed >= 5 * 4 * 0.9 - 1e-9 && fast.speed <= 5 * 4 * 1.1 + 1e-9
+            && Math.abs(fast.fleeSpeed / fast.speed - 2) < 1e-9, `speed=${fast.speed}`);
+        fast.el.remove();
+        CONFIG.snatchDiveRate = 1.6; CONFIG.snatchFleeRate = 1.8;
 
         // 目擊中：站著看戲、不接新果實；一次只演一場
         const wx = witness.x;
@@ -1899,12 +1940,25 @@ group('19. 色違星星特效定時重播');
         check('V 字鏡像：爬升角 = 俯衝角', Math.abs(dy1 / dx1 - rise / run) < 1e-9,
             `爬升 ${dy1 / dx1}，俯衝 ${rise / run}`);
         const scaleOf = () => Number((s.el.style.transform.match(/scale\(([\d.]+)\)/) || [])[1]);
-        check('透視縮小走 1/(1+3t)', Math.abs(scaleOf() - 1 / (1 + 3 * s.fleeT)) < 0.001,
-            `scale=${scaleOf()} t=${s.fleeT}`);
+        check('透視縮小走 1/(1+3t)', Math.abs(scaleOf() - 1 / (1 + 3 * s.shrinkT)) < 0.001,
+            `scale=${scaleOf()} t=${s.shrinkT}`);
         for (let i = 0; i < 30; i++) T.updateSnatch(16);
-        check('持續變小、也開始變淡（比 0.32.0 慢）',
+        check('持續變小、也開始變淡',
             scaleOf() < 1 && scaleOf() > 0.55 && Number(s.el.style.opacity) < 1,
             `scale=${scaleOf()} opacity=${s.el.style.opacity}`);
+        check('變淡走 1 - t²，且預設倍速下與縮小同步計時',
+            Math.abs(Number(s.el.style.opacity) - (1 - s.fadeT * s.fadeT)) < 0.001
+            && Math.abs(s.fadeT - s.shrinkT) < 1e-9,
+            `opacity=${s.el.style.opacity} fadeT=${s.fadeT} shrinkT=${s.shrinkT}`);
+        // 縮淡分軌：縮小凍結時，變淡照走
+        CONFIG.snatchShrinkRate = 0;
+        const frozenScale = scaleOf();
+        const opBefore = Number(s.el.style.opacity);
+        T.updateSnatch(16);
+        check('縮小倍速 0 → 縮小凍結、變淡照走（兩軌各自計時）',
+            scaleOf() === frozenScale && Number(s.el.style.opacity) < opBefore,
+            `scale=${scaleOf()} opacity=${s.el.style.opacity}`);
+        CONFIG.snatchShrinkRate = 1;
         guard = 0;
         while (T.getSnatch() && guard++ < 300) T.updateSnatch(16);
         check('淡完或飛出畫面 → 自動清場', T.getSnatch() === null, `guard=${guard}`);
@@ -1942,7 +1996,7 @@ group('19. 色違星星特效定時重播');
         check('站到嘴邊開吃 → 伏筆作廢（太晚了，搶不到）',
             witness.state === 'EATING' && T.getPending() === null && T.getSnatch() === null);
         resetField();
-        CONFIG.snatchDistance = 300;
+        CONFIG.snatchDistance = 150;
 
         // 防禦：俯衝到一半果實意外沒了 → 空爪轉遠走、目擊者直接解脫
         clickAt(1400, 60);
@@ -1955,13 +2009,18 @@ group('19. 色違星星特效定時重播');
         const s2 = T.getSnatch();
         check('（前置）第二場開演', !!s2 && witness.state === 'SNATCH_WATCH');
         T.removeBerry(T.getBerries()[0]); // 硬把果實抽走（現行規則到不了，防禦路徑）
+        CONFIG.snatchFadeRate = 0; // 這場順便驗「永不變淡」：只能飛到出畫面收場
         T.updateSnatch(16);
         check('果實沒了 → 空爪轉遠走、目擊者不演沮喪',
             s2.phase === 'FLEE' && s2.carrying === false
             && witness.state === 'WALKING' && witness.bubbleName !== 'scribble');
+        for (let i = 0; i < 30; i++) T.updateSnatch(16);
+        check('變淡倍速 0 → 透明度紋風不動', s2.el.style.opacity === '1.000',
+            `opacity=${s2.el.style.opacity}`);
         guard = 0;
-        while (T.getSnatch() && guard++ < 300) T.updateSnatch(16);
-        check('空爪遠走也會自動清場', T.getSnatch() === null, `guard=${guard}`);
+        while (T.getSnatch() && guard++ < 600) T.updateSnatch(16);
+        check('永不淡出就飛到出畫面為止（照樣清場）', T.getSnatch() === null, `guard=${guard}`);
+        CONFIG.snatchFadeRate = 1;
         resetField();
 
         // 載圖全滅 → 這場取消：無主果實收掉、目擊者立刻解脫
@@ -2012,6 +2071,8 @@ group('19. 色違星星特效定時重播');
         delete sandbox.window.POKE_FLYING;
         CONFIG.snatchChance = savedSnatch;
         CONFIG.snatchDistance = savedSnatchD;
+        [CONFIG.snatchDiveRate, CONFIG.snatchFleeRate,
+            CONFIG.snatchShrinkRate, CONFIG.snatchFadeRate] = savedRates;
         CONFIG.shinyChance = savedShinyS;
         CONFIG.greetChance = savedGreetS;
         CONFIG.idleChance = savedIdle;

@@ -225,7 +225,7 @@
             greetChance:      { path: ['greetChance'],      type: 'float', min: 0,  max: 1 },
             baseSize:         { path: ['baseSize'],         type: 'int',   min: 16, max: 512 },
             shadowWidthRatio: { path: ['shadowWidthRatio'], type: 'float', min: 0,  max: 2 },
-            theme:            { path: ['theme'],            type: 'enum',  values: ['none', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava'] },
+            theme:            { path: ['theme'],            type: 'enum',  values: ['none', 'random', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava'] },
             themeHeight:      { path: ['themeHeight'],      type: 'int',   min: 4,  max: 200 },
             flybyDelayMin:    { path: ['flybyDelay', 'min'], type: 'int',  min: 1000, max: 600000 },
             flybyDelayMax:    { path: ['flybyDelay', 'max'], type: 'int',  min: 1000, max: 600000 },
@@ -238,6 +238,10 @@
             berry:            { path: ['berry'],            type: 'enum',  values: ['on', 'off'] },
             snatchChance:     { path: ['snatchChance'],     type: 'float', min: 0,  max: 1 },
             snatchDistance:   { path: ['snatchDistance'],   type: 'int',   min: 0,  max: 2000 },
+            snatchDiveRate:   { path: ['snatchDiveRate'],   type: 'float', min: 0.2, max: 10 },
+            snatchFleeRate:   { path: ['snatchFleeRate'],   type: 'float', min: 0.2, max: 10 },
+            snatchShrinkRate: { path: ['snatchShrinkRate'], type: 'float', min: 0,  max: 10 },
+            snatchFadeRate:   { path: ['snatchFadeRate'],   type: 'float', min: 0,  max: 10 },
             drag:             { path: ['drag'],             type: 'enum',  values: ['on', 'off'] },
             dragStruggleRate: { path: ['dragStruggleRate'], type: 'float', min: 0,  max: 10 },
         };
@@ -723,6 +727,12 @@
         // 鋪地面。回傳寶可夢要抬高的量（畫面 px）= 地面高度 - 踩入深度。
         // theme 不存在（none / 打錯字）就不鋪、回傳 0，一切維持原樣
         function initGround(themeName) {
+            if (themeName === 'random') {
+                // 隨機池 = 七種地形 + 'none'（無地板也是一種天氣），
+                // 每次重新整理擲一次，狂按 F5 就是輪盤
+                const pool = [...Object.keys(GROUND_THEMES), 'none'];
+                themeName = pool[randomInt(0, pool.length - 1)];
+            }
             const theme = GROUND_THEMES[themeName];
             if (!theme) return 0;
             // 高度以畫面 px 指定（themeHeight），內部換成 2px 像素格的列數，
@@ -1187,7 +1197,7 @@
                 this.breakGreet();
                 this.state = 'SNATCH_WATCH';
                 this.idleTimer = 0;
-                this.watchTimer = 12000; // 保險絲時長；正常流程在叼走那一刻改設為沮喪時長
+                this.watchTimer = 12000; // 保底值；beginSnatch 隨即依實際航程重算，叼走那一刻改設為沮喪時長
                 if (!this.showEmote('exclaim', 900)) this.hideEmote();
             }
 
@@ -1781,9 +1791,9 @@
         // 不受影響
         // ---------------------------------------------------------
         const SNATCH_LIFT = 24;        // 果實叼在腳下的高度（同信使鳥空投）
-        const SNATCH_DIVE_RATE = 1.4;  // 俯衝速度 = 巡航（flybySpeed）的幾倍
-        const SNATCH_FLEE_RATE = 1.6;  // 遠走速度：得手後加速逃逸，比俯衝再快一點
-        const SNATCH_FLEE_MS = 2400;   // 縮小與淡出的總時長（遠走的最長壽命）
+        // 縮小與淡出的「基準」時長：snatchShrinkRate / snatchFadeRate 都是 1 時，
+        // 兩者各花這麼久走完；倍速快就早收，0 = 凍住不動（見 update 的 FLEE 段）
+        const SNATCH_FLEE_MS = 2400;
         const SNATCH_GLOOM_MS = 2600;  // 目擊者黑線沮喪的時長
         // 透視係數：遠走時 scale = 1 / (1 + k·t)——等速遠離時投影大小就是
         // 這個形狀（近快遠慢），t = 1 收在 0.25 倍
@@ -1799,17 +1809,20 @@
                 this.victim = victim;
                 this.carrying = false; // 叼到果實了沒
                 this.phase = 'DIVE';   // DIVE 俯衝 → FLEE 遠走高飛
-                this.fleeT = 0;        // 遠走進度 0 → 1
+                this.shrinkT = 0;      // 遠走的縮小進度 0 → 1（吃 snatchShrinkRate 倍速）
+                this.fadeT = 0;        // 遠走的變淡進度 0 → 1（吃 snatchFadeRate 倍速）
                 this.scale = 1;
                 this.isShiny = Math.random() < (CONFIG.shinyChance ?? 0);
                 const shinyDir = this.isShiny ? 'shiny/' : '';
 
                 this.height = Math.round(CONFIG.baseSize * sizeScale);
-                // 速度掛在巡航（flybySpeed）上，兩段共用同一次 ±10% 變異抽選。
-                // 下限 4 px/幀：flybySpeed 被調到超慢時，也不能慢到看戲的先走人
+                // 速度 = 巡航（flybySpeed）× 各段倍率（snatchDiveRate / snatchFleeRate，
+                // 外部可調），兩段共用同一次 ±10% 變異抽選。0.5 px/幀的下限只防止
+                // 極端組合把賊鳥釘在空中——想演多慢是使用者的事，目擊者的保險絲
+                // 會跟著實際航程重算（見 beginSnatch），不會提前走人
                 const base = (CONFIG.flybySpeed ?? 5) * (0.9 + Math.random() * 0.2);
-                this.speed = Math.max(4, base * SNATCH_DIVE_RATE);     // 俯衝段
-                this.fleeSpeed = Math.max(4, base * SNATCH_FLEE_RATE); // 遠走段
+                this.speed = Math.max(0.5, base * (CONFIG.snatchDiveRate ?? 1.6));     // 俯衝段
+                this.fleeSpeed = Math.max(0.5, base * (CONFIG.snatchFleeRate ?? 1.8)); // 遠走段
 
                 // 從果實那一側的畫面外進場：橫向行進方向全程不變（V 字是垂直方向
                 // 的翻轉），叼到後往「對側」遠走——剩下的畫面寬度越長，遠走越有戲
@@ -1878,16 +1891,20 @@
                         }
                     }
                 } else {
-                    // FLEE：沿鏡像角度恆速直線飛（1.6 倍巡航是字面意義），
-                    // 縮小走 1/(1+k·t) 的透視曲線（近快遠慢）；透明度前段
-                    // 幾乎不淡（看得清楚戰利品），尾段 1 - t² 一口氣收乾淨
-                    this.fleeT = Math.min(1, this.fleeT + deltaTime / SNATCH_FLEE_MS);
+                    // FLEE：沿鏡像角度恆速直線飛（fleeSpeed 是字面上的每幀位移）。
+                    // 縮小與變淡「分軌計時」，各吃各的倍速（外部可調、逐幀讀取）：
+                    // 縮小走 1/(1+k·t) 的透視曲線（近快遠慢），
+                    // 透明度前段幾乎不淡（看得清楚戰利品），尾段 1 - t² 一口氣收乾淨
+                    this.shrinkT = Math.min(1, this.shrinkT
+                        + (deltaTime / SNATCH_FLEE_MS) * Math.max(0, CONFIG.snatchShrinkRate ?? 1));
+                    this.fadeT = Math.min(1, this.fadeT
+                        + (deltaTime / SNATCH_FLEE_MS) * Math.max(0, CONFIG.snatchFadeRate ?? 1));
                     this.x += this.fleeVX * dt;
                     this.bottom += this.fleeVY * dt;
-                    this.scale = 1 / (1 + SNATCH_RECEDE * this.fleeT);
-                    this.el.style.opacity = (1 - this.fleeT * this.fleeT).toFixed(3);
-                    // 淡完或飛出畫面，先到者為準
-                    if (this.fleeT >= 1
+                    this.scale = 1 / (1 + SNATCH_RECEDE * this.shrinkT);
+                    this.el.style.opacity = (1 - this.fadeT * this.fadeT).toFixed(3);
+                    // 淡完或飛出畫面，先到者為準（變淡倍速 0 = 永不淡，就飛到出界為止）
+                    if (this.fadeT >= 1
                         || this.x > window.innerWidth + this.margin || this.x < -this.margin) {
                         return false;
                     }
@@ -1901,7 +1918,8 @@
             // 別貼著地平線飛出去
             startFlee() {
                 this.phase = 'FLEE';
-                this.fleeT = 0;
+                this.shrinkT = 0;
+                this.fadeT = 0;
                 const run = Math.max(Math.abs(this.x - this.startX), 1);
                 const rise = Math.max(Math.abs(this.bottom - this.startBottom), run * 0.25);
                 const len = Math.hypot(run, rise);
@@ -1972,6 +1990,11 @@
             const dm = window.POKE_HEIGHTS?.[id];
             const scale = dm === undefined ? fallbackSizeScale() : scaleFromDeciMeters(dm);
             activeSnatch = new Snatcher(id, scale, berry, seeker);
+            // 目擊者的保險絲跟著實際航程重算：俯衝速度現在開放外部調整
+            // （snatchDiveRate），演得再慢目擊者也不會提前走人；
+            // 叼走那一刻會再改設為沮喪時長
+            const diveDist = Math.hypot(activeSnatch.x - berry.x, activeSnatch.bottom - berry.bottom);
+            seeker.watchTimer = (diveDist / activeSnatch.speed) * (1000 / 60) + 8000;
         }
 
         // 每一幀推進（gameLoop 呼叫）：伏筆期盯著「走到一半沒」，
