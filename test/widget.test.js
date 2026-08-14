@@ -109,7 +109,8 @@ function makeElement(tag) {
         offsetHeight: 0,
         src: '',
         appendChild(c) { this.children.push(c); return c; },
-        remove() {},
+        removed: false,
+        remove() { this.removed = true; }, // stub 不真的拆樹，記旗標供斷言
         addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
         dispatch(type) { (this.listeners[type] || []).forEach(fn => fn()); },
     };
@@ -169,7 +170,7 @@ CONFIG.theme = 'none';
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -1916,9 +1917,9 @@ group('19. 色違星星特效定時重播');
         check('叼取點 = 果實正上方、腳下叼取高度',
             s.x === sb.x - s.width() / 2 && s.bottom === sb.bottom + 24,
             `x=${s.x} bottom=${s.bottom}`);
-        check('果實從場上除名、掛到賊鳥腳下一起飛',
+        check('果實從場上除名、影子收掉、掛到賊鳥腳下一起飛',
             T.getBerries().length === 0 && s.el.children.includes(sb.el)
-            && sb.el.style.bottom === '-24px');
+            && sb.el.style.bottom === '-24px' && sb.shadow.removed === true);
         check('叼走那一刻目擊者換成一團黑線', witness.bubbleName === 'scribble'
             && witness.bubble.style.display === 'block');
 
@@ -2079,7 +2080,169 @@ group('19. 色違星星特效定時重播');
     }
 
     // =====================================================
-    group('28. 嵌入透明性守則（color-scheme）');
+    group('28. 果實影子');
+    {
+        const savedIdleB = CONFIG.idleChance;
+        CONFIG.idleChance = 0;
+        T.getBerries().slice().forEach(b => T.removeBerry(b));
+        T.pokemons.length = 0;
+        const eater = newPokemon(25, { scale: 0.6 });
+        eater.x = 900; // 中心 960
+        T.pokemons.push(eater);
+
+        // 高空丟在腳邊（飛行池已卸載，不會觸發搶食）：影子生在正下方的地面
+        clickAt(960, 20); // bottom = 180
+        const b = T.getBerries()[0];
+        check('果實帶影子（貼在地面、置中於果實正下方）',
+            b.shadow?.className === 'berry-shadow'
+            && b.shadow.style.left === `${Math.round(b.x)}px`
+            && b.shadow.style.bottom === '0px'
+            && appEl.children.includes(b.shadow));
+        check('高空時影子又小又淡（120px 以上 → 0.5 倍、0.4 透明度）',
+            b.shadow.style.transform === 'translateX(-50%) scale(0.500)'
+            && b.shadow.style.opacity === '0.400',
+            `transform=${b.shadow.style.transform} opacity=${b.shadow.style.opacity}`);
+
+        // 越接近地面越大越深（符合物理：跟寶可夢跳躍的影子同一套）
+        while (b.bottom > 60) T.updateBerries(16);
+        const midScale = Number((b.shadow.style.transform.match(/scale\(([\d.]+)\)/) || [])[1]);
+        const midOp = Number(b.shadow.style.opacity);
+        check('下墜途中影子逐漸放大加深', midScale > 0.5 && midScale < 1
+            && midOp > 0.4 && midOp < 1, `scale=${midScale} opacity=${midOp}`);
+        let bg = 0;
+        while (b.state !== 'LANDED' && bg++ < 500) T.updateBerries(16);
+        check('落地（含彈跳收尾）→ 影子全尺寸全深度',
+            b.state === 'LANDED'
+            && b.shadow.style.transform === 'translateX(-50%) scale(1.000)'
+            && b.shadow.style.opacity === '1.000');
+
+        // 開吃：影子跟著咬痕一口一口縮小；吃完連影子一起收
+        for (let i = 0; i < 50 && eater.state !== 'EATING'; i++) eater.update(16, T.pokemons);
+        check('（前置）站在果實旁開吃', eater.state === 'EATING');
+        let bitten = false;
+        for (let i = 0; i < 100 && eater.state === 'EATING'; i++) {
+            eater.update(16, T.pokemons);
+            if (b.shadow.style.transform === 'translateX(-50%) scale(0.72)') bitten = true;
+        }
+        check('影子跟著咬痕縮小（0.72 的那一口）', bitten);
+        check('吃完 → 果實與影子一起移除', !T.getBerries().includes(b)
+            && b.el.removed === true && b.shadow.removed === true);
+
+        // 意外收場（removeBerry 的所有入口）也一起收影子
+        eater.state = 'WALKING'; eater.targetBerry = null;
+        check('（前置）再丟一顆', T.throwBerry(900, 100) === true);
+        const b2 = T.getBerries()[0];
+        T.removeBerry(b2);
+        check('removeBerry → 影子一起移除', b2.shadow.removed === true);
+        eater.state = 'WALKING'; eater.targetBerry = null;
+        CONFIG.idleChance = savedIdleB;
+    }
+
+    // =====================================================
+    group('29. 天氣（主題地面的雨/雪/風沙/火星）');
+    {
+        const savedWC = CONFIG.weatherChance;
+        const savedWD = CONFIG.weatherDensity;
+
+        // 參數登記 + config 預設
+        check('weatherChance 已登記（float 0 ~ 1）',
+            T.QUERY_PARAMS?.weatherChance?.type === 'float'
+            && T.QUERY_PARAMS.weatherChance.min === 0 && T.QUERY_PARAMS.weatherChance.max === 1);
+        check('weatherDensity 已登記（float 0.2 ~ 5）',
+            T.QUERY_PARAMS?.weatherDensity?.type === 'float'
+            && T.QUERY_PARAMS.weatherDensity.min === 0.2 && T.QUERY_PARAMS.weatherDensity.max === 5);
+        check('config.js 預設 weatherChance = 0.5 / weatherDensity = 1',
+            CONFIG.weatherChance === 0.5 && CONFIG.weatherDensity === 1);
+
+        // 主題 → 天氣對照：每一種地形都配了天氣
+        check('對照表：雨（草地/水域/岩地/土徑）、雪、風沙、火星',
+            T.THEME_WEATHER.grass === 'rain' && T.THEME_WEATHER.water === 'rain'
+            && T.THEME_WEATHER.rock === 'rain' && T.THEME_WEATHER.dirt === 'rain'
+            && T.THEME_WEATHER.snow === 'snow' && T.THEME_WEATHER.sand === 'sand'
+            && T.THEME_WEATHER.lava === 'ember');
+        check('每一種地形都配了天氣', Object.keys(T.GROUND_THEMES).every(k => T.THEME_WEATHER[k]));
+
+        // 機率與場景的閘門
+        CONFIG.weatherChance = 0;
+        check('weatherChance=0 → 永遠晴天', T.initWeather('water') === null);
+        CONFIG.weatherChance = 1;
+        check("theme='none' 沒有場景就沒有天氣", T.initWeather('none') === null);
+
+        // 下雨：斜斜細細長長的藍色雨絲
+        check('水域 → 下雨', T.initWeather('water') === 'rain');
+        const rain = appEl.children[appEl.children.length - 1];
+        check('#weather 容器（粒子交給 CSS 動畫，不吃主迴圈）', rain.id === 'weather');
+        check('雨滴數量 = 視窗寬 ÷ 16（1920 → 120 滴）', rain.children.length === 120,
+            `實際 ${rain.children.length}`);
+        const d0 = rain.children[0];
+        check('雨滴細細長長（高 10~18px，寬 2px 由 CSS 給）',
+            d0.className === 'rain-drop' && /^1[0-8]px$/.test(d0.style.height),
+            `height=${d0.style.height}`);
+        check('雨滴是半透明的藍色', ['#6faae8', '#4a7fd4'].includes(d0.style.background)
+            && Number(d0.style.opacity) > 0 && Number(d0.style.opacity) < 1);
+        check('每一滴都有自己的時長/相位/斜角/橫移（CSS 變數）',
+            rain.children.every(d => d.style.getPropertyValue('--dur')
+                && d.style.getPropertyValue('--delay')
+                && d.style.getPropertyValue('--tilt')
+                && d.style.getPropertyValue('--drift')));
+        check('全場共用同一個風向（斜角同號）', new Set(rain.children.map(d =>
+            Math.sign(parseFloat(d.style.getPropertyValue('--tilt'))))).size === 1);
+
+        // 密度可調
+        CONFIG.weatherDensity = 0.5;
+        T.initWeather('water');
+        const half = appEl.children[appEl.children.length - 1];
+        check('weatherDensity=0.5 → 雨滴減半（60 滴）', half.children.length === 60,
+            `實際 ${half.children.length}`);
+        CONFIG.weatherDensity = 1;
+
+        // 下雪：白點慢慢飄——外層直落、內層左右搖曳，兩層才有「飄」的感覺
+        check('雪地 → 下雪', T.initWeather('snow') === 'snow');
+        const snow = appEl.children[appEl.children.length - 1];
+        const f0 = snow.children[0];
+        check('雪花數量 = 視窗寬 ÷ 26（1920 → 74 片）', snow.children.length === 74,
+            `實際 ${snow.children.length}`);
+        check('雪花兩層：外層落下、內層搖曳',
+            f0.className === 'snow-flake' && f0.children.length === 1
+            && !!f0.style.getPropertyValue('--dur')
+            && !!f0.children[0].style.getPropertyValue('--amp')
+            && !!f0.children[0].style.getPropertyValue('--sway'));
+        check('雪花是白色小方點（2~4px）', f0.children[0].style.background === '#ffffff'
+            && /^[2-4]px$/.test(f0.children[0].style.width));
+
+        // 風沙與火星
+        check('沙灘 → 風沙', T.initWeather('sand') === 'sand');
+        const sand = appEl.children[appEl.children.length - 1];
+        check('沙痕帶橫掃全場的向量（±125vw）',
+            sand.children[0].className === 'sand-grain'
+            && Math.abs(parseFloat(sand.children[0].style.getPropertyValue('--travel'))) === 125);
+        check('熔岩 → 火星', T.initWeather('lava') === 'ember');
+        const lava = appEl.children[appEl.children.length - 1];
+        check('火星從低處上飄（--rise 為負）、會左右輕晃',
+            lava.children[0].className === 'lava-ember'
+            && parseFloat(lava.children[0].style.getPropertyValue('--rise')) < 0
+            && lava.children[0].style.getPropertyValue('--sway') !== '');
+
+        // 減速模式（prefers-reduced-motion）整組收起：動不了的雨雪只是一牆斑點
+        check('reduced-motion 時 #weather 整組隱藏（CSS 保障）',
+            /@media \(prefers-reduced-motion: reduce\)[\s\S]{0,200}?#weather\s*\{\s*display:\s*none/.test(html));
+
+        // random 主題與天氣吃同一個抽選結果：init() 先 resolveTheme 再分頭餵
+        check('resolveTheme：具體主題原樣通過', T.resolveTheme('water') === 'water'
+            && T.resolveTheme('none') === 'none');
+        const origRandom2 = Math.random;
+        Math.random = () => 0;
+        check("resolveTheme('random') → 池子第一種（草地）", T.resolveTheme('random') === 'grass');
+        Math.random = () => 0.999;
+        check("resolveTheme('random') → 也抽得到 'none'", T.resolveTheme('random') === 'none');
+        Math.random = origRandom2;
+
+        CONFIG.weatherChance = savedWC;
+        CONFIG.weatherDensity = savedWD;
+    }
+
+    // =====================================================
+    group('30. 嵌入透明性守則（color-scheme）');
     // iframe 要維持透明，內外文件的 color-scheme 必須一致。
     // 這裡守住兩條血淚教訓：
     //   0.20.0 widget 沒宣告 → 被宣告 dark 的頁面（params.html）嵌 → 墊白底

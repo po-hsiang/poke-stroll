@@ -125,6 +125,80 @@
         }
         @media (prefers-reduced-motion: reduce) {
             .ground-flow { animation: none; }
+            /* 動不了的雨雪就只是一牆斑點，整組收起來 */
+            #weather { display: none; }
+        }
+
+        /* 果實的影子：釘在地面（不跟著果實動），大小與深淺由 JS 依果實
+           高度逐幀調整——越高越小越淡，快落地放大加深回來，跟寶可夢
+           跳躍的影子同一套物理語彙 */
+        .berry-shadow {
+            position: absolute;
+            width: 24px;
+            height: 6px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 19999; /* 墊在果實（20000）的正下一層 */
+        }
+
+        /* 天氣粒子（weatherChance）：種類由主題地面決定——雨/雪/風沙/火星。
+           全部用 CSS 動畫無限循環：生成一次就不再吃每一幀的 JS，
+           OBS 長時間掛著也不增加主迴圈負擔。負的 animation-delay
+           把相位打散，開頁那一刻就是「下到一半」的樣子，不會齊步走 */
+        #weather {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 1; /* 地面（0）之上、散步成員（z = X 座標）之下：天氣是背景 */
+        }
+        #weather > * {
+            position: absolute;
+            will-change: transform;
+        }
+        /* 雨：斜斜細細長長的藍色雨絲，順著全場統一的風向斜落 */
+        .rain-drop {
+            width: 2px;
+            top: -20vh;
+            transform: rotate(var(--tilt));
+            animation: rain-fall var(--dur) linear var(--delay) infinite;
+        }
+        @keyframes rain-fall {
+            to { transform: translate(var(--drift), 125vh) rotate(var(--tilt)); }
+        }
+        /* 雪：兩層才有「飄」的感覺——外層等速直落，內層左右搖曳 */
+        .snow-flake {
+            top: -5vh;
+            animation: snow-fall var(--dur) linear var(--delay) infinite;
+        }
+        @keyframes snow-fall {
+            to { transform: translateY(115vh); }
+        }
+        .snow-flake > div {
+            animation: snow-sway var(--sway) ease-in-out infinite alternate;
+        }
+        @keyframes snow-sway {
+            from { transform: translateX(calc(var(--amp) * -1)); }
+            to   { transform: translateX(var(--amp)); }
+        }
+        /* 風沙：淡黃色的橫向沙痕，順著風向橫掃全場、略微下沉 */
+        .sand-grain {
+            height: 2px;
+            animation: sand-blow var(--dur) linear var(--delay) infinite;
+        }
+        @keyframes sand-blow {
+            to { transform: translate(var(--travel), var(--dip)); }
+        }
+        /* 火星：熔岩的小火星從低處緩緩上飄、漸滅（ease-out：越高越慢） */
+        .lava-ember {
+            opacity: 0;
+            animation: ember-rise var(--dur) ease-out var(--delay) infinite;
+        }
+        @keyframes ember-rise {
+            0%   { transform: translate(0, 0); opacity: 0; }
+            15%  { opacity: 1; }
+            100% { transform: translate(var(--sway), var(--rise)); opacity: 0; }
         }
 
         /* 丟果實餵食：點「空白處」掉下的像素樹果（canvas 畫的，不吃外部素材）。
@@ -227,6 +301,8 @@
             shadowWidthRatio: { path: ['shadowWidthRatio'], type: 'float', min: 0,  max: 2 },
             theme:            { path: ['theme'],            type: 'enum',  values: ['none', 'random', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava'] },
             themeHeight:      { path: ['themeHeight'],      type: 'int',   min: 4,  max: 200 },
+            weatherChance:    { path: ['weatherChance'],    type: 'float', min: 0,  max: 1 },
+            weatherDensity:   { path: ['weatherDensity'],   type: 'float', min: 0.2, max: 5 },
             flybyDelayMin:    { path: ['flybyDelay', 'min'], type: 'int',  min: 1000, max: 600000 },
             flybyDelayMax:    { path: ['flybyDelay', 'max'], type: 'int',  min: 1000, max: 600000 },
             flybyChance:      { path: ['flybyChance'],      type: 'float', min: 0,  max: 1 },
@@ -724,16 +800,20 @@
             return canvas.toDataURL();
         }
 
+        // theme = 'random' 的擲骰：隨機池 = 七種地形 + 'none'（無地板也是
+        // 一種運勢），每次重新整理抽一次，狂按 F5 就是輪盤。
+        // 地面與天氣要吃「同一個」抽選結果，所以 init() 先抽好再分頭傳入；
+        // 具體的主題名原樣通過
+        function resolveTheme(themeName) {
+            if (themeName !== 'random') return themeName;
+            const pool = [...Object.keys(GROUND_THEMES), 'none'];
+            return pool[randomInt(0, pool.length - 1)];
+        }
+
         // 鋪地面。回傳寶可夢要抬高的量（畫面 px）= 地面高度 - 踩入深度。
         // theme 不存在（none / 打錯字）就不鋪、回傳 0，一切維持原樣
         function initGround(themeName) {
-            if (themeName === 'random') {
-                // 隨機池 = 七種地形 + 'none'（無地板也是一種天氣），
-                // 每次重新整理擲一次，狂按 F5 就是輪盤
-                const pool = [...Object.keys(GROUND_THEMES), 'none'];
-                themeName = pool[randomInt(0, pool.length - 1)];
-            }
-            const theme = GROUND_THEMES[themeName];
+            const theme = GROUND_THEMES[resolveTheme(themeName)];
             if (!theme) return 0;
             // 高度以畫面 px 指定（themeHeight），內部換成 2px 像素格的列數，
             // 所以實際高度會取到最接近的偶數；最少 3 列（頂緣 2 列 + 至少 1 列底）
@@ -752,6 +832,110 @@
             }
             app.appendChild(ground);
             return Math.max(0, displayH - theme.inset * GROUND_SCALE);
+        }
+
+        // ---------------------------------------------------------
+        // 天氣 (Weather)
+        // 主題地面決定天氣種類，weatherChance 決定這一次載入下不下：
+        //   雨（草地/水域/岩地/土徑）— 斜斜細細長長的藍色雨絲
+        //   雪（雪地）— 白色小點慢慢飄，左右搖曳
+        //   風沙（沙灘）— 淡黃色橫向沙痕，順著風向橫掃
+        //   火星（熔岩）— 橘黃小火星從低處緩緩上飄、漸滅
+        // 風向（雨的斜向、沙的走向）每次載入隨機一邊，全場統一。
+        // 粒子生成一次就交給 CSS 動畫循環（見 <style>），主迴圈零負擔；
+        // theme = none 沒有場景，也就沒有天氣
+        // ---------------------------------------------------------
+        const THEME_WEATHER = {
+            grass: 'rain', water: 'rain', rock: 'rain', dirt: 'rain',
+            snow: 'snow', sand: 'sand', lava: 'ember',
+        };
+        let weatherEl = null;
+
+        function initWeather(themeName) {
+            const kind = THEME_WEATHER[themeName];
+            if (!kind) return null;
+            if (Math.random() >= (CONFIG.weatherChance ?? 0)) return null;
+
+            weatherEl?.remove(); // 防重複（正常流程一頁只會下一場）
+            weatherEl = document.createElement('div');
+            weatherEl.id = 'weather';
+            const density = Math.min(Math.max(CONFIG.weatherDensity ?? 1, 0.2), 5);
+            const count = base => Math.max(1, Math.round(window.innerWidth / base * density));
+            const windDir = Math.random() < 0.5 ? 1 : -1;
+
+            if (kind === 'rain') {
+                for (let i = 0; i < count(16); i++) {
+                    const d = document.createElement('div');
+                    d.className = 'rain-drop';
+                    d.style.left = `${(Math.random() * 110 - 5).toFixed(1)}%`;
+                    d.style.height = `${randomInt(10, 18)}px`;
+                    d.style.background = Math.random() < 0.5 ? '#6faae8' : '#4a7fd4';
+                    d.style.opacity = (0.45 + Math.random() * 0.35).toFixed(2);
+                    const dur = 0.7 + Math.random() * 0.5;
+                    d.style.setProperty('--dur', `${dur.toFixed(2)}s`);
+                    d.style.setProperty('--delay', `-${(Math.random() * dur).toFixed(2)}s`);
+                    d.style.setProperty('--tilt', `${(windDir * (10 + Math.random() * 6)).toFixed(1)}deg`);
+                    d.style.setProperty('--drift', `${(windDir * (20 + Math.random() * 10)).toFixed(1)}vh`);
+                    weatherEl.appendChild(d);
+                }
+            } else if (kind === 'snow') {
+                for (let i = 0; i < count(26); i++) {
+                    const f = document.createElement('div');
+                    f.className = 'snow-flake';
+                    f.style.left = `${(Math.random() * 100).toFixed(1)}%`;
+                    const dur = 7 + Math.random() * 6;
+                    f.style.setProperty('--dur', `${dur.toFixed(2)}s`);
+                    f.style.setProperty('--delay', `-${(Math.random() * dur).toFixed(2)}s`);
+                    const dot = document.createElement('div');
+                    const size = randomInt(2, 4);
+                    dot.style.width = `${size}px`;
+                    dot.style.height = `${size}px`;
+                    dot.style.background = '#ffffff';
+                    dot.style.opacity = (0.6 + Math.random() * 0.4).toFixed(2);
+                    dot.style.setProperty('--amp', `${randomInt(6, 16)}px`);
+                    dot.style.setProperty('--sway', `${(1.6 + Math.random() * 1.6).toFixed(2)}s`);
+                    f.appendChild(dot);
+                    weatherEl.appendChild(f);
+                }
+            } else if (kind === 'sand') {
+                for (let i = 0; i < count(20); i++) {
+                    const g = document.createElement('div');
+                    g.className = 'sand-grain';
+                    g.style.top = `${(5 + Math.random() * 90).toFixed(1)}%`;
+                    // 從風的上游畫面外出發，一路橫掃到對側畫面外
+                    g.style.left = windDir === 1
+                        ? `-${randomInt(5, 15)}vw`
+                        : `${randomInt(105, 115)}vw`;
+                    g.style.width = `${randomInt(8, 16)}px`;
+                    g.style.background = Math.random() < 0.5 ? '#f7e7b3' : '#cfa855';
+                    g.style.opacity = (0.4 + Math.random() * 0.4).toFixed(2);
+                    const dur = 0.6 + Math.random() * 0.5;
+                    g.style.setProperty('--dur', `${dur.toFixed(2)}s`);
+                    g.style.setProperty('--delay', `-${(Math.random() * dur).toFixed(2)}s`);
+                    g.style.setProperty('--travel', `${windDir * 125}vw`);
+                    g.style.setProperty('--dip', `${randomInt(20, 60)}px`);
+                    weatherEl.appendChild(g);
+                }
+            } else { // ember（熔岩火星）
+                for (let i = 0; i < count(38); i++) {
+                    const e = document.createElement('div');
+                    e.className = 'lava-ember';
+                    e.style.left = `${(Math.random() * 100).toFixed(1)}%`;
+                    e.style.bottom = `${randomInt(0, 12)}vh`; // 從熔岩表面附近竄起
+                    const size = randomInt(2, 3);
+                    e.style.width = `${size}px`;
+                    e.style.height = `${size}px`;
+                    e.style.background = ['#ff8c1a', '#ffc63f', '#ff6b1a'][randomInt(0, 2)];
+                    const dur = 3 + Math.random() * 3;
+                    e.style.setProperty('--dur', `${dur.toFixed(2)}s`);
+                    e.style.setProperty('--delay', `-${(Math.random() * dur).toFixed(2)}s`);
+                    e.style.setProperty('--rise', `-${randomInt(30, 65)}vh`);
+                    e.style.setProperty('--sway', `${randomInt(-24, 24)}px`);
+                    weatherEl.appendChild(e);
+                }
+            }
+            app.appendChild(weatherEl);
+            return kind;
         }
 
         // ---------------------------------------------------------
@@ -1243,6 +1427,8 @@
                 if (this.targetBerry) {
                     const bite = this.eatTimer > 600 ? 1 : this.eatTimer > 300 ? 0.72 : 0.45;
                     this.targetBerry.el.style.transform = `scale(${bite})`;
+                    // 影子跟著咬痕一口一口縮小，別留一圈跟果實不合身的影子
+                    this.targetBerry.shadow.style.transform = `translateX(-50%) scale(${bite})`;
                 }
                 if (this.eatTimer <= 0) {
                     if (this.targetBerry) {
@@ -1689,9 +1875,10 @@
             return berries.length > 0;
         }
 
-        // 果實吃完（或意外沒了）的下場：DOM 移除 + 從場上除名
+        // 果實吃完（或意外沒了）的下場：DOM 移除（影子一起）+ 從場上除名
         function removeBerry(b) {
             b.el.remove();
+            b.shadow?.remove();
             const i = berries.indexOf(b);
             if (i >= 0) berries.splice(i, 1);
         }
@@ -1708,13 +1895,28 @@
             const startBottom = Math.max(groundLevel, dropBottom);
             el.style.bottom = `${Math.round(startBottom)}px`;
             app.appendChild(el);
+            // 影子釘在正下方的地面上，大小深淺跟著果實的高度走（見 updateBerryShadow）
+            const shadow = document.createElement('div');
+            shadow.className = 'berry-shadow';
+            shadow.style.left = `${Math.round(bx)}px`;
+            shadow.style.bottom = `${Math.round(groundLevel)}px`;
+            app.appendChild(shadow);
             const berry = {
-                el, x: bx, bottom: startBottom, vy: 0,
+                el, shadow, x: bx, bottom: startBottom, vy: 0,
                 state: startBottom > groundLevel ? 'FALLING' : 'LANDED',
                 feeder,
             };
+            updateBerryShadow(berry); // 生成的第一幀就要是正確的大小深淺
             berries.push(berry);
             return berry;
+        }
+
+        // 果實影子的物理表現：越高越小越淡（120px 高視為「完全飄遠」），
+        // 快落地時放大加深回來——跟寶可夢跳躍時影子的語彙同一套
+        function updateBerryShadow(berry) {
+            const air = Math.min(Math.max(berry.bottom - groundLevel, 0) / 120, 1);
+            berry.shadow.style.transform = `translateX(-50%) scale(${(1 - air * 0.5).toFixed(3)})`;
+            berry.shadow.style.opacity = (1 - air * 0.6).toFixed(3);
         }
 
         function throwBerry(x, dropBottom, snatchable = false) {
@@ -1758,6 +1960,7 @@
                     }
                 }
                 berry.el.style.bottom = `${Math.round(berry.bottom)}px`;
+                updateBerryShadow(berry); // 影子跟著高度縮放淡出（含彈跳）
             }
         }
 
@@ -1931,9 +2134,11 @@
             grabBerry() {
                 this.startFlee();
                 // 果實從場上除名，改掛到腳下一起飛——是同一個元素搬家，
-                // 之後整體的 scale 與淡出會帶著它一起變小變淡
+                // 之後整體的 scale 與淡出會帶著它一起變小變淡；
+                // 地上的影子收掉（果實已經上天，影子留著就穿幫）
                 const i = berries.indexOf(this.berry);
                 if (i >= 0) berries.splice(i, 1);
+                this.berry.shadow?.remove();
                 this.berry.el.style.left = '50%';
                 this.berry.el.style.transform = 'translateX(-50%)';
                 this.berry.el.style.bottom = `${-SNATCH_LIFT}px`;
@@ -2253,9 +2458,12 @@
         let lastTime = 0;
 
         async function init() {
-            // 主題地面先鋪（theme=none 不鋪）：寶可夢得知道自己該站多高
-            const groundLift = initGround(CONFIG.theme ?? 'none');
+            // 主題先抽定（random 在這裡擲骰）：地面與天氣要吃同一個結果
+            const themeName = resolveTheme(CONFIG.theme ?? 'none');
+            // 主題地面先鋪（none 不鋪）：寶可夢得知道自己該站多高
+            const groundLift = initGround(themeName);
             groundLevel = groundLift; // 丟下來的果實也落在同一個地面上
+            initWeather(themeName);   // 場景決定天氣種類，weatherChance 決定下不下
 
             // URL 有帶 ?ids= 就用固定清單，否則照 count/minId/maxId 隨機抽
             const ids = CONFIG.fixedIds ?? getUniqueRandomIds(CONFIG.count, CONFIG.minId, CONFIG.maxId);
