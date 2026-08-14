@@ -236,6 +236,7 @@
             remote:           { path: ['remote'],           type: 'enum',  values: ['on', 'off'] },
             remoteRateLimit:  { path: ['remoteRateLimit'],  type: 'int',   min: 1,  max: 100 },
             berry:            { path: ['berry'],            type: 'enum',  values: ['on', 'off'] },
+            snatchChance:     { path: ['snatchChance'],     type: 'float', min: 0,  max: 1 },
             drag:             { path: ['drag'],             type: 'enum',  values: ['on', 'off'] },
             dragStruggleRate: { path: ['dragStruggleRate'], type: 'float', min: 0,  max: 10 },
         };
@@ -330,6 +331,13 @@
             return tiers[Math.floor(tiers.length / 2)]?.scale ?? 1;
         }
 
+        // 身高（分米）→ 大中小縮放比例的對照（純同步，查表後的最後一步）
+        function scaleFromDeciMeters(deciMeters) {
+            const meters = deciMeters / 10;
+            const tier = CONFIG.sizeTiers.find(t => meters < t.maxMeters);
+            return tier ? tier.scale : fallbackSizeScale();
+        }
+
         // 依身高換算成大中小的縮放比例：
         // 優先查本地靜態對照表（pokemon_heights.js，離線可用、不打 API），
         // 查不到才退回 PokéAPI，再失敗就當中型
@@ -346,9 +354,7 @@
                 }
             }
 
-            const meters = deciMeters / 10;
-            const tier = CONFIG.sizeTiers.find(t => meters < t.maxMeters);
-            return tier ? tier.scale : fallbackSizeScale();
+            return scaleFromDeciMeters(deciMeters);
         }
 
         // ---------------------------------------------------------
@@ -775,6 +781,7 @@
                 this.greetPartner = null; // 正在寒暄的對象（偶遇打招呼）
                 this.greetTimer = 0;
                 this.greetCooldown = 0; // 寒暄後的冷卻：同一對不會在原地無限寒暄
+                this.watchTimer = 0; // 目擊空中搶食的呆站計時（見 SNATCH_WATCH）
 
                 // 走路跳步動畫（GIF 本身只有原地待機動畫，沒有腳步，
                 // 補上垂直的小跳躍才不會像滑行）
@@ -927,6 +934,13 @@
                     if (this.heartTimer <= 0) {
                         this.state = 'WALKING'; // 忙完了，之後才會發現下一顆果實
                     }
+                } else if (this.state === 'SNATCH_WATCH') {
+                    // 目擊空中搶食：站在原地看戲（驚嘆號 → 被叼走那一刻換黑線），
+                    // 計時走完才回去散步。這個計時同時是保險絲——
+                    // 賊鳥意外消失（載圖全滅等）也不會呆站到永遠
+                    this.bobY *= 0.8;
+                    this.watchTimer -= deltaTime;
+                    if (this.watchTimer <= 0) this.state = 'WALKING';
                 }
 
                 // 邊界檢查：只能在 bounds 指定的 X 軸比例區間內活動。
@@ -1155,13 +1169,25 @@
             }
 
             // 有沒有空接一顆果實：看得見（sprite 兩段備援都失敗的不算，
-            // 果實被看不見的東西吃掉太獵奇）、不在餵食流程中、也不在誰的手上。
+            // 果實被看不見的東西吃掉太獵奇）、不在餵食流程中、也不在誰的手上、
+            // 也沒在目擊搶食（正忙著沮喪，沒心情吃）。
             // 被抓著的那隻等於暫時離場：果實丟給牠會沒人去吃，還占著上限，
             // 所以點空白處、遙控 feed、信使鳥空投三個入口都問這一句
             canTakeBerry() {
                 return this.el.style.display !== 'none'
                     && !this.isFeeding()
-                    && this.state !== 'HELD';
+                    && this.state !== 'HELD'
+                    && this.state !== 'SNATCH_WATCH';
+            }
+
+            // 成為空中搶食的目擊者：冒驚嘆號、站定看戲（寒暄中也放下手邊的事）。
+            // 之後的劇本由 Snatcher 推進——叼走那一刻把驚嘆號換成一團黑線
+            startSnatchWatch() {
+                this.breakGreet();
+                this.state = 'SNATCH_WATCH';
+                this.idleTimer = 0;
+                this.watchTimer = 12000; // 保險絲時長；正常流程在叼走那一刻改設為沮喪時長
+                if (!this.showEmote('exclaim', 900)) this.hideEmote();
             }
 
             // 發現果實：冒出驚嘆號，不論正在走路還是發呆都放下手邊的事。
@@ -1659,6 +1685,27 @@
             if (i >= 0) berries.splice(i, 1);
         }
 
+        // 生一顆果實（DOM + 掉落物理的初始狀態）並掛進場上清單。
+        // feeder = null 的果實不屬於任何餵食流程（空中搶食鎖定的就是這種）
+        function dropBerry(bx, dropBottom, feeder = null) {
+            const w = BERRY_ART[0].length * BERRY_SCALE;
+            const el = document.createElement('img');
+            el.className = 'berry';
+            el.src = getBerryURI();
+            el.style.width = `${w}px`;
+            el.style.left = `${Math.round(bx - w / 2)}px`;
+            const startBottom = Math.max(groundLevel, dropBottom);
+            el.style.bottom = `${Math.round(startBottom)}px`;
+            app.appendChild(el);
+            const berry = {
+                el, x: bx, bottom: startBottom, vy: 0,
+                state: startBottom > groundLevel ? 'FALLING' : 'LANDED',
+                feeder,
+            };
+            berries.push(berry);
+            return berry;
+        }
+
         function throwBerry(x, dropBottom) {
             if ((CONFIG.berry ?? 'on') === 'off') return false;
             // 有空的定義見 canTakeBerry()：一隻只追一顆，忙完才會發現下一顆
@@ -1677,23 +1724,7 @@
             const maxC = Math.max(minC, window.innerWidth * CONFIG.bounds.max - half);
             const bx = Math.min(Math.max(x, minC), maxC);
 
-            const w = BERRY_ART[0].length * BERRY_SCALE;
-            const el = document.createElement('img');
-            el.className = 'berry';
-            el.src = getBerryURI();
-            el.style.width = `${w}px`;
-            el.style.left = `${Math.round(bx - w / 2)}px`;
-            const startBottom = Math.max(groundLevel, dropBottom);
-            el.style.bottom = `${Math.round(startBottom)}px`;
-            app.appendChild(el);
-            const berry = {
-                el, x: bx, bottom: startBottom, vy: 0,
-                state: startBottom > groundLevel ? 'FALLING' : 'LANDED',
-                feeder,
-            };
-            berries.push(berry);
-
-            feeder.startSeekBerry(berry);
+            feeder.startSeekBerry(dropBerry(bx, dropBottom, feeder));
             return true;
         }
 
@@ -1724,8 +1755,205 @@
             // 拖曳的結尾也會補一發 click（放手處若不在本體上，就直接冒到這裡）。
             // 那不是「點空白處」，別掉果實
             if (swallowClick) { swallowClick = false; return; }
-            throwBerry(e.clientX, window.innerHeight - e.clientY);
+            const x = e.clientX;
+            const bottom = window.innerHeight - e.clientY;
+            // 先問空中搶食要不要接手這一顆（機率演出）；沒接手才走一般餵食
+            if (!maybeSnatch(x, bottom)) throwBerry(x, bottom);
         });
+
+        // ---------------------------------------------------------
+        // 空中搶食 (Berry Snatch)
+        // 左鍵點空白處丟果實時，snatchChance 的機率這顆不走一般餵食：
+        // 一隻飛行系從「果實那一側」的畫面外俯衝進場，沿 V 字軌跡在底部
+        // 叼走果實，再往對側斜上遠走高飛——越飛越小、越飛越淡（透視感），
+        // 彷彿真的飛遠了。與飛行系客串（flyby）互相獨立：客串正在飛，
+        // 搶食照樣可能發生，兩者可同時在場。
+        // 距離最近且有空的那隻是「目擊者」：驚嘆號盯著果實，被叼走的那一刻
+        // 換成一團黑線（到嘴的果實飛了），沮喪個幾秒才回去散步；
+        // 其他成員照常散步——世界不會為一顆果實停下來。
+        // 被鎖定的果實「無主」（不指派 feeder、不占誰的餵食流程），
+        // 目擊者則以 SNATCH_WATCH 占著一個「忙碌」名額，帳面跟一般餵食一致。
+        // 一次只演一場，演完才可能有下一場
+        // ---------------------------------------------------------
+        const SNATCH_LIFT = 24;       // 果實叼在腳下的高度（同信使鳥空投）
+        const SNATCH_FLEE_MS = 1800;  // 遠走高飛的時長
+        const SNATCH_GLOOM_MS = 2600; // 目擊者黑線沮喪的時長
+        // 透視係數：遠走時 scale = 1 / (1 + k·t)——等速遠離時投影大小就是
+        // 這個形狀（近快遠慢），t = 1 收在約 0.14 倍
+        const SNATCH_RECEDE = 6;
+
+        let activeSnatch = null; // 進行中的那一場（一次只演一場）
+
+        class Snatcher {
+            constructor(id, sizeScale, berry, victim) {
+                this.dead = false;
+                this.berry = berry;
+                this.victim = victim;
+                this.carrying = false; // 叼到果實了沒
+                this.phase = 'DIVE';   // DIVE 俯衝 → FLEE 遠走高飛
+                this.fleeT = 0;        // 遠走進度 0 → 1
+                this.scale = 1;
+                this.isShiny = Math.random() < (CONFIG.shinyChance ?? 0);
+                const shinyDir = this.isShiny ? 'shiny/' : '';
+
+                this.height = Math.round(CONFIG.baseSize * sizeScale);
+                // 俯衝比巡航快一截（flybySpeed 的 2.2 倍 ±10%）：搶食是突襲不是路過。
+                // 下限 4 px/幀：flybySpeed 被調到超慢時，俯衝也不能慢到看戲的先走人
+                this.speed = Math.max(4, (CONFIG.flybySpeed ?? 5) * 2.2 * (0.9 + Math.random() * 0.2));
+
+                // 從果實那一側的畫面外進場：橫向行進方向全程不變（V 字是垂直方向
+                // 的翻轉），叼到後往「對側」遠走——剩下的畫面寬度越長，遠走越有戲
+                this.direction = berry.x <= window.innerWidth / 2 ? 1 : -1;
+                this.margin = this.height * 1.5 + 40;
+                this.x = this.direction === 1 ? -this.margin : window.innerWidth + this.margin;
+                // 進場高度與客串同一個高度帶（視窗高 45% ~ 75%），世界觀一致
+                this.bottom = window.innerHeight * (0.45 + Math.random() * 0.3);
+
+                this.el = document.createElement('div');
+                this.el.className = 'cameo'; // 沿用客串樣式：pixelated、不可點擊
+                this.el.style.bottom = '0px';
+                this.el.style.zIndex = 20001; // 叼著果實的主角時刻：蓋過場上所有東西
+                this.img = document.createElement('img');
+                this.img.className = 'sprite';
+                this.img.style.height = `${this.height}px`;
+                // 原圖面向左：往右飛要鏡像
+                this.img.style.transform = this.direction === 1 ? 'scaleX(-1)' : '';
+                this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${shinyDir}${id}.gif`;
+                // 備援同客串：動圖 → 靜圖 → 兩段都失敗就取消這場搶食
+                this.img.onerror = () => {
+                    this.img.onerror = () => {
+                        this.img.onerror = null;
+                        this.dead = true;
+                    };
+                    this.img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shinyDir}${id}.png`;
+                };
+                this.el.appendChild(this.img);
+                app.appendChild(this.el);
+                this.render();
+            }
+
+            // 身體寬（載入前用高度概算，跟客串同一招）
+            width() {
+                return this.el.offsetWidth || this.height;
+            }
+
+            // 回傳是否還在演（false = 該移除了）
+            update(deltaTime) {
+                if (this.dead) { this.abort(); return false; }
+                const dt = deltaTime / (1000 / 60);
+                if (this.phase === 'DIVE') {
+                    // 逐幀朝果實「當下位置」修正的等速直線：果實還在半空
+                    // 也接得住（直接空中攔截），落了地就是俯衝到地面叼起
+                    const tx = this.berry.x - this.width() / 2;
+                    const ty = this.berry.bottom + SNATCH_LIFT;
+                    const dx = tx - this.x;
+                    const dy = ty - this.bottom;
+                    const dist = Math.hypot(dx, dy);
+                    const step = this.speed * dt;
+                    if (dist <= step) {
+                        this.x = tx;
+                        this.bottom = ty;
+                        this.grabBerry();
+                    } else {
+                        this.x += (dx / dist) * step;
+                        this.bottom += (dy / dist) * step;
+                    }
+                } else {
+                    // FLEE：位移走 1 - 1/(1+k·t) 的減速曲線、大小就是它的導影
+                    // 1/(1+k·t)——兩者出自同一個透視模型，縮小與減速才會同步
+                    this.fleeT = Math.min(1, this.fleeT + deltaTime / SNATCH_FLEE_MS);
+                    const t = this.fleeT;
+                    const recede = 1 / (1 + SNATCH_RECEDE * t);
+                    const d = (1 - recede) / (1 - 1 / (1 + SNATCH_RECEDE)); // 歸一化位移 0 → 1
+                    this.x = this.fleeFromX + this.direction * window.innerWidth * 0.42 * d;
+                    this.bottom = this.fleeFromBottom + window.innerHeight * 0.55 * d;
+                    this.scale = recede;
+                    // 前段幾乎不淡（看得清楚戰利品），尾段一口氣收乾淨
+                    this.el.style.opacity = (1 - t * t).toFixed(3);
+                    if (t >= 1) return false; // 演完（果實已在手上，跟著一起移除）
+                }
+                this.render();
+                return true;
+            }
+
+            // V 字底部：叼走果實、開始遠走高飛
+            grabBerry() {
+                this.phase = 'FLEE';
+                this.fleeFromX = this.x;
+                this.fleeFromBottom = this.bottom;
+                // 果實從場上除名，改掛到腳下一起飛——是同一個元素搬家，
+                // 之後整體的 scale 與淡出會帶著它一起變小變淡
+                const i = berries.indexOf(this.berry);
+                if (i >= 0) berries.splice(i, 1);
+                this.berry.el.style.left = '50%';
+                this.berry.el.style.transform = 'translateX(-50%)';
+                this.berry.el.style.bottom = `${-SNATCH_LIFT}px`;
+                this.el.appendChild(this.berry.el);
+                this.carrying = true;
+                // 目擊者親眼看著到嘴的果實飛了：驚嘆號換成一團黑線，
+                // 沮喪計時走完自己會回去散步。中途被抓走/送走的就不演了
+                if (this.victim?.state === 'SNATCH_WATCH') {
+                    this.victim.watchTimer = SNATCH_GLOOM_MS;
+                    if (!this.victim.showEmote('scribble', SNATCH_GLOOM_MS)) {
+                        this.victim.hideEmote();
+                    }
+                }
+            }
+
+            // 意外收場（載圖全滅）：無主果實還在場上就收掉（沒有 feeder，
+            // 不收就永遠躺著占位），目擊者也立刻解脫，別對著空氣沮喪
+            abort() {
+                if (!this.carrying) removeBerry(this.berry);
+                if (this.victim?.state === 'SNATCH_WATCH') {
+                    this.victim.state = 'WALKING';
+                    this.victim.hideEmote();
+                }
+            }
+
+            render() {
+                const s = this.phase === 'FLEE' ? ` scale(${this.scale.toFixed(3)})` : '';
+                this.el.style.transform = `translate3d(${this.x}px, ${-Math.round(this.bottom)}px, 0)${s}`;
+            }
+        }
+
+        // 點空白處丟果實的「搶食擲骰」：接手就回 true（一般餵食讓路）。
+        // 條件全過才開演：果實開著、沒有進行中的場次、飛行池載到了、
+        // 機率擲中、且至少一隻有空——沒人有空時一般餵食也丟不出去，
+        // 搶食不例外（沒有目擊者的搶劫少了整齣戲的下半場）
+        function maybeSnatch(x, dropBottom) {
+            if ((CONFIG.berry ?? 'on') === 'off') return false;
+            if (activeSnatch) return false;
+            if (!window.POKE_FLYING?.length) return false;
+            if (Math.random() >= (CONFIG.snatchChance ?? 0)) return false;
+            const free = pokemons.filter(p => p.canTakeBerry());
+            if (!free.length) return false;
+
+            // 果實落在點擊處（夾在畫面內就好——賊鳥飛的，哪裡都搆得到）
+            const w = BERRY_ART[0].length * BERRY_SCALE;
+            const bx = Math.min(Math.max(x, w / 2), window.innerWidth - w / 2);
+            const berry = dropBerry(bx, dropBottom);
+
+            // 目擊者 = 有空的裡面離果實最近的那隻（同一般餵食的挑法）
+            const victim = free.reduce((a, b) =>
+                Math.abs(a.centerX() - bx) <= Math.abs(b.centerX() - bx) ? a : b);
+            victim.startSnatchWatch();
+
+            // 賊鳥從飛行池抽。體型同步查本地身高表（查不到當中型）：
+            // 點擊的當下就要鎖住場面，不等 getSizeScale 的網路備援
+            const id = window.POKE_FLYING[randomInt(0, window.POKE_FLYING.length - 1)];
+            const dm = window.POKE_HEIGHTS?.[id];
+            const scale = dm === undefined ? fallbackSizeScale() : scaleFromDeciMeters(dm);
+            activeSnatch = new Snatcher(id, scale, berry, victim);
+            return true;
+        }
+
+        // 進行中的搶食每一幀推進（gameLoop 呼叫），演完（或意外死亡）就清場
+        function updateSnatch(deltaTime) {
+            if (activeSnatch && !activeSnatch.update(deltaTime)) {
+                activeSnatch.el.remove();
+                activeSnatch = null;
+            }
+        }
 
         // ---------------------------------------------------------
         // 滑鼠拖曳 (Drag)
@@ -1994,6 +2222,7 @@
             pokemons.forEach(p => p.update(deltaTime, pokemons));
 
             updateBerries(deltaTime); // 丟下來的果實們（有的話）繼續掉
+            updateSnatch(deltaTime);  // 空中搶食的那一場（有的話）繼續演
 
             // 客串成員：倒著掃，飛完行程（或載圖全滅）就移除
             for (let i = cameos.length - 1; i >= 0; i--) {

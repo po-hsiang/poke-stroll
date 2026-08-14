@@ -163,7 +163,7 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 
 // 跑主程式，並把要測的東西掛到 globalThis
 vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries };',
+    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -1745,7 +1745,167 @@ group('19. 色違星星特效定時重播');
     }
 
     // =====================================================
-    group('27. 嵌入透明性守則（color-scheme）');
+    group('27. 空中搶食');
+    {
+        const savedIdle = CONFIG.idleChance;
+        const savedGreetS = CONFIG.greetChance;
+        const savedSnatch = CONFIG.snatchChance;
+        const savedShinyS = CONFIG.shinyChance;
+        CONFIG.idleChance = 0;   // 隨機發呆/寒暄會把狀態斷言弄翻，整組關掉
+        CONFIG.greetChance = 0;
+        CONFIG.shinyChance = 0;
+
+        // 參數登記 + config 預設
+        check('snatchChance 已登記（float 0 ~ 1）',
+            T.QUERY_PARAMS?.snatchChance?.type === 'float'
+            && T.QUERY_PARAMS.snatchChance.min === 0 && T.QUERY_PARAMS.snatchChance.max === 1);
+        check('config.js 預設 snatchChance = 0.15', CONFIG.snatchChance === 0.15);
+
+        // 場面：一近一遠
+        T.getBerries().slice().forEach(b => T.removeBerry(b));
+        T.pokemons.length = 0;
+        const witness = newPokemon(25, { scale: 0.6 });
+        const other = newPokemon(143, { scale: 1 });
+        witness.x = 900; other.x = 200;
+        T.pokemons.push(witness, other);
+
+        // 飛行池沒載到 → 必中的骰也不搶，照常餵食（此刻主 sandbox 沒載名單檔）
+        CONFIG.snatchChance = 1;
+        clickAt(1000, 60);
+        check('飛行池沒載到 → 不搶、照常餵食', T.getSnatch() === null
+            && T.getBerries()[0]?.feeder === witness && witness.state === 'SEEK_BERRY');
+        T.getBerries().slice().forEach(b => T.removeBerry(b));
+        witness.targetBerry = null; witness.state = 'WALKING';
+
+        // snatchChance=0 → 永不搶
+        sandbox.window.POKE_FLYING = [18]; // 比雕：單一元素池，抽誰是確定的
+        CONFIG.snatchChance = 0;
+        clickAt(1000, 60);
+        check('snatchChance=0 → 照常餵食', T.getSnatch() === null
+            && T.getBerries()[0]?.feeder === witness);
+        T.getBerries().slice().forEach(b => T.removeBerry(b));
+        witness.targetBerry = null; witness.state = 'WALKING';
+
+        // 必中：點右半邊 → 賊鳥從右側畫面外、飛行高度帶進場俯衝
+        CONFIG.snatchChance = 1;
+        clickAt(1300, 60); // bottom = 140；離 witness(中心 960) 較近
+        const s = T.getSnatch();
+        const sb = T.getBerries()[0];
+        check('觸發搶食：賊鳥進場開始俯衝', !!s && s.phase === 'DIVE');
+        check('果實照樣生成但「無主」（不指派 feeder）', !!sb && sb.feeder === null);
+        check('從果實那一側的畫面外進場（右半邊 → 右側、面向左）',
+            s.x > 1920 && s.direction === -1, `x=${s.x}`);
+        check('進場高度在客串的飛行高度帶（視窗高 45%~75%）',
+            s.bottom >= 90 && s.bottom <= 150, `bottom=${s.bottom}`);
+        check('俯衝比巡航快（flybySpeed × 2.2 ±10%）',
+            s.speed >= 5 * 2.2 * 0.9 - 1e-9 && s.speed <= 5 * 2.2 * 1.1 + 1e-9,
+            `speed=${s.speed}`);
+        check('主角時刻蓋過全場（z-index 20001、沿用 cameo 樣式不可點）',
+            s.el.style.zIndex === 20001 && s.el.className === 'cameo');
+
+        // 目擊者：最近且有空的那隻站定 + 驚嘆號；其他成員照常散步
+        check('最近有空的那隻成為目擊者：站定 + 驚嘆號',
+            witness.state === 'SNATCH_WATCH' && witness.bubbleName === 'exclaim'
+            && witness.bubble.style.display === 'block');
+        check('其他成員照常散步（世界不為一顆果實停下來）', other.state === 'WALKING');
+        const wx = witness.x;
+        for (let i = 0; i < 20; i++) witness.update(16, T.pokemons);
+        check('目擊中站在原地看戲', witness.x === wx && witness.state === 'SNATCH_WATCH');
+        check('目擊中不接新果實（canTakeBerry = false）', witness.canTakeBerry() === false);
+
+        // 一次只演一場：進行中再丟 → 走一般餵食（指派給剩下有空的那隻）
+        clickAt(250, 60);
+        check('搶食進行中再丟 → 一般餵食、不出第二隻賊鳥',
+            T.getSnatch() === s && T.getBerries().length === 2
+            && T.getBerries()[1].feeder === other);
+        T.removeBerry(T.getBerries()[1]);
+        other.targetBerry = null; other.state = 'WALKING';
+
+        // 俯衝到 V 字底部叼走：homing 每一幀朝果實「當下」位置修正，
+        // 果實同時在掉；先落地就俯衝到地面叼起
+        let guard = 0;
+        while (s.phase === 'DIVE' && guard++ < 3000) { T.updateBerries(16); T.updateSnatch(16); }
+        check('俯衝到位 → 叼走果實', s.phase === 'FLEE' && s.carrying === true, `guard=${guard}`);
+        check('叼取點 = 果實正上方、腳下叼取高度',
+            s.x === sb.x - s.width() / 2 && s.bottom === sb.bottom + 24,
+            `x=${s.x} bottom=${s.bottom}`);
+        check('果實從場上除名、掛到賊鳥腳下一起飛',
+            T.getBerries().length === 0 && s.el.children.includes(sb.el)
+            && sb.el.style.bottom === '-24px');
+        check('叼走那一刻目擊者換成一團黑線', witness.bubbleName === 'scribble'
+            && witness.bubble.style.display === 'block');
+
+        // 遠走高飛：往對側斜上、越飛越小、尾段變淡，演完自動清場
+        const x0 = s.x, b0 = s.bottom;
+        T.updateSnatch(16);
+        const scaleOf = () => Number((s.el.style.transform.match(/scale\(([\d.]+)\)/) || [])[1]);
+        check('遠走方向 = 進場的橫向（往左）且爬升', s.x < x0 && s.bottom > b0,
+            `x ${x0}→${s.x}, bottom ${b0}→${s.bottom}`);
+        const s1 = scaleOf();
+        check('透視縮小（近快遠慢的 1/(1+kt)）', s1 > 0 && s1 < 1, `scale=${s1}`);
+        for (let i = 0; i < 30; i++) T.updateSnatch(16);
+        check('持續變小、也開始變淡', scaleOf() < s1 && Number(s.el.style.opacity) < 1,
+            `scale=${scaleOf()} opacity=${s.el.style.opacity}`);
+        guard = 0;
+        while (T.getSnatch() && guard++ < 300) T.updateSnatch(16);
+        check('演完自動清場（1.8 秒）', T.getSnatch() === null, `guard=${guard}`);
+
+        // 目擊者沮喪 2.6 秒才回去散步；黑線對話框到時自動收起
+        guard = 0;
+        while (witness.state === 'SNATCH_WATCH' && guard++ < 300) witness.update(16, T.pokemons);
+        check('沮喪計時走完 → 回去散步', witness.state === 'WALKING', `guard=${guard}`);
+        advance(2601);
+        check('黑線對話框自動收起', witness.bubble.style.display === 'none');
+
+        // 載圖全滅 → 這場取消：無主果實收掉、目擊者立刻解脫
+        witness.x = 900; other.x = 200;
+        clickAt(1000, 60);
+        const s2 = T.getSnatch();
+        check('（前置）第二場開演', !!s2 && witness.state === 'SNATCH_WATCH');
+        s2.img.onerror();
+        check('動圖失敗 → 退靜態圖（同一隻賊鳥）', s2.img.src.endsWith('/18.png'));
+        s2.img.onerror();
+        T.updateSnatch(16);
+        check('靜圖也失敗 → 這場取消：清場 + 無主果實收掉',
+            T.getSnatch() === null && T.getBerries().length === 0);
+        check('目擊者立刻解脫，不對著空氣沮喪',
+            witness.state === 'WALKING' && witness.bubble.style.display === 'none');
+
+        // 果實在左半邊 → 從左側進場（進場側跟著果實走）
+        clickAt(300, 60); // 離 other(中心 260) 較近
+        const s3 = T.getSnatch();
+        check('果實在左半邊 → 從左側畫面外進場、鏡像面向右',
+            !!s3 && s3.direction === 1 && s3.x < 0
+            && s3.img.style.transform === 'scaleX(-1)', `x=${s3?.x}`);
+        check('目擊者是離果實最近的有空成員', other.state === 'SNATCH_WATCH'
+            && witness.state === 'WALKING');
+        s3.img.onerror(); s3.img.onerror(); // 快速收掉這場，別讓它拖到後面的斷言
+        T.updateSnatch(16);
+        check('取消收場也放目擊者自由', other.state === 'WALKING');
+
+        // 大家都在忙 → 搶食也不演（一般餵食丟不出去的情境，搶食不例外）
+        witness.state = 'EATING'; other.state = 'EATING';
+        clickAt(1000, 60);
+        check('大家都在忙 → 不演、也不掉果實',
+            T.getSnatch() === null && T.getBerries().length === 0);
+        witness.state = 'WALKING'; other.state = 'WALKING';
+
+        // berry='off' → 整套（含搶食）關閉
+        CONFIG.berry = 'off';
+        clickAt(1000, 60);
+        check("berry='off' → 不搶也不掉果實",
+            T.getSnatch() === null && T.getBerries().length === 0);
+        CONFIG.berry = 'on';
+
+        delete sandbox.window.POKE_FLYING;
+        CONFIG.snatchChance = savedSnatch;
+        CONFIG.shinyChance = savedShinyS;
+        CONFIG.greetChance = savedGreetS;
+        CONFIG.idleChance = savedIdle;
+    }
+
+    // =====================================================
+    group('28. 嵌入透明性守則（color-scheme）');
     // iframe 要維持透明，內外文件的 color-scheme 必須一致。
     // 這裡守住兩條血淚教訓：
     //   0.20.0 widget 沒宣告 → 被宣告 dark 的頁面（params.html）嵌 → 墊白底
