@@ -1070,6 +1070,7 @@
                 this.struggleAngle = 0; // 掙扎中的傾角（度）
                 this.grabDX = 0; // 抓起來那一刻，游標與身體左緣／地面的相對位置
                 this.grabDY = 0;
+                this.resnatchOnLand = false; // 追果實中被抓又放開：落地那一刻重擲賊鳥的骰（見 release）
                 // 左鍵按下去的那一刻就抓起來——沒有長按門檻，游標不會先跑掉一段
                 this.el.addEventListener('pointerdown', e => beginDrag(this, e));
                 // 右鍵：擋掉系統選單（「另存圖片」），改演戳戳互動。
@@ -1112,7 +1113,19 @@
                     const dt = deltaTime / (1000 / 60);
                     this.jumpY += this.jumpV * dt;
                     this.jumpV -= 0.4 * dt; // 重力
-                    if (this.jumpY <= 0) { this.jumpY = 0; this.jumpV = 0; }
+                    if (this.jumpY <= 0) {
+                        this.jumpY = 0;
+                        this.jumpV = 0;
+                        // 追果實中被抓又放開的：落地這一刻才重擲賊鳥的骰——
+                        // 距離以「腳踏實地」的位置為準，半空中的都不算數（見 release）
+                        if (this.resnatchOnLand) {
+                            this.resnatchOnLand = false;
+                            if (this.state === 'SEEK_BERRY' && this.targetBerry
+                                && berries.includes(this.targetBerry)) {
+                                maybeMarkSnatch(this.targetBerry);
+                            }
+                        }
+                    }
                 }
 
                 if (this.state === 'HELD') {
@@ -1294,15 +1307,18 @@
                 this.showEmote('heart', 1600);
             }
 
-            // 被抓起來。整隻等於暫時離場：寒暄放對方自由、追到一半的果實收掉
-            // （不留沒人吃的孤兒果實占著上限），對話框也收起來
+            // 被抓起來。整隻等於暫時離場：寒暄放對方自由、對話框收起來。
+            // 追到一半（SEEK_BERRY）的果實「留在原地不收」——主權（feeder /
+            // targetBerry）也保留，別隻不會接手，放手後牠會回去續追（見 release）。
+            // 已經吃進嘴裡的（EATING）照舊收掉：咬了幾口的果實留在地上太獵奇
             grab(pointer) {
                 if (this.state === 'HELD') return;
                 this.breakGreet();
-                if (this.targetBerry) {
+                if (this.targetBerry && this.state !== 'SEEK_BERRY') {
                     removeBerry(this.targetBerry);
                     this.targetBerry = null;
                 }
+                this.resnatchOnLand = false; // 半空中再被抓走：上一次放手的掛帳作廢
                 this.state = 'HELD';
                 this.idleTimer = 0;
                 this.hideEmote();
@@ -1345,16 +1361,43 @@
                 this.struggleAngle = Math.sin(this.walkPhase * 0.5) * STRUGGLE_TILT;
             }
 
-            // 放手：把手上的高度交還給跳躍系統，用同一套重力自由落體回地面
+            // 放手：把手上的高度交還給跳躍系統，用同一套重力自由落體回地面。
+            // 追到一半被抓的這時接回餵食流程，三種收場：
+            //   1. 賊鳥正朝自己的果實俯衝（被抓期間出的手）→ 回到地面
+            //      正好撞見，照舊開演目擊戲（驚嘆號 → 被叼走換黑線）；
+            //   2. 果實還在 → 直接續追（不再冒驚嘆號——牠可從來沒忘記），
+            //      落地那一刻依「新的距離」重擲一次賊鳥的骰（掛帳給 update，
+            //      被抓去遠方再放開，遠的距離就要面對遠的風險）；
+            //   3. 果實沒了（被叼走／被 leave 收走）→ 空手回去散步
             release() {
                 if (this.state !== 'HELD') return;
                 this.jumpY = this.holdY;
                 this.jumpV = 0;
                 this.holdY = 0;
                 this.struggleAngle = 0;
-                this.state = 'WALKING';
                 this.el.className = 'pokemon-container';
                 this.img.style.transformOrigin = ''; // 交還給 CSS 的 center bottom
+                if (activeSnatch?.phase === 'DIVE' && berries.includes(activeSnatch.berry)
+                    && (activeSnatch.victim === this
+                        || (this.targetBerry && activeSnatch.berry === this.targetBerry))) {
+                    // 目擊戲補開演：victim === this 是「看戲看到一半被抓又放開」，
+                    // berry 相符是「被抓期間賊鳥才出手」——兩種都算撞見。
+                    // 保險絲同樣依剩餘航程重算，演得再慢也不會提前走人
+                    const berry = activeSnatch.berry;
+                    this.targetBerry = null;
+                    activeSnatch.victim = this;
+                    this.startSnatchWatch();
+                    const remain = Math.hypot(
+                        activeSnatch.x - berry.x, activeSnatch.bottom - berry.bottom);
+                    this.watchTimer = (remain / activeSnatch.speed) * (1000 / 60) + 8000;
+                } else if (this.targetBerry && berries.includes(this.targetBerry)) {
+                    this.state = 'SEEK_BERRY';
+                    if (this.jumpY > 0) this.resnatchOnLand = true;
+                    else maybeMarkSnatch(this.targetBerry); // 貼地放開 = 這裡就是落點
+                } else {
+                    this.targetBerry = null;
+                    this.state = 'WALKING';
+                }
             }
 
             // 本體中心的 X 座標（this.x 是左緣）：算「誰離果實最近」用
@@ -1418,7 +1461,9 @@
                     this.bobY = Math.abs(Math.sin(this.walkPhase)) * this.hopHeight;
                 } else {
                     this.bobY *= 0.8; // 站定等吃
-                    if (berry.state === 'LANDED') {
+                    // 果實落了地、自己也得腳踏實地才開動：被放開後的自由落體
+                    // 若正好飄過果實上空，懸在半空啃果實太獵奇
+                    if (berry.state === 'LANDED' && this.jumpY <= 0) {
                         this.direction = dx >= 0 ? 1 : -1; // 面向果實開動
                         this.state = 'EATING';
                         this.eatTimer = 900;
@@ -1875,7 +1920,7 @@
         // 不會發現其他果實。丟新果實要有隻有空的，這個配對制
         // 同時就是上限——場上同時最多「常駐數量」顆果實
         // ---------------------------------------------------------
-        let berries = [];    // 場上的果實們 [{ el, x, bottom, vy, state, feeder }]
+        let berries = [];    // 場上的果實們 [{ el, x, bottom, vy, state, feeder, snatchable }]
         let groundLevel = 0; // 果實落點 = 地面抬高量（主題地面），init() 時寫入
 
         function feedingBusy() {
@@ -1912,6 +1957,7 @@
                 el, shadow, x: bx, bottom: startBottom, vy: 0,
                 state: startBottom > groundLevel ? 'FALLING' : 'LANDED',
                 feeder,
+                snatchable: false, // 點擊丟的 throwBerry 才會升旗（搶食限定入口）
             };
             updateBerryShadow(berry); // 生成的第一幀就要是正確的大小深淺
             berries.push(berry);
@@ -1945,8 +1991,11 @@
             const bx = Math.min(Math.max(x, minC), maxC);
 
             const berry = dropBerry(bx, dropBottom, feeder);
+            // 點擊丟的才可能被搶食盯上——旗子留在果實身上，因為擲骰不只
+            // 這一次：追到一半被抓走再放開，落地時會依新的距離重擲（見 release）
+            berry.snatchable = snatchable;
             feeder.startSeekBerry(berry);
-            if (snatchable) maybeMarkSnatch(berry); // 點擊丟的才可能被搶食盯上
+            maybeMarkSnatch(berry);
             return true;
         }
 
@@ -2177,10 +2226,12 @@
             }
         }
 
-        // 點擊丟果實「成功指派後」的搶食擲骰（throwBerry 只在點擊入口帶旗）：
-        // 距離超過門檻才擲，擲中就埋伏筆——這裡不動任何畫面，
-        // 被盯上的那隻照常起跑，玩家看不出異狀
+        // 搶食擲骰：點擊丟果實「成功指派後」擲一次；追到一半被抓走再放開，
+        // 落地時依新的距離再擲（兩個入口都來這裡，snatchable 旗把遙控
+        // feed 與信使鳥空投擋在外面）。距離超過門檻才擲，擲中就埋伏筆——
+        // 這裡不動任何畫面，被盯上的那隻照常起跑，玩家看不出異狀
         function maybeMarkSnatch(berry) {
+            if (!berry.snatchable) return;             // 點擊丟的才可能被盯上
             if (pendingSnatch || activeSnatch) return; // 一次只演一場
             if (!window.POKE_FLYING?.length) return;   // 名單檔沒載到就沒有賊鳥
             const dist = Math.abs(berry.feeder.centerX() - berry.x);
@@ -2191,22 +2242,31 @@
         }
 
         // 伏筆兌現：賊鳥進場、被盯上的那隻再冒一次驚嘆號原地停步，
-        // 果實同時變無主（沒有 feeder 就不會被任何隻接手，賊鳥的目標跑不掉）
+        // 果實同時變無主（沒有 feeder 就不會被任何隻接手，賊鳥的目標跑不掉）。
+        // 苦主被玩家抓在手上的話不演目擊戲——牠正忙著掙扎，沒空驚嘆
+        // 也沒空沮喪（victim 留空缺）；targetBerry 留著，放手時若還來得及
+        // 撞見俯衝，release() 會補開演
         function beginSnatch(berry, seeker) {
             berry.feeder = null;
-            seeker.targetBerry = null;
-            seeker.startSnatchWatch();
+            const held = seeker.state === 'HELD';
+            if (!held) {
+                seeker.targetBerry = null;
+                seeker.startSnatchWatch();
+            }
             // 賊鳥從飛行池抽。體型同步查本地身高表（查不到當中型）：
             // 開演的當下就要鎖住場面，不等 getSizeScale 的網路備援
             const id = window.POKE_FLYING[randomInt(0, window.POKE_FLYING.length - 1)];
             const dm = window.POKE_HEIGHTS?.[id];
             const scale = dm === undefined ? fallbackSizeScale() : scaleFromDeciMeters(dm);
-            activeSnatch = new Snatcher(id, scale, berry, seeker);
+            activeSnatch = new Snatcher(id, scale, berry, held ? null : seeker);
             // 目擊者的保險絲跟著實際航程重算：俯衝速度現在開放外部調整
             // （snatchDiveRate），演得再慢目擊者也不會提前走人；
             // 叼走那一刻會再改設為沮喪時長
-            const diveDist = Math.hypot(activeSnatch.x - berry.x, activeSnatch.bottom - berry.bottom);
-            seeker.watchTimer = (diveDist / activeSnatch.speed) * (1000 / 60) + 8000;
+            if (!held) {
+                const diveDist = Math.hypot(
+                    activeSnatch.x - berry.x, activeSnatch.bottom - berry.bottom);
+                seeker.watchTimer = (diveDist / activeSnatch.speed) * (1000 / 60) + 8000;
+            }
         }
 
         // 每一幀推進（gameLoop 呼叫）：伏筆期盯著「走到一半沒」，
@@ -2215,10 +2275,15 @@
             if (pendingSnatch) {
                 const { berry, seeker, triggerDist } = pendingSnatch;
                 if (!berries.includes(berry) || seeker.targetBerry !== berry
-                    || seeker.state !== 'SEEK_BERRY') {
-                    // 果實沒了（追到一半被滑鼠抓走、被 leave 送走）或流程斷了
-                    // （已經站到嘴邊開吃）：伏筆作廢，這齣不演了
+                    || (seeker.state !== 'SEEK_BERRY' && seeker.state !== 'HELD')) {
+                    // 果實沒了（被 leave 送走）或流程斷了（已經站到嘴邊開吃）：
+                    // 伏筆作廢，這齣不演了
                     pendingSnatch = null;
+                } else if (seeker.state === 'HELD') {
+                    // 追果實的那隻被玩家抓在半空：果實沒人護著，賊鳥豈有
+                    // 等牠走完半程的道理——伏筆立刻兌現（目擊戲的取捨見 beginSnatch）
+                    pendingSnatch = null;
+                    beginSnatch(berry, seeker);
                 } else if (Math.abs(seeker.centerX() - berry.x) <= triggerDist) {
                     pendingSnatch = null;
                     beginSnatch(berry, seeker);
@@ -2240,7 +2305,10 @@
         // 那段距離會被凍進偏移量裡，之後整段拖曳都差一截（0.30.0 的教訓）。
         // 按下即抓，偏移量就是你按在身上的那一點，怎麼甩都跟手。
         // 抓在手上的那隻等於暫時離場：不散步、不冒心情對話框、不寒暄、
-        // 戳不動，也不會被指派果實（canTakeBerry 一條規則管住三個入口）。
+        // 戳不動，也不會被指派「新的」果實（canTakeBerry 一條規則管住三個入口）。
+        // 但追到一半的那顆不沒收：果實留在原地等牠，放手落地就回去續追——
+        // 代價是落地時依新的距離重擲賊鳥的骰，抓在手上的期間賊鳥也會
+        // 趁虛而入（細節見 release / beginSnatch / maybeMarkSnatch）。
         // 游標拉出活動範圍時牠貼著邊界繼續掙扎，不會被拖出場外；
         // 放開手就從當下高度自由落體回地面
         // ---------------------------------------------------------

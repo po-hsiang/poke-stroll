@@ -1709,14 +1709,33 @@ group('19. 色違星星特效定時重播');
             return bubbled === false;
         })());
 
-        // 追果實追到一半被抓走：果實一併收掉，不留沒人吃的孤兒占著上限
+        // 追果實追到一半被抓走：果實留在原地、主權保留，放手落地就回去續追
+        // （snatchChance 先歸零：這裡只驗續追，賊鳥趁虛而入的戲在 27 組）
+        const savedSnatchDrag = CONFIG.snatchChance;
+        CONFIG.snatchChance = 0;
         d.state = 'WALKING'; d.x = 500; d.bobY = 0; d.jumpY = 0; d.jumpV = 0;
         check('（前置）果實丟得出去', T.throwBerry(500, 100) === true
             && d.state === 'SEEK_BERRY' && T.getBerries().length === 1);
-        press(d, 500, 150);
-        check('追果實中被抓走 → 果實一併收掉',
-            d.state === 'HELD' && d.targetBerry === null && T.getBerries().length === 0);
+        const kept = T.getBerries()[0];
+        press(d, 560, 150);
+        check('追果實中被抓走 → 果實留在原地、主權不放',
+            d.state === 'HELD' && d.targetBerry === kept
+            && T.getBerries().length === 1 && kept.feeder === d);
+        move(660, 150);
+        check('拖著走的期間果實也還在', T.getBerries().length === 1);
         up();
+        check('放手 → 直接回去續追（不再冒驚嘆號，牠可沒忘記）',
+            d.state === 'SEEK_BERRY' && d.targetBerry === kept
+            && d.bubble.style.display === 'none');
+        let seekGuard = 0;
+        while (d.state === 'SEEK_BERRY' && seekGuard++ < 600) {
+            T.updateBerries(16);
+            d.update(16, T.pokemons);
+        }
+        check('續追到口邊照常開吃', d.state === 'EATING', `guard=${seekGuard}`);
+        T.getBerries().slice().forEach(x => T.removeBerry(x));
+        d.targetBerry = null; d.state = 'WALKING';
+        CONFIG.snatchChance = savedSnatchDrag;
 
         // 寒暄中被抓走：對方也放自由，不會對著空氣講完
         const ga2 = newPokemon(25, { scale: 0.6 });
@@ -1972,15 +1991,76 @@ group('19. 色違星星特效定時重播');
         check('黑線對話框自動收起', witness.bubble.style.display === 'none');
         resetField();
 
-        // 伏筆期的取消：追到一半被滑鼠抓走（果實一併收掉）→ 這齣不演
+        // 伏筆期被抓走：果實沒人護著，賊鳥立刻趁虛而入——
+        // 苦主正忙著掙扎，不演目擊戲（無驚嘆、victim 空缺、果實變無主）
         clickAt(1400, 60);
         check('（前置）伏筆已埋', T.getPending() !== null);
-        witness.grab({ x: witness.x + 10, bottom: 60 });
+        const heldBerry = T.getBerries()[0];
+        witness.bobY = 0; witness.jumpY = 0; witness.jumpV = 0;
+        witness.grab({ x: witness.x + 10, bottom: 0 });
         T.updateSnatch(16);
-        check('追到一半被抓走 → 伏筆作廢、賊鳥不出來',
-            T.getPending() === null && T.getSnatch() === null && T.getBerries().length === 0);
+        const s5 = T.getSnatch();
+        check('追到一半被抓走 → 賊鳥立刻出手（不等走完半程）',
+            T.getPending() === null && !!s5 && s5.phase === 'DIVE');
+        check('被抓著的苦主不演目擊戲（無驚嘆、victim 空缺、主權留在手上）',
+            witness.state === 'HELD' && witness.bubble.style.display === 'none'
+            && s5.victim === null && witness.targetBerry === heldBerry
+            && heldBerry.feeder === null);
+
+        // 俯衝途中放手：落回地面撞見賊鳥 → 照舊補開目擊戲
         witness.release();
+        check('俯衝途中放手 → 撞見賊鳥、照舊開演目擊戲（保險絲依剩餘航程重算）',
+            witness.state === 'SNATCH_WATCH' && witness.targetBerry === null
+            && witness.bubbleName === 'exclaim' && s5.victim === witness
+            && witness.watchTimer > 8000);
+        guard = 0;
+        while (s5.phase === 'DIVE' && guard++ < 3000) { T.updateBerries(16); T.updateSnatch(16); }
+        check('叼走那一刻照舊換黑線', s5.carrying === true
+            && witness.bubbleName === 'scribble', `guard=${guard}`);
+        guard = 0;
+        while (T.getSnatch() && guard++ < 600) T.updateSnatch(16);
+        witness.state = 'WALKING'; witness.hideEmote();
         resetField();
+
+        // 被抓著直到賊鳥得手：全程無感（不驚嘆不黑線），放手後空手回去散步
+        clickAt(1400, 60);
+        check('（前置）第二場伏筆已埋', T.getPending() !== null);
+        witness.bobY = 0; witness.jumpY = 0; witness.jumpV = 0;
+        witness.grab({ x: witness.x + 10, bottom: 0 });
+        T.updateSnatch(16);
+        const s6 = T.getSnatch();
+        guard = 0;
+        while (s6.phase === 'DIVE' && guard++ < 3000) { T.updateBerries(16); T.updateSnatch(16); }
+        check('抓著的期間被叼走 → 苦主全程無感（不驚嘆也不黑線）',
+            s6.carrying === true && witness.state === 'HELD'
+            && witness.bubble.style.display === 'none', `guard=${guard}`);
+        witness.release();
+        check('放手時果實已經沒了 → 空手回去散步',
+            witness.state === 'WALKING' && witness.targetBerry === null);
+        guard = 0;
+        while (T.getSnatch() && guard++ < 600) T.updateSnatch(16);
+        resetField();
+
+        // 規則二：門檻內起跑（絕對安全），被抓去遠方放開——
+        // 半空中先不擲骰，落地那一刻依「新的距離」重擲（機率 1 必中）
+        clickAt(1000, 60); // witness 中心 960 → 距離 40 ≤ 150，丟的當下安全
+        check('（前置）門檻內起跑、沒有伏筆',
+            witness.state === 'SEEK_BERRY' && T.getPending() === null);
+        witness.bobY = 0; witness.jumpY = 0; witness.jumpV = 0;
+        witness.grab({ x: witness.centerX(), bottom: 0 });
+        witness.dragTo({ x: 200, bottom: 60 }); // 抓去左遠方、離地 60
+        witness.release();
+        check('放手在半空 → 續追但先不擲骰（距離以落地位置為準）',
+            witness.state === 'SEEK_BERRY' && witness.resnatchOnLand === true
+            && witness.jumpY > 0 && T.getPending() === null);
+        guard = 0;
+        while (witness.jumpY > 0 && guard++ < 600) witness.update(16, T.pokemons);
+        check('落地重算：距離拉遠了 → 重新埋下伏筆',
+            T.getPending() !== null && T.getPending().seeker === witness
+            && witness.resnatchOnLand === false, `guard=${guard}`);
+        resetField();
+        T.updateSnatch(16); // 果實被 resetField 收走 → 這一幀把伏筆沖掉
+        check('（清場）伏筆已沖掉', T.getPending() === null);
 
         // 伏筆期的取消：已經站到嘴邊開吃（門檻 0 + 丟在腳邊的極端組合，
         // 6px 的路程永遠走不到「剩 3px」——seekBerry 在 6px 內就站定了）
