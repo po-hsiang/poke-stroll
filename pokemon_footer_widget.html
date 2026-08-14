@@ -874,8 +874,15 @@
                     const dur = 0.7 + Math.random() * 0.5;
                     d.style.setProperty('--dur', `${dur.toFixed(2)}s`);
                     d.style.setProperty('--delay', `-${(Math.random() * dur).toFixed(2)}s`);
-                    d.style.setProperty('--tilt', `${(windDir * (10 + Math.random() * 6)).toFixed(1)}deg`);
-                    d.style.setProperty('--drift', `${(windDir * (20 + Math.random() * 10)).toFixed(1)}vh`);
+                    // 雨絲的傾角必須「躺在自己的速度向量上」：整段行程是
+                    // translate(drift, 125vh)，傾角就是 atan(drift ÷ 125)。
+                    // 注意號向：CSS rotate 的正角是順時針，直立桿順時針轉是「/」，
+                    // 而往右下落（drift 為正）該躺成「\」——所以 tilt 與 drift
+                    // 必須「反號」。同號會變成傾斜方向與降落方向鏡像相反（踩過一次）
+                    const drift = 20 + Math.random() * 10; // vh，佔 125vh 落高的橫移量
+                    const tilt = -windDir * Math.atan(drift / 125) * (180 / Math.PI);
+                    d.style.setProperty('--tilt', `${tilt.toFixed(1)}deg`);
+                    d.style.setProperty('--drift', `${(windDir * drift).toFixed(1)}vh`);
                     weatherEl.appendChild(d);
                 }
             } else if (kind === 'snow') {

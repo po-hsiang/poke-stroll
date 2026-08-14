@@ -2187,6 +2187,17 @@ group('19. 色違星星特效定時重播');
                 && d.style.getPropertyValue('--drift')));
         check('全場共用同一個風向（斜角同號）', new Set(rain.children.map(d =>
             Math.sign(parseFloat(d.style.getPropertyValue('--tilt'))))).size === 1);
+        // 迴歸：傾角要躺在速度向量上——CSS rotate 正角是順時針（直立桿轉成「/」），
+        // 往右下落（drift 為正）該躺成「\」，所以 tilt 與 drift 必須反號、
+        // 角度 = atan(橫移 ÷ 125vh 落高)。同號 = 傾斜與降落方向鏡像相反（0.35.0 的 bug）
+        check('雨絲傾角與降落方向一致（tilt 與 drift 反號、角度吻合幾何）',
+            rain.children.every(d => {
+                const tilt = parseFloat(d.style.getPropertyValue('--tilt'));
+                const drift = parseFloat(d.style.getPropertyValue('--drift'));
+                return Math.sign(tilt) === -Math.sign(drift)
+                    && Math.abs(Math.abs(tilt)
+                        - Math.atan(Math.abs(drift) / 125) * (180 / Math.PI)) < 0.1;
+            }));
 
         // 密度可調
         CONFIG.weatherDensity = 0.5;
