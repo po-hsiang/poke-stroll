@@ -138,7 +138,7 @@ function initGround(themeName) {
     if (!theme) return 0;
     // 高度以畫面 px 指定（themeHeight），內部換成 2px 像素格的列數，
     // 所以實際高度會取到最接近的偶數；最少 3 列（頂緣 2 列 + 至少 1 列底）
-    const artH = Math.max(3, Math.round((CONFIG.themeHeight ?? 12) / GROUND_SCALE));
+    const artH = Math.max(3, Math.round((CONFIG.themeHeight ?? 6) / GROUND_SCALE));
     const displayH = artH * GROUND_SCALE;
     const ground = document.createElement('div');
     ground.id = 'ground';

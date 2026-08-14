@@ -8,6 +8,11 @@ const GREET_GAP = 16;
 // GIF 的播放速率瀏覽器不給控制，「掙扎得多快」就靠這兩個值 × dragStruggleRate
 const STRUGGLE_FREQ = 0.012;
 const STRUGGLE_TILT = 10;
+// 「發現」的驚訝節奏，發現果實與發現賊鳥共用同一套肢體語言：
+// 停下手邊的動作 → 原地跳一下並亮驚嘆號 → 定格走完才接下一步
+// （追果實／換黑線）。定格蓋住起跳到落地的時間，跳完還留半拍餘韻
+const STARTLE_MS = 600;
+const EXCLAIM_MS = 1500; // 驚嘆號框的停留時長（黑線出現時會提前換掉）
 
 class Pokemon {
     constructor(id, container, sizeScale, laneIndex, groundLift = 0) {
@@ -124,6 +129,7 @@ class Pokemon {
         this.grabDX = 0; // 抓起來那一刻，游標與身體左緣／地面的相對位置
         this.grabDY = 0;
         this.resnatchOnLand = false; // 追果實中被抓又放開：落地那一刻重擲賊鳥的骰（見 release）
+        this.seekStartle = 0; // 發現果實的驚訝定格：> 0 時原地跳一下再起跑（見 seekBerry）
         // 左鍵按下去的那一刻就抓起來——沒有長按門檻，游標不會先跑掉一段
         this.el.addEventListener('pointerdown', e => beginDrag(this, e));
         // 右鍵：擋掉系統選單（「另存圖片」），改演戳戳互動。
@@ -372,6 +378,7 @@ class Pokemon {
             this.targetBerry = null;
         }
         this.resnatchOnLand = false; // 半空中再被抓走：上一次放手的掛帳作廢
+        this.seekStartle = 0; // 驚訝定格作廢：放手續追時直接起跑（牠可沒忘記）
         this.state = 'HELD';
         this.idleTimer = 0;
         this.hideEmote();
@@ -478,17 +485,19 @@ class Pokemon {
             && this.state !== 'SNATCH_WATCH';
     }
 
-    // 追果實追到一半被賊鳥嚇停：再冒一次驚嘆號、原地站定看戲。
-    // 之後的劇本由 Snatcher 推進——叼走那一刻把驚嘆號換成一團黑線
+    // 追果實追到一半被賊鳥嚇停：嚇得原地跳一下、再冒一次驚嘆號，
+    // 站定看戲。之後的劇本由 Snatcher 推進——叼走那一刻把驚嘆號換成一團黑線
     startSnatchWatch() {
         this.breakGreet();
         this.state = 'SNATCH_WATCH';
         this.idleTimer = 0;
         this.watchTimer = 12000; // 保底值；beginSnatch 隨即依實際航程重算，叼走那一刻改設為沮喪時長
-        if (!this.showEmote('exclaim', 900)) this.hideEmote();
+        this.startleJump();
+        if (!this.showEmote('exclaim', EXCLAIM_MS)) this.hideEmote();
     }
 
-    // 發現果實：冒出驚嘆號，不論正在走路還是發呆都放下手邊的事。
+    // 發現果實：不論正在走路還是發呆都放下手邊的事——
+    // 原地跳一下 + 冒出驚嘆號，驚訝定格（STARTLE_MS）走完才起跑（見 seekBerry）。
     // 驚嘆號被婉拒時（bubblePosition=none 或色違閃光保護期），
     // 至少把進行中的心情收起（hideEmote 會給保護期讓路）
     startSeekBerry(target) {
@@ -496,7 +505,15 @@ class Pokemon {
         this.targetBerry = target;
         this.state = 'SEEK_BERRY';
         this.idleTimer = 0;
-        if (!this.showEmote('exclaim', 900)) this.hideEmote();
+        this.seekStartle = STARTLE_MS;
+        this.startleJump();
+        if (!this.showEmote('exclaim', EXCLAIM_MS)) this.hideEmote();
+    }
+
+    // 驚訝的那一跳：腳踏實地才跳（半空中被指派——剛被戳起跳之類——
+    // 就不做二段跳，只定格），與發呆亂跳同一組防護
+    startleJump() {
+        if (this.jumpY === 0 && this.jumpV === 0) this.jump();
     }
 
     // 小跑步奔向自己的那顆果實：比散步快一截、跳步節奏也跟著加快。
@@ -504,6 +521,13 @@ class Pokemon {
     seekBerry(deltaTime) {
         const berry = this.targetBerry;
         if (!berry) { this.state = 'WALKING'; return; } // 果實意外沒了就回去散步
+        // 驚訝定格：發現的當下先停步、原地跳一下（startSeekBerry），
+        // 這段時間站在原地不追也不吃，定格走完才起跑
+        if (this.seekStartle > 0) {
+            this.seekStartle -= deltaTime;
+            this.bobY *= 0.8;
+            return;
+        }
         const dt = deltaTime / (1000 / 60);
         const dx = berry.x - this.centerX();
         if (Math.abs(dx) > 6) {
@@ -562,7 +586,7 @@ class Pokemon {
                 const star = document.createElement('img');
                 star.className = 'burst-star';
                 star.src = getStarURI(shape, colors[Math.floor(Math.random() * colors.length)]);
-                star.style.animationDuration = `${CONFIG.shinyBurstDuration ?? 1400}ms`;
+                star.style.animationDuration = `${CONFIG.shinyBurstDuration ?? 1500}ms`;
                 const w = STAR_ARTS[shape][0].length * this.bubbleScale;
                 star.style.width = `${w}px`;
                 // 從本體中央出發：角度沿「上半弧」平均分佈再加小亂數
@@ -570,7 +594,7 @@ class Pokemon {
                 const angle = Math.PI * (-0.15 + 1.3 * (i / (count - 1))) + (Math.random() - 0.5) * 0.3;
                 // 飛散半徑 = 基礎距離 × 體型 × 全頁倍率（shinyBurstScale 只放大範圍，星星本身大小不變）
                 const dist = (26 + Math.random() * 16) * (0.7 + this.sizeScale * 0.5)
-                             * (CONFIG.shinyBurstScale ?? 1);
+                             * (CONFIG.shinyBurstScale ?? 1.5);
                 star.style.left = `calc(50% - ${Math.round(w / 2)}px)`;
                 star.style.bottom = `${Math.round(height * 0.5)}px`;
                 star.style.setProperty('--dx', `${Math.round(Math.cos(angle) * dist)}px`);

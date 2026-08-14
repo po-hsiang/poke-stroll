@@ -438,6 +438,7 @@ group('10. 星星特效未被波及');
     check('炸出 10 顆星星', stars.length === 10, `實際 ${stars.length}`);
     check('時長吃 shinyBurstDuration',
         stars.every(s => s.style.animationDuration === `${CONFIG.shinyBurstDuration}ms`));
+    check('config.js 預設 shinyBurstDuration = 1500', CONFIG.shinyBurstDuration === 1500);
     check('每顆都有 --dx / --dy 飛行向量',
         stars.every(s => /px$/.test(s.style._props['--dx'] || '') && /px$/.test(s.style._props['--dy'] || '')));
     // 弧線刻意從水平線下方一點開始（-0.15π ~ 1.15π），所以少數星星會略往下飛；
@@ -452,7 +453,7 @@ group('10. 星星特效未被波及');
     check('shinyBurstScale 已登記（float 0.1 ~ 5）',
         T.QUERY_PARAMS?.shinyBurstScale?.type === 'float'
         && T.QUERY_PARAMS.shinyBurstScale.min === 0.1 && T.QUERY_PARAMS.shinyBurstScale.max === 5);
-    check('config.js 預設 shinyBurstScale = 1', CONFIG.shinyBurstScale === 1);
+    check('config.js 預設 shinyBurstScale = 1.5', CONFIG.shinyBurstScale === 1.5);
     const radius = s => Math.hypot(
         parseInt(s.style._props['--dx'], 10), parseInt(s.style._props['--dy'], 10));
     const savedBurstScale = CONFIG.shinyBurstScale;
@@ -784,7 +785,12 @@ group('17. theme 主題地面');
     // random：載入時擲一次骰，隨機池 = 七種地形 + 'none'（無地板也抽得到）
     const origRandom = Math.random;
     Math.random = () => 0; // randomInt(0, 7) → 0 → 池子第一種（草地）
-    check("theme='random' 抽到地形 → 正常鋪（抬高 > 0）", T.initGround('random') > 0);
+    // 抬高量不當判準：預設 6px 下草地的踩入深度吃滿高度，抬高本來就是 0
+    const beforeRand = appEl.children.length;
+    T.initGround('random');
+    check("theme='random' 抽到地形 → 正常鋪（#ground 進場）",
+        appEl.children.length === beforeRand + 1
+        && appEl.children[appEl.children.length - 1].id === 'ground');
     Math.random = () => 0.999; // → 7 → 池子最後一格 'none'
     const beforeNone = appEl.children.length;
     check("theme='random' 也抽得到無地板（抬高 0、不鋪元素）",
@@ -794,8 +800,16 @@ group('17. theme 主題地面');
         T.GROUND_THEMES.random === undefined);
 
     // 鋪草地：元素進場、抬高量 = 地面高度 - 踩入深度 × 倍率
-    check("config.js 預設 themeHeight = 12", CONFIG.themeHeight === 12);
+    check("config.js 預設 themeHeight = 6", CONFIG.themeHeight === 6);
     check('themeHeight 已登記在 QUERY_PARAMS', T.QUERY_PARAMS?.themeHeight?.type === 'int');
+    // 預設 6px = 3 列的最小畫布；草的踩入深度（inset 3 × 2px）吃滿高度 → 抬高 0
+    const thinLift = T.initGround('grass');
+    const thin = appEl.children[appEl.children.length - 1];
+    check('預設 6px → 地面高 6px、貼地站在草叢裡（抬高 0）',
+        thin.style.height === '6px' && thinLift === 0,
+        `height=${thin.style.height} lift=${thinLift}`);
+    // 機制驗證固定用 12px：列數夠多，中段的斑點分佈與抬高量才驗得出來
+    CONFIG.themeHeight = 12;
     const lift = T.initGround('grass');
     const ground = appEl.children[appEl.children.length - 1];
     check('鋪了 #ground 元素', ground && ground.id === 'ground');
@@ -839,6 +853,7 @@ group('17. theme 主題地面');
         `實際 ${water.style.getPropertyValue('--flow-width')}`);
     check('水域踩得更深（inset 5 → 抬高 2px）', waterLift === 2, `實際 ${waterLift}`);
     check('岩地幾乎不下陷（inset 1 → 抬高 10px）', T.initGround('rock') === 10);
+    CONFIG.themeHeight = 6; // 還原預設，別讓機制驗證用的 12 洩漏到其他組
 }
 
 // =========================================================
@@ -1239,6 +1254,8 @@ group('19. 色違星星特效定時重播');
     check('被指派者進入 SEEK_BERRY', near.state === 'SEEK_BERRY');
     check('發現果實 → 冒驚嘆號', near.bubbleName === 'exclaim'
         && near.bubble.style.display === 'block');
+    check('發現的當下停下手邊的事、原地跳一下（驚訝定格開始）',
+        near.jumpV > 0 && near.seekStartle > 0);
 
     // 第二顆：near 忙碌中不會發現（即使距離比較近），改指派有空的 far
     clickAt(950, 80); // 離 near(900) 比 far(200) 近
@@ -1255,10 +1272,14 @@ group('19. 色違星星特效定時重播');
     check('兩顆果實各自落地（bottom = 0）',
         b1.state === 'LANDED' && b1.bottom === 0 && b2.state === 'LANDED' && b2.bottom === 0);
 
-    // 奔向自己的果實：面向正確、確實在移動
+    // 驚訝定格：跳一下的期間站在原地，定格走完才起跑
     const seekX0 = near.x;
     near.update(16, T.pokemons);
-    check('朝果實方向小跑（面向右、往右移）', near.direction === 1 && near.x > seekX0);
+    check('驚訝定格中原地不動（先跳完這一下）', near.x === seekX0);
+    for (let i = 0; i < 60 && near.seekStartle > 0; i++) near.update(16, T.pokemons);
+    near.update(16, T.pokemons);
+    check('定格走完 → 朝果實方向小跑（面向右、往右移）',
+        near.direction === 1 && near.x > seekX0);
     for (let i = 0; i < 2000 && near.state === 'SEEK_BERRY'; i++) near.update(16, T.pokemons);
     check('抵達果實旁 → 開吃', near.state === 'EATING', `實際 ${near.state}`);
     check('嘴邊誤差 ≤ 6px', Math.abs(b1.x - near.centerX()) <= 6);
@@ -1725,15 +1746,16 @@ group('19. 色違星星特效定時重播');
             && d.state === 'SEEK_BERRY' && T.getBerries().length === 1);
         const kept = T.getBerries()[0];
         press(d, 560, 150);
-        check('追果實中被抓走 → 果實留在原地、主權不放',
+        check('追果實中被抓走 → 果實留在原地、主權不放、驚訝定格作廢',
             d.state === 'HELD' && d.targetBerry === kept
-            && T.getBerries().length === 1 && kept.feeder === d);
+            && T.getBerries().length === 1 && kept.feeder === d
+            && d.seekStartle === 0);
         move(660, 150);
         check('拖著走的期間果實也還在', T.getBerries().length === 1);
         up();
-        check('放手 → 直接回去續追（不再冒驚嘆號，牠可沒忘記）',
+        check('放手 → 直接回去續追（不再冒驚嘆號、也不再定格，牠可沒忘記）',
             d.state === 'SEEK_BERRY' && d.targetBerry === kept
-            && d.bubble.style.display === 'none');
+            && d.bubble.style.display === 'none' && d.seekStartle === 0);
         let seekGuard = 0;
         while (d.state === 'SEEK_BERRY' && seekGuard++ < 600) {
             T.updateBerries(16);
@@ -1895,6 +1917,8 @@ group('19. 色違星星特效定時重播');
             `remaining=${remaining}`);
         check('再冒一次驚嘆號、原地停步', witness.state === 'SNATCH_WATCH'
             && witness.bubbleName === 'exclaim' && witness.bubble.style.display === 'block');
+        check('嚇得原地跳一下（換黑線前的肢體語言）',
+            witness.jumpV > 0 || witness.jumpY > 0);
         check('果實變無主（不會被任何隻接手）', sb.feeder === null
             && witness.targetBerry === null);
         check('其他成員照常散步（世界不為一顆果實停下來）', other.state === 'WALKING');
@@ -2075,7 +2099,7 @@ group('19. 色違星星特效定時重播');
         clickAt(966, 199); // 距離 6 > 0 有埋；bottom = 1，一落地就開吃
         check('（前置）貼臉的伏筆也埋得下', T.getPending() !== null);
         guard = 0;
-        while (witness.state !== 'EATING' && guard++ < 50) {
+        while (witness.state !== 'EATING' && guard++ < 100) {
             T.updateBerries(16);
             witness.update(16, T.pokemons);
             T.updateSnatch(16);
@@ -2204,7 +2228,7 @@ group('19. 色違星星特效定時重播');
             && b.shadow.style.opacity === '1.000');
 
         // 開吃：影子跟著咬痕一口一口縮小；吃完連影子一起收
-        for (let i = 0; i < 50 && eater.state !== 'EATING'; i++) eater.update(16, T.pokemons);
+        for (let i = 0; i < 100 && eater.state !== 'EATING'; i++) eater.update(16, T.pokemons);
         check('（前置）站在果實旁開吃', eater.state === 'EATING');
         let bitten = false;
         for (let i = 0; i < 100 && eater.state === 'EATING'; i++) {
