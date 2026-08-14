@@ -17,8 +17,9 @@ function check(cond, msg) {
     }
 }
 
-// 1) widget 的 QUERY_PARAMS 白名單（＋ids：白名單外手動處理的特例）
-const widget = read('pokemon_footer_widget.html');
+// 1) widget 的 QUERY_PARAMS 白名單（＋ids：白名單外手動處理的特例）。
+// 白名單住在 js/params.js（0.38.0 起主程式拆進 js/，一檔一職責）
+const widget = read('js/params.js');
 const qpBlock = widget.match(/const QUERY_PARAMS = \{([\s\S]*?)\n\s*\};/);
 check(!!qpBlock, '能在 widget 中找到 QUERY_PARAMS 區塊');
 const widgetKeys = new Set(

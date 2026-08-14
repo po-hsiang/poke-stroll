@@ -123,15 +123,31 @@ poke.contentWindow.postMessage({ ns: 'poke-stroll', cmd: 'spawn', id: 143 }, '*'
 
 ```
 poke-stroll/
-├── pokemon_footer_widget.html  ← 主角:畫面 + 動畫邏輯,全部在這
+├── pokemon_footer_widget.html  ← 入口:版面與樣式,以及 js/ 的載入順序(= 依賴順序)
 ├── config.js                   ← 你的遊樂場:所有可調參數
 ├── pokemon_heights.js          ← 圖鑑身高對照表(離線可用,不用打 API)
 ├── pokemon_types.js            ← 圖鑑主屬性對照表(影子染色用)
 ├── pokemon_cameo.js            ← 流星客串抽選名單(飛行系 73 隻 + 會飛的傳說 9 隻)
+├── js/                         ← 主程式,一個檔案一個職責:
+│   ├── params.js               ←   URL 參數白名單與覆寫
+│   ├── utils.js                ←   工具函式(亂數、體型分級…)
+│   ├── sprites.js              ←   像素圖資產(心情對話框/星星/樹果,字元畫 → canvas)
+│   ├── ground.js               ←   主題地面
+│   ├── weather.js              ←   天氣(雨/雪/風沙/火星)
+│   ├── pokemon.js              ←   Pokemon 類別(散步/發呆/寒暄/餵食/掙扎的狀態機)
+│   ├── flyby.js                ←   流星客串與信使鳥空投
+│   ├── feeding.js              ←   丟果實餵食
+│   ├── snatch.js               ←   空中搶食(賊鳥)
+│   ├── drag.js                 ←   滑鼠拖曳
+│   ├── remote.js               ←   postMessage 遙控
+│   └── main.js                 ←   主迴圈與啟動
 └── test/widget.test.js         ← 單元測試(只在開發時用,不影響執行)
 ```
 
-上面五個檔案放同一個資料夾就好,沒有 npm、沒有 build、沒有框架。復古,但很自由。
+整個資料夾放在一起就好,沒有 npm、沒有 build、沒有框架——雙擊 `.html` 就能跑。
+js/ 用的是傳統 `<script src>` 而非 ES modules:modules 在 `file://` 下會被 CORS 擋下,
+雙擊開檔就壞了。所有檔案共用同一個全域作用域,HTML 裡的標籤順序就是依賴順序,
+單元測試會照這份順序逐檔執行,順序寫錯測試直接紅燈。復古,但很自由。
 
 > 🎨 想調影子顏色?`config.js` 的 `typeShadowColors` 一屬性一色,18 色隨你換。
 
@@ -141,9 +157,10 @@ poke-stroll/
 node test/widget.test.js
 ```
 
-零依賴,不用 `npm install`。它把 widget 的 inline `<script>` 抽出來丟進 Node 的 `vm`,
-配一套最小 DOM stub 跑**真正的** `Pokemon` 類別 —— 不是另外複製一份邏輯來測,
-所以改壞了主檔這裡就會紅燈。
+零依賴,不用 `npm install`。它照 HTML 的 `<script src>` 順序把 js/ 的每個檔案
+逐一丟進同一個 Node `vm` context,配一套最小 DOM stub 跑**真正的** `Pokemon` 類別
+—— 不是另外複製一份邏輯來測,所以改壞了主程式這裡就會紅燈;
+載入順序寫錯(先用到後面檔案的東西)也會當場炸掉。
 
 - **假時鐘**取代 `setTimeout`,才能斷言對話框自動收起的時序。
 - **canvas stub 記錄每一次 `fillRect`**,所以對話框外框、尾巴鏡像、心情圖示是

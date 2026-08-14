@@ -3,9 +3,10 @@
 //
 //   執行：node test/widget.test.js   （不需要 npm install，零依賴）
 //
-// widget 是純靜態單檔 HTML，邏輯全在 inline <script> 裡。這支測試把那段
-// script 抽出來丟進 Node 的 vm，配一套最小 DOM stub 跑「真正的」Pokemon
-// 類別 —— 不是複製一份邏輯來測，改壞了這裡就會紅燈。
+// widget 是純靜態 HTML + js/ 底下的一組傳統 <script src>（一檔一職責）。
+// 這支測試照 HTML 的標籤順序把每個檔案逐一丟進同一個 Node vm context，
+// 配一套最小 DOM stub 跑「真正的」Pokemon 類別 —— 不是複製一份邏輯來測，
+// 改壞了主程式這裡就會紅燈；載入順序寫錯（先用到後面檔案的東西）也會炸。
 //
 // 兩個關鍵手法：
 //   1. 假時鐘取代 setTimeout，才能斷言對話框自動收起的時序。
@@ -23,10 +24,9 @@ const vm = require('vm');
 const ROOT = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'pokemon_footer_widget.html'), 'utf8');
 
-// ---- 取出最後一段 inline script（主程式）----
-const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-if (scripts.length !== 1) throw new Error(`預期 1 段 inline script，實際 ${scripts.length}`);
-const source = scripts[0];
+// ---- 從 HTML 讀出主程式清單（js/ 底下；載入順序的真理來源是 HTML 本身）----
+const jsFiles = [...html.matchAll(/<script src="\.\/(js\/[^"]+)"><\/script>/g)].map(m => m[1]);
+if (jsFiles.length < 10) throw new Error(`js/ 主程式清單只抓到 ${jsFiles.length} 個，疑似 HTML 結構變了`);
 
 // ---- 假時鐘 ----
 let now = 0;
@@ -158,8 +158,9 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 
 // 載入真正的 config.js（同時驗證它語法正確、預設值正確）
+vm.createContext(sandbox);
 const configSrc = fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8');
-vm.runInNewContext(configSrc, sandbox);
+vm.runInContext(configSrc, sandbox, { filename: 'config.js' });
 const CONFIG = sandbox.window.POKE_CONFIG;
 
 // config 預設的地面主題另存一份給第 17 組驗證，隨即釘回 'none'：
@@ -168,9 +169,15 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 const DEFAULT_THEME = CONFIG.theme;
 CONFIG.theme = 'none';
 
-// 跑主程式，並把要測的東西掛到 globalThis
-vm.runInNewContext(
-    source + '\n;globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow };',
+// 照 HTML 的載入順序逐檔執行主程式——跟瀏覽器一樣一個檔案一個 script，
+// 跨檔的載入順序問題（load 時就呼叫後面檔案的東西）在這裡會直接炸
+for (const f of jsFiles) {
+    vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
+}
+// 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
+// global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
+vm.runInContext(
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow };',
     sandbox,
 );
 const T = sandbox.__T;
