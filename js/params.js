@@ -40,6 +40,13 @@ const QUERY_PARAMS = {
     greetChance:      { path: ['greetChance'],      type: 'float', min: 0,  max: 1 },
     baseSize:         { path: ['baseSize'],         type: 'int',   min: 16, max: 512 },
     shadowWidthRatio: { path: ['shadowWidthRatio'], type: 'float', min: 0,  max: 2 },
+    sunShadow:        { path: ['sunShadow'],        type: 'enum',  values: ['on', 'off'] },
+    sunrise:          { path: ['sunrise'],          type: 'time',  min: 0,  max: 24 },
+    sunset:           { path: ['sunset'],           type: 'time',  min: 0,  max: 24 },
+    sunTime:          { path: ['sunTime'],          type: 'time',  min: 0,  max: 24, auto: true },
+    shadowStretch:    { path: ['shadowStretch'],    type: 'float', min: 1,  max: 10 },
+    ambientShadow:    { path: ['ambientShadow'],    type: 'float', min: 0,  max: 1 },
+    overcastShadow:   { path: ['overcastShadow'],   type: 'float', min: 0,  max: 1 },
     theme:            { path: ['theme'],            type: 'enum',  values: ['none', 'random', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava'] },
     themeHeight:      { path: ['themeHeight'],      type: 'int',   min: 4,  max: 200 },
     weatherChance:    { path: ['weatherChance'],    type: 'float', min: 0,  max: 1 },
@@ -63,6 +70,17 @@ const QUERY_PARAMS = {
     dragStruggleRate: { path: ['dragStruggleRate'], type: 'float', min: 0,  max: 10 },
 };
 
+// 'HH:MM'（17:30）或小數時數（17.5）→ 小數時數。看不懂就回 NaN，
+// 由呼叫端警告並忽略。給日出/日落/釘死時刻這類「時間」參數用
+function parseTimeParam(raw) {
+    const hhmm = raw.trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (hhmm) {
+        const m = Number(hhmm[2]);
+        return m < 60 ? Number(hhmm[1]) + m / 60 : NaN;
+    }
+    return parseFloat(raw);
+}
+
 function applyQueryOverrides(config) {
     const qs = new URLSearchParams(location.search);
 
@@ -75,6 +93,17 @@ function applyQueryOverrides(config) {
             if (!spec.values.includes(value)) {
                 console.warn(`[PokéFooter] 忽略不合法的參數 ${name}=${raw}（允許值：${spec.values.join(' / ')}）`);
                 continue;
+            }
+        } else if (spec.type === 'time') {
+            // sunTime 額外收 auto = 跟著觀看端的本機時鐘（等同不帶這個參數）
+            if (spec.auto && raw.trim().toLowerCase() === 'auto') {
+                value = null;
+            } else {
+                value = parseTimeParam(raw);
+                if (Number.isNaN(value) || value < spec.min || value > spec.max) {
+                    console.warn(`[PokéFooter] 忽略不合法的參數 ${name}=${raw}（HH:MM 或小數時數，允許 ${spec.min} ~ ${spec.max}）`);
+                    continue;
+                }
             }
         } else {
             value = spec.type === 'int' ? parseInt(raw, 10) : parseFloat(raw);
@@ -110,6 +139,12 @@ function applyQueryOverrides(config) {
     if (config.lookTime.min > config.lookTime.max) [config.lookTime.min, config.lookTime.max] = [config.lookTime.max, config.lookTime.min];
     if (config.flybyDelay && config.flybyDelay.min > config.flybyDelay.max) [config.flybyDelay.min, config.flybyDelay.max] = [config.flybyDelay.max, config.flybyDelay.min];
     if (config.shinyBurstDelay && config.shinyBurstDelay.min > config.shinyBurstDelay.max) [config.shinyBurstDelay.min, config.shinyBurstDelay.max] = [config.shinyBurstDelay.max, config.shinyBurstDelay.min];
+    // 日出必須早於日落，否則「白天」這段區間不存在，投射影會整天不出現
+    if (config.sunrise >= config.sunset) {
+        console.warn('[PokéFooter] sunrise 必須早於 sunset，已改回預設 6 ~ 18');
+        config.sunrise = 6;
+        config.sunset = 18;
+    }
     if (config.bounds.min >= config.bounds.max) {
         console.warn('[PokéFooter] boundsMin 必須小於 boundsMax，已改回預設 0.1 ~ 0.9');
         config.bounds = { min: 0.1, max: 0.9 };

@@ -169,6 +169,12 @@ const CONFIG = sandbox.window.POKE_CONFIG;
 const DEFAULT_THEME = CONFIG.theme;
 CONFIG.theme = 'none';
 
+// 同理，日照預設是「跟著本機時鐘」——影子的長短方向會隨著跑測試的時間變，
+// 所有斷言影子字串的地方都會看時間臉色。整份測試釘死在正午（投射影為 0，
+// 就是原本那圈腳下影子），第 31 組要驗日照時再自己改 sunTime
+const DEFAULT_SUN_TIME = CONFIG.sunTime;
+CONFIG.sunTime = 12;
+
 // 照 HTML 的載入順序逐檔執行主程式——跟瀏覽器一樣一個檔案一個 script，
 // 跨檔的載入順序問題（load 時就呼叫後面檔案的東西）在這裡會直接炸
 for (const f of jsFiles) {
@@ -177,7 +183,7 @@ for (const f of jsFiles) {
 // 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
 // global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
 vm.runInContext(
-    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow };',
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -2233,7 +2239,7 @@ group('19. 色違星星特效定時重播');
         let bitten = false;
         for (let i = 0; i < 100 && eater.state === 'EATING'; i++) {
             eater.update(16, T.pokemons);
-            if (b.shadow.style.transform === 'translateX(-50%) scale(0.72)') bitten = true;
+            if (b.shadow.style.transform === 'translateX(-50%) scale(0.720)') bitten = true;
         }
         check('影子跟著咬痕縮小（0.72 的那一口）', bitten);
         check('吃完 → 果實與影子一起移除', !T.getBerries().includes(b)
@@ -2379,6 +2385,213 @@ group('19. 色違星星特效定時重播');
     check('params.html 的嵌入範例都帶 color-scheme:light 保險',
         (paramsHtml.match(/pointer-events:none; color-scheme:light/g) || []).length >= 3,
         'hero-snippet / remote-snippet / embedSnippet() 都該有');
+
+    // =====================================================
+    group('31. 日照與影子（跟著真實時間走的投射影）');
+    {
+        const near = (a, b, tol = 0.002) => Math.abs(a - b) <= tol;
+        const savedSunShadow = CONFIG.sunShadow;
+        const savedRise = CONFIG.sunrise;
+        const savedSet = CONFIG.sunset;
+        const savedStretch = CONFIG.shadowStretch;
+        const savedAmbient = CONFIG.ambientShadow;
+        const savedOvercast = CONFIG.overcastShadow;
+        const at = h => { CONFIG.sunTime = h; T.refreshSun(); };
+
+        // ---- 載入與參數登記 ----
+        check('sun.js 在載入清單裡，且排在用到它的 pokemon.js 之前',
+            jsFiles.includes('js/sun.js')
+            && jsFiles.indexOf('js/sun.js') < jsFiles.indexOf('js/pokemon.js'));
+        check('sunShadow 已登記（enum on/off）',
+            T.QUERY_PARAMS?.sunShadow?.type === 'enum'
+            && JSON.stringify(T.QUERY_PARAMS.sunShadow.values) === '["on","off"]');
+        check('sunrise / sunset / sunTime 已登記（time，0 ~ 24）',
+            ['sunrise', 'sunset', 'sunTime'].every(n =>
+                T.QUERY_PARAMS?.[n]?.type === 'time'
+                && T.QUERY_PARAMS[n].min === 0 && T.QUERY_PARAMS[n].max === 24));
+        check('只有 sunTime 收 auto（日出日落沒有「跟著時鐘」這種值）',
+            T.QUERY_PARAMS.sunTime.auto === true
+            && !T.QUERY_PARAMS.sunrise.auto && !T.QUERY_PARAMS.sunset.auto);
+        check('shadowStretch 已登記（float 1 ~ 10，1 = 不拉長）',
+            T.QUERY_PARAMS?.shadowStretch?.type === 'float'
+            && T.QUERY_PARAMS.shadowStretch.min === 1 && T.QUERY_PARAMS.shadowStretch.max === 10);
+        check('ambientShadow / overcastShadow 已登記（float 0 ~ 1）',
+            ['ambientShadow', 'overcastShadow'].every(n =>
+                T.QUERY_PARAMS?.[n]?.type === 'float'
+                && T.QUERY_PARAMS[n].min === 0 && T.QUERY_PARAMS[n].max === 1));
+
+        // ---- config 預設 ----
+        check("config.js 預設 sunShadow = 'on'", CONFIG.sunShadow === 'on');
+        check('config.js 預設日照 06:00 ~ 18:00', CONFIG.sunrise === 6 && CONFIG.sunset === 18);
+        check('config.js 預設 sunTime = null（跟著觀看端的本機時鐘）',
+            DEFAULT_SUN_TIME === null);
+        check('config.js 預設 shadowStretch = 3', CONFIG.shadowStretch === 3);
+        check('config.js 預設 ambientShadow = 0.55', CONFIG.ambientShadow === 0.55);
+        check('config.js 預設 overcastShadow = 0.35', CONFIG.overcastShadow === 0.35);
+
+        // ---- 時間字串的解析 ----
+        check("parseTimeParam：'17:30' → 17.5", T.parseTimeParam('17:30') === 17.5);
+        check("parseTimeParam：'6' → 6、'17.5' → 17.5",
+            T.parseTimeParam('6') === 6 && T.parseTimeParam('17.5') === 17.5);
+        check("parseTimeParam：分鐘超過 59 不收（'12:60'）", Number.isNaN(T.parseTimeParam('12:60')));
+        check("parseTimeParam：看不懂就 NaN（'黃昏'）", Number.isNaN(T.parseTimeParam('黃昏')));
+
+        // ---- 讀本機時鐘 ----
+        CONFIG.sunTime = null;
+        const wall = T.sunHours();
+        check('sunTime = null → 讀觀看端的本機時鐘（0 ~ 24 的小數）',
+            wall >= 0 && wall < 24, `sunHours()=${wall}`);
+        check('釘死 sunTime 就不看時鐘', (CONFIG.sunTime = 17.5, T.sunHours() === 17.5));
+
+        // ---- 幾何：一天的走勢 ----
+        at(12);
+        check('正午：沒有投射影，就是原本那圈腳下影子（最深）',
+            T.sun.stretch === 1 && T.sun.alpha === 1);
+        at(9);
+        check('上午 09:00（45 度）：影子倒向左邊、長度 2 倍',
+            T.sun.dir === -1 && T.sun.stretch === 2, `dir=${T.sun.dir} stretch=${T.sun.stretch}`);
+        check('上午的影子比正午淡（直射光還沒到最強）', near(T.sun.alpha, 0.868));
+        at(15);
+        check('下午 15:00（135 度）：改倒向右邊，長度與上午對稱',
+            T.sun.dir === 1 && T.sun.stretch === 2);
+        at(7);
+        check('越接近地平線影子越長（07:00 已頂到 shadowStretch 的 3 倍）',
+            T.sun.stretch === 3);
+        check('也越淡（07:00 的濃度低於 09:00）', near(T.sun.alpha, 0.666));
+
+        // ---- 兩端：日出日落與夜晚 ----
+        at(6);
+        check('日出 06:00（0 度）：沒有投射影，只剩接地影',
+            T.sun.dir === 0 && T.sun.stretch === 1 && T.sun.alpha === 0.55);
+        at(18);
+        check('日落 18:00（180 度）：同樣沒有投射影', T.sun.stretch === 1 && T.sun.alpha === 0.55);
+        at(3);
+        check('夜晚：接地影留著（立體感不掉），投射影歸零',
+            T.sun.stretch === 1 && T.sun.alpha === 0.55);
+        at(6.05); // 06:03，日出後三分鐘
+        check('日出前後是連續的（不會憑空跳出一道長影）',
+            T.sun.stretch > 1 && T.sun.stretch < 1.3, `stretch=${T.sun.stretch}`);
+        at(23.9);
+        check('跨到隔天之前都還是夜晚', T.sun.stretch === 1 && T.sun.alpha === 0.55);
+
+        // ---- ambientShadow：夜晚要留多少 ----
+        CONFIG.ambientShadow = 0;
+        at(3);
+        check('ambientShadow = 0 → 夜晚完全沒有影子（原始規格）', T.sun.alpha === 0);
+        at(12);
+        check('ambientShadow = 0 也不影響正午（直射光那份是滿的）', T.sun.alpha === 1);
+        CONFIG.ambientShadow = savedAmbient;
+
+        // ---- shadowStretch：最長拉多長 ----
+        CONFIG.shadowStretch = 1;
+        at(7);
+        check('shadowStretch = 1 → 只有濃淡變化，完全不拉長',
+            T.sun.stretch === 1 && T.sun.alpha < 1);
+        CONFIG.shadowStretch = 5;
+        at(7);
+        check('shadowStretch = 5 → 同一時刻拉得更長', near(T.sun.stretch, 4.732));
+        CONFIG.shadowStretch = savedStretch;
+
+        // ---- sunrise / sunset：自訂日照區間 ----
+        CONFIG.sunrise = 8; CONFIG.sunset = 16;
+        at(12);
+        check('日照區間改成 08:00 ~ 16:00 → 正午仍是最短最深',
+            T.sun.stretch === 1 && T.sun.alpha === 1);
+        at(7);
+        check('區間外就是夜晚（07:00 已在 sunrise 之前）', T.sun.alpha === 0.55);
+        CONFIG.sunrise = savedRise; CONFIG.sunset = savedSet;
+
+        // ---- 陰天：打散不是關掉 ----
+        check('會遮光的天氣 = 雨/雪/風沙，熔岩的火星不算',
+            ['rain', 'snow', 'sand'].every(k => Object.values(T.THEME_WEATHER).includes(k))
+            && Object.values(T.THEME_WEATHER).includes('ember'));
+        T.setSunOvercast('rain');
+        at(9);
+        check('雨天：影子還在，但變短（2 倍 → 1.35 倍）', near(T.sun.stretch, 1.35));
+        check('雨天：也變淡，但不是消失', T.sun.alpha > 0.55 && T.sun.alpha < 0.868);
+        T.setSunOvercast('snow');
+        check('雪天同樣打折', near(T.sun.stretch, 1.35));
+        T.setSunOvercast('ember');
+        check('熔岩的火星不打折（沒有東西擋住光）', T.sun.stretch === 2);
+        T.setSunOvercast(null);
+        check('沒有天氣 → 不打折', T.sun.stretch === 2);
+
+        // ---- 總開關 ----
+        CONFIG.sunShadow = 'off';
+        at(7);
+        check("sunShadow = 'off' → 白天回到單純的腳下影子",
+            T.sun.stretch === 1 && T.sun.alpha === 1);
+        at(3);
+        check("sunShadow = 'off' → 夜晚也不壓暗（完全等於沒有這套機制）",
+            T.sun.stretch === 1 && T.sun.alpha === 1);
+        CONFIG.sunShadow = savedSunShadow;
+
+        // ---- transform 字串 ----
+        at(12);
+        check('沒有投射影時，字串跟原本一模一樣（不留 scaleX 尾巴）',
+            T.sunShadowTransform(40, 0.5) === 'translateX(-50%) scale(0.500)');
+        at(9);
+        const t9 = T.sunShadowTransform(40, 1);
+        check('有投射影時：往反側推 + 拉長',
+            t9 === 'translateX(-50%) translateX(-20.0px) scale(1.000) scaleX(2)', t9);
+        const off9 = Number(t9.match(/translateX\((-?[\d.]+)px\)/)[1]);
+        check('貼著腳的那一端不動，只有另一端往外長',
+            near(off9 + 40 * T.sun.stretch / 2, 40 / 2), `off=${off9}`);
+        at(15);
+        const t15 = T.sunShadowTransform(40, 1);
+        check('下午往另一邊推', /translateX\(20\.0px\)/.test(t15), t15);
+
+        // ---- 真的接到寶可夢與果實身上 ----
+        at(9);
+        const sp = newPokemon(25, { scale: 1 });
+        sp.updateDOM();
+        check('寶可夢的影子吃到太陽（拉長 + 濃度）',
+            sp.shadow.style.transform.includes(`scaleX(${T.sun.stretch})`)
+            && near(Number(sp.shadow.style.opacity), T.sun.alpha),
+            sp.shadow.style.transform);
+        check('推的量依自己的影子寬度算（大隻的推得多）',
+            sp.shadowW === Math.round(48 + 8)
+            && sp.shadow.style.transform.includes(`translateX(${(-sp.shadowW / 2).toFixed(1)}px)`),
+            `shadowW=${sp.shadowW}`);
+
+        check('BERRY_SHADOW_W 與 .berry-shadow 的 CSS 寬度一致',
+            new RegExp(`\\.berry-shadow\\s*\\{[^}]*width:\\s*${T.BERRY_SHADOW_W}px`).test(html));
+        T.getBerries().slice().forEach(b => T.removeBerry(b));
+        T.pokemons.length = 0;
+        const holder = newPokemon(25, { scale: 0.6 });
+        holder.x = 900;
+        T.pokemons.push(holder);
+        check('（前置）丟一顆果實在地上', T.throwBerry(960, 0) === true);
+        const bs = T.getBerries()[0];
+        T.updateBerries(16);
+        check('果實的影子也跟著同一顆太陽',
+            bs.shadow.style.transform.includes(`scaleX(${T.sun.stretch})`),
+            bs.shadow.style.transform);
+        at(15);
+        T.updateBerries(16);
+        check('落地不代表定格：太陽走了影子就換邊（逐幀重算）',
+            /translateX\(\d/.test(bs.shadow.style.transform), bs.shadow.style.transform);
+        bs.bite = 0.72;
+        T.updateBerries(16);
+        check('咬痕與太陽疊在一起（縮小的同時仍然拉長）',
+            bs.shadow.style.transform.includes('scale(0.720)')
+            && bs.shadow.style.transform.includes('scaleX('), bs.shadow.style.transform);
+        T.removeBerry(bs);
+        T.pokemons.length = 0;
+
+        // ---- 節流 ----
+        at(12);
+        T.updateSun(T.SUN_TICK_MS); // 開場第一幀本來就會算一次，先把節流歸零
+        CONFIG.sunTime = 9; // 直接改時間但不 refresh：等 gameLoop 自己追上
+        T.updateSun(16);
+        check('每一幀不重算（0.25 度/分，2 秒一次綽綽有餘）', T.sun.stretch === 1);
+        T.updateSun(T.SUN_TICK_MS);
+        check('累積到間隔就重算', T.sun.stretch === 2);
+
+        CONFIG.overcastShadow = savedOvercast;
+        CONFIG.sunTime = 12;
+        T.setSunOvercast(null);
+    }
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
     process.exit(fail ? 1 : 0);

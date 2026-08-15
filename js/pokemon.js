@@ -64,7 +64,9 @@ class Pokemon {
         // 顏色依主屬性染色（暗色系），查不到屬性就用預設黑影
         this.shadow = document.createElement('div');
         this.shadow.className = 'shadow';
-        this.shadow.style.width = `${Math.round(48 * sizeScale + 8)}px`;
+        // 寬度另外記一份：投射影要靠它算「往外長多少」（見 sunShadowTransform）
+        this.shadowW = Math.round(48 * sizeScale + 8);
+        this.shadow.style.width = `${this.shadowW}px`;
         const primaryType = window.POKE_TYPES ? window.POKE_TYPES[id] : undefined;
         this.shadow.style.background =
             CONFIG.typeShadowColors?.[primaryType] || CONFIG.typeShadowColors?.default
@@ -101,7 +103,8 @@ class Pokemon {
         this.img.addEventListener('load', () => {
             if (this.img.offsetWidth) {
                 const ratio = CONFIG.shadowWidthRatio ?? 0.9;
-                this.shadow.style.width = `${Math.round(this.img.offsetWidth * ratio)}px`;
+                this.shadowW = Math.round(this.img.offsetWidth * ratio);
+                this.shadow.style.width = `${this.shadowW}px`;
             }
         });
 
@@ -556,8 +559,11 @@ class Pokemon {
         if (this.targetBerry) {
             const bite = this.eatTimer > 600 ? 1 : this.eatTimer > 300 ? 0.72 : 0.45;
             this.targetBerry.el.style.transform = `scale(${bite})`;
-            // 影子跟著咬痕一口一口縮小，別留一圈跟果實不合身的影子
-            this.targetBerry.shadow.style.transform = `translateX(-50%) scale(${bite})`;
+            // 影子跟著咬痕一口一口縮小，別留一圈跟果實不合身的影子。
+            // 咬痕記在果實身上、由 updateBerryShadow 統一畫：影子每一幀都在
+            // 重算（太陽在動），直接寫 transform 會被下一幀蓋掉
+            this.targetBerry.bite = bite;
+            updateBerryShadow(this.targetBerry);
         }
         if (this.eatTimer <= 0) {
             if (this.targetBerry) {
@@ -795,11 +801,12 @@ class Pokemon {
         this.img.style.transform = `scaleX(${scale}) translateY(${-lift}px)${tilt}`;
 
         // 跳起來時影子縮小、變淡，強化離地的感覺
-        // （走路跳步以自身跳高為滿格；離地高度以 20px 為滿格，取較高者）
+        // （走路跳步以自身跳高為滿格；離地高度以 20px 為滿格，取較高者）。
+        // 太陽再把它拉長、推向反側、調濃淡（正午與夜晚就是原本那圈腳下影子）
         const airRatio = Math.min(
             Math.max(this.bobY / this.hopHeight, (this.jumpY + this.holdY) / 20), 1);
-        this.shadow.style.transform = `translateX(-50%) scale(${1 - airRatio * 0.3})`;
-        this.shadow.style.opacity = 1 - airRatio * 0.4;
+        this.shadow.style.transform = sunShadowTransform(this.shadowW, 1 - airRatio * 0.3);
+        this.shadow.style.opacity = (1 - airRatio * 0.4) * sun.alpha;
 
         // 調整 Z-index 根據 X 軸位置（避免負值造成排序問題）。
         // 被抓在手上的那隻疊到最前面（客串 10000 之上、果實 20000 之下）——

@@ -12,7 +12,9 @@ async function init() {
     // 主題地面先鋪（none 不鋪）：寶可夢得知道自己該站多高
     const groundLift = initGround(themeName);
     groundLevel = groundLift; // 丟下來的果實也落在同一個地面上
-    initWeather(themeName);   // 場景決定天氣種類，weatherChance 決定下不下
+    // 場景決定天氣種類，weatherChance 決定下不下；
+    // 下起雨雪風沙就把直射光打散（投射影變短變軟，見 sun.js）
+    setSunOvercast(initWeather(themeName));
 
     // URL 有帶 ?ids= 就用固定清單，否則照 count/minId/maxId 隨機抽
     const ids = CONFIG.fixedIds ?? getUniqueRandomIds(CONFIG.count, CONFIG.minId, CONFIG.maxId);
@@ -38,6 +40,8 @@ function gameLoop(timestamp) {
     // 限制 deltaTime 上限：避免切換分頁再回來時瞬間跳一大步
     const deltaTime = Math.min(timestamp - lastTime, 100);
     lastTime = timestamp;
+
+    updateSun(deltaTime); // 太陽先走（節流）：影子的方向與長短是全場共用的
 
     pokemons.forEach(p => p.update(deltaTime, pokemons));
 

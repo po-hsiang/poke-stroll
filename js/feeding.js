@@ -7,8 +7,11 @@
 // 不會發現其他果實。丟新果實要有隻有空的，這個配對制
 // 同時就是上限——場上同時最多「常駐數量」顆果實
 // ---------------------------------------------------------
-let berries = [];    // 場上的果實們 [{ el, x, bottom, vy, state, feeder, snatchable }]
+let berries = [];    // 場上的果實們 [{ el, x, bottom, vy, state, feeder, snatchable, bite }]
 let groundLevel = 0; // 果實落點 = 地面抬高量（主題地面），init() 時寫入
+// 果實影子的原始寬度，與 .berry-shadow 的 CSS 寬度一致
+// （投射影要靠它算「往外長多少」，逐幀讀 offsetWidth 太貴）
+const BERRY_SHADOW_W = 24;
 
 function feedingBusy() {
     return berries.length > 0;
@@ -45,6 +48,7 @@ function dropBerry(bx, dropBottom, feeder = null) {
         state: startBottom > groundLevel ? 'FALLING' : 'LANDED',
         feeder,
         snatchable: false, // 點擊丟的 throwBerry 才會升旗（搶食限定入口）
+        bite: 1,           // 被咬掉幾口的縮放（吃的時候由 EATING 寫入）
     };
     updateBerryShadow(berry); // 生成的第一幀就要是正確的大小深淺
     berries.push(berry);
@@ -52,11 +56,13 @@ function dropBerry(bx, dropBottom, feeder = null) {
 }
 
 // 果實影子的物理表現：越高越小越淡（120px 高視為「完全飄遠」），
-// 快落地時放大加深回來——跟寶可夢跳躍時影子的語彙同一套
+// 快落地時放大加深回來——跟寶可夢跳躍時影子的語彙同一套；
+// 被咬小了也跟著縮。最後交給太陽拉長、推向反側、調濃淡（見 sun.js）
 function updateBerryShadow(berry) {
     const air = Math.min(Math.max(berry.bottom - groundLevel, 0) / 120, 1);
-    berry.shadow.style.transform = `translateX(-50%) scale(${(1 - air * 0.5).toFixed(3)})`;
-    berry.shadow.style.opacity = (1 - air * 0.6).toFixed(3);
+    berry.shadow.style.transform =
+        sunShadowTransform(BERRY_SHADOW_W, (1 - air * 0.5) * (berry.bite ?? 1));
+    berry.shadow.style.opacity = ((1 - air * 0.6) * sun.alpha).toFixed(3);
 }
 
 function throwBerry(x, dropBottom, snatchable = false) {
@@ -91,19 +97,22 @@ function throwBerry(x, dropBottom, snatchable = false) {
 function updateBerries(deltaTime) {
     const dt = deltaTime / (1000 / 60);
     for (const berry of berries) {
-        if (berry.state !== 'FALLING') continue;
-        berry.vy += 0.35 * dt;
-        berry.bottom -= berry.vy * dt;
-        if (berry.bottom <= groundLevel) {
-            berry.bottom = groundLevel;
-            if (berry.vy > 2.5) {
-                berry.vy = -berry.vy * 0.35; // 彈起（速度衰減）
-            } else {
-                berry.state = 'LANDED';
+        if (berry.state === 'FALLING') {
+            berry.vy += 0.35 * dt;
+            berry.bottom -= berry.vy * dt;
+            if (berry.bottom <= groundLevel) {
+                berry.bottom = groundLevel;
+                if (berry.vy > 2.5) {
+                    berry.vy = -berry.vy * 0.35; // 彈起（速度衰減）
+                } else {
+                    berry.state = 'LANDED';
+                }
             }
+            berry.el.style.bottom = `${Math.round(berry.bottom)}px`;
         }
-        berry.el.style.bottom = `${Math.round(berry.bottom)}px`;
-        updateBerryShadow(berry); // 影子跟著高度縮放淡出（含彈跳）
+        // 影子跟著高度縮放淡出（含彈跳）。落地的果實也要重算——
+        // 太陽在動，影子的方向與長短跟著在變
+        updateBerryShadow(berry);
     }
 }
 

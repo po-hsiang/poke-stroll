@@ -213,6 +213,7 @@
     .badge.float { background: #1e7a35; }
     .badge.enum  { background: #8438a4; }
     .badge.list  { background: #7a5c12; }
+    .badge.time  { background: #a1552a; }
     .add {
         font: 700 14px/1 var(--mono);
         color: var(--ink);
@@ -697,6 +698,20 @@
           desc: '「大」體型的顯示高度 px（中 = 0.8 倍、小 = 0.6 倍）' },
         { name: 'shadowWidthRatio', type: 'float', range: '0 ~ 2',       def: '0.9',    group: '動畫與外觀', sample: 'shadowWidthRatio=1.5',
           desc: '影子寬度相對寶可夢寬度的比例' },
+        { name: 'sunShadow',      type: 'enum',  range: 'on / off',      def: 'on',     group: '日照與影子', sample: 'sunTime=17:30',
+          desc: '日照影子：影子分兩層——「接地影」（腳下那圈暗）永遠都在，它是「站在平面上」的唯一線索；「投射影」則跟著真實時間走：太陽從 sunrise 的正東（畫面右、0 度）每分鐘 0.25 度（四分鐘 1 度）繞到 sunset 的正西（畫面左、180 度），影子倒向太陽的反側——早上往左、下午往右，正午最短最深，越接近地平線越長越淡。時間讀「觀看端瀏覽器」的本機時鐘（純靜態站，伺服器時區無關）：臺灣的使用者看到的就是臺灣的日照。off = 關掉投射影，回到單純的腳下影子' },
+        { name: 'sunrise',        type: 'time',  range: '0 ~ 24',        def: '6',      group: '日照與影子', sample: 'sunrise=05:30&sunTime=06:00',
+          desc: '日出時刻 = 太陽在正東、投射影為 0。可寫 06:30 或小數時數 6.5。必須早於 sunset，否則整組退回預設' },
+        { name: 'sunset',         type: 'time',  range: '0 ~ 24',        def: '18',     group: '日照與影子', sample: 'sunset=20:00&sunTime=19:00',
+          desc: '日落時刻 = 太陽在正西、投射影為 0。sunrise ~ sunset 之外就是夜晚：投射影歸零，只剩接地影' },
+        { name: 'sunTime',        type: 'time',  range: '0 ~ 24 或 auto', def: 'auto',  group: '日照與影子', sample: 'sunTime=17:30',
+          desc: '釘死時刻：OBS 場景想固定成黃昏、或做預覽與測試時用（sunTime=17:30）。不帶或 auto = 跟著觀看端的本機時鐘。裝置時鐘或時區設錯（例如專用機釘在 UTC）時也用這個補救' },
+        { name: 'shadowStretch',  type: 'float', range: '1 ~ 10',        def: '3',      group: '日照與影子', sample: 'sunTime=17:00&shadowStretch=6',
+          desc: '影子最長時（貼近地平線）的長度倍率。影長 ÷ 身高 = cot（太陽高度角），正午附近幾乎不長、接近地平線才急速拉長，這個值是它的上限。1 = 只有濃淡變化、完全不拉長' },
+        { name: 'ambientShadow',  type: 'float', range: '0 ~ 1',         def: '0.55',   group: '日照與影子', sample: 'sunTime=00:00&ambientShadow=0',
+          desc: '沒有直射光時剩下的接地影濃度（夜晚、以及日出日落那一瞬間）。0 = 夜晚完全沒有影子，比較寫實，但也會失去站在平面上的立體感' },
+        { name: 'overcastShadow', type: 'float', range: '0 ~ 1',         def: '0.35',   group: '日照與影子', sample: 'theme=water&weatherChance=1&sunTime=09:00',
+          desc: '陰天的折扣：雨/雪/風沙是懸浮粒子，會把直射光打散——影子變短變軟，而不是消失，所以是打折不是關掉。1 = 天氣不影響；熔岩的火星不算遮蔽（地面自己還在發光），本來就不打折' },
         { name: 'theme',          type: 'enum',  range: 'none / random / grass / water / snow / sand / rock / dirt / lava', def: 'random', group: '動畫與外觀', sample: 'theme=grass',
           desc: '主題地面：在頁面最底鋪一條像素地面（高度見 themeHeight），寶可夢會站上去（依地形略微踩進表面：草蓋腳邊、雪會下陷、水泡到小腿、岩地平踩）。水域與熔岩會緩慢流動；貼片圖樣每次載入隨機生成。random = 每次載入隨機抽一種（預設，隨機池 = 七種地形 + 無地板，狂按 F5 就是輪盤）；none = 關閉，維持透明背景' },
         { name: 'themeHeight',    type: 'int',   range: '4 ~ 200',       def: '6',      group: '動畫與外觀', sample: 'theme=grass&themeHeight=24',
@@ -772,6 +787,11 @@
         { label: '慢動作搶食（俯衝慢、餘韻長）', query: 'snatchChance=1&snatchDistance=0&snatchDiveRate=0.8&snatchShrinkRate=0.5&snatchFadeRate=0.5' },
         { label: '安心吃飯（永遠沒有賊鳥）', query: 'snatchChance=0' },
         { label: '完全不要地面（關掉預設的隨機地面）', query: 'theme=none' },
+        { label: '黃昏長影（釘死 17:30）', query: 'sunTime=17:30' },
+        { label: '正午（影子縮回腳下）', query: 'sunTime=12' },
+        { label: '深夜（只剩腳下的接地影）', query: 'sunTime=0' },
+        { label: '深夜且完全不要影子', query: 'sunTime=0&ambientShadow=0' },
+        { label: '關掉日照、回到固定的腳下影子', query: 'sunShadow=off' },
         { label: '掙扎更激烈（抓在手上扭得更兇）', query: 'dragStruggleRate=4' },
         { label: '純觀賞（不給抓，右鍵仍可戳）', query: 'drag=off' },
     ];
@@ -920,7 +940,7 @@
     const GROUPS = ['全部', ...new Set(PARAMS.map(p => p.group))];
     let activeGroup = '全部';
     const tbody = document.getElementById('tbody');
-    const badgeLabel = { int: 'INT', float: 'FLOAT', enum: 'ENUM', list: 'LIST' };
+    const badgeLabel = { int: 'INT', float: 'FLOAT', enum: 'ENUM', list: 'LIST', time: 'TIME' };
 
     document.getElementById('param-count').textContent = PARAMS.length;
 
