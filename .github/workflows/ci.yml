@@ -75,7 +75,7 @@ jobs:
         run: |
           docker run -d --rm --name smoke -p 8080:80 poke-stroll-ci
           sleep 2
-          for f in "" pokemon_footer_widget.html config.js pokemon_heights.js pokemon_types.js pokemon_cameo.js params.html; do
+          for f in "" pokemon_footer_widget.html config.js pokemon_heights.js pokemon_types.js pokemon_cameo.js params.html bridge.html js/bridge.js; do
             code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/$f")
             if [ "$code" != "200" ]; then echo "FAIL: /$f -> $code"; exit 1; fi
           done

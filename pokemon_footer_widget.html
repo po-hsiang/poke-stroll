@@ -129,6 +129,45 @@
             #weather { display: none; }
         }
 
+        /* 水面倒影（theme=water）：水面下多一個上下顛倒的自己。分三層各司其職——
+           .reflection 裁切（上緣＝水面、下緣＝頁面底邊，水面以下沒有更多空間了）
+                       並用等距橫線的遮罩切出像素風的水紋；
+           .reflect-wave 只負責左右搖曳——本體的 transform 由 JS 每幀改寫，
+                       CSS 動畫掛同一個元素會互相蓋掉，所以水紋自己住一層；
+           .reflect-sprite 才是鏡射的本體（transform 由 JS 給）。
+           幾何與 opacity 由 js/reflect.js 逐隻算好寫進 style */
+        .reflection {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: -2; /* 影子（-1）之下、地面（0）之上：倒影在水裡，影子在水面 */
+            -webkit-mask-image: repeating-linear-gradient(to bottom, #000 0 2px, transparent 2px 4px);
+            mask-image: repeating-linear-gradient(to bottom, #000 0 2px, transparent 2px 4px);
+        }
+        .reflect-wave {
+            animation: reflect-wave 2.4s ease-in-out infinite alternate; /* 時長由 JS 依 reflectWave 覆寫 */
+        }
+        @keyframes reflect-wave {
+            from { transform: translateX(-1.5px); }
+            to   { transform: translateX(1.5px); }
+        }
+        .reflect-sprite {
+            position: absolute;
+            left: 0;
+            width: auto;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            /* 翻轉以自身正中心為軸：元素框不動，只把內容上下顛倒，
+               js/reflect.js 的 top 才算得準 */
+            transform-origin: center center;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .reflect-wave { animation: none; }
+        }
+
         /* 果實的影子：釘在地面（不跟著果實動），大小與深淺由 JS 依果實
            高度逐幀調整——越高越小越淡，快落地放大加深回來，跟寶可夢
            跳躍的影子同一套物理語彙 */
@@ -267,6 +306,7 @@
     <script src="./js/ground.js"></script>
     <script src="./js/weather.js"></script>
     <script src="./js/sun.js"></script>
+    <script src="./js/reflect.js"></script>
     <script src="./js/pokemon.js"></script>
     <script src="./js/flyby.js"></script>
     <script src="./js/feeding.js"></script>

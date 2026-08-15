@@ -29,6 +29,7 @@
 | 🌅 日照影子 | 影子跟著**真實時間**走:太陽早上從畫面右邊升起、傍晚落到左邊(四分鐘 1 度),所以**早上影子往左倒、下午往右倒**,正午最短最深,越接近黃昏拖得越長越淡。夜晚只留腳下那圈**接地影**(立體感不掉);下雨下雪也不是關掉影子,是光被打散**變短變軟**。時間讀**看的人**的瀏覽器時鐘,伺服器架在哪一區都無關 |
 | 🔄 撞牆回頭 | 活動範圍可設定,撞到邊界就轉身,視窗縮放也會自動適應 |
 | 🏞️ 主題地面 | 腳下有**草地/水域/雪地/沙灘/岩地/土徑/熔岩**的像素地面,寶可夢會站上去(草蓋腳邊、雪會下陷、水泡到小腿),水和熔岩還會緩緩流動。**預設 `random`:每次重新整理隨機抽一種**(隨機池含「無地板」,狂按 F5 就是輪盤);`?theme=none` 完全關閉、`?theme=grass` 之類固定一種 |
+| 💧 水面倒影 | 站在**水域**上時,水面下多一個上下顛倒的自己:面向跟著轉,牠往上跳、水裡的就往下沉,水紋還會左右輕輕搖。鏡面取的是**水面**而不是腳底(腳其實泡在水面下),水面那條線兩側才接得起來。能畫多高就是水有多深——預設的 6px 地面只留一抹濕痕,`?theme=water&themeHeight=40` 才看得出是倒影 |
 | 🌦️ 天氣 | 有地面就可能有天氣(預設 50%):**草地/水域/岩地/土徑下雨**(斜斜細細長長的藍色雨絲)、**雪地下雪**(白點慢慢飄、左右搖曳)、**沙灘颳風沙**、**熔岩飄火星**。風向每次隨機一邊;粒子全用 CSS 動畫循環,不吃效能。`?weatherChance=0` 永遠晴天、`?weatherDensity=2` 傾盆大雨 |
 | 🌠 流星客串 | 每隔一段隨機時間擲骰,中了就有一隻**飛行系**(極低機率是**會飛的傳說**)沿隨機斜線航道、浮浮沉沉地從畫面外高速橫越,不加入常駐陣容,目擊本身就是話題。中色違的還拖著金色星塵尾跡 |
 | 🎁 信使鳥空投 | 客串偶爾改派**信使鳥叼著果實**路過,半路鬆爪空投,落地後就是一般的餵食流程——最近且有空的那隻冒驚嘆號跑去吃。那一刻大家都在忙的話,果實會被**整顆叼走**不落地 |
@@ -87,9 +88,23 @@ poke.contentWindow.postMessage({ ns: 'poke-stroll', cmd: 'spawn', id: 143 }, '*'
 ```
 
 每道指令都有回執(`{ ns, re, ok, ... }`),內建每秒節流(`remoteRateLimit`,預設 10),
-`?remote=off` 可整個關閉。完整指令表、回執欄位、以及**接外部程式的 wrapper 範例**
-見 [PARAMS.md](PARAMS.md) 的「postMessage 遙控」一節(部署站的 `params.html` 同步收錄,
-還有現場試玩按鈕)。
+`?remote=off` 可整個關閉。完整指令表與回執欄位見 [PARAMS.md](PARAMS.md) 的
+「postMessage 遙控」一節(部署站的 `params.html` 同步收錄,還有現場試玩按鈕)。
+
+### 🔌 指令橋接(bridge.html)
+
+postMessage 是瀏覽器內的通道,**外部程式**碰不到。同捆的 `bridge.html` 就是那道門:
+對外連一個訊息來源、把收到的東西翻成遙控指令、對內丟給 widget。不用寫程式,帶網址參數就能用:
+
+```
+bridge.html?ws=wss://your-service.example/stream
+bridge.html?poll=https://your-service.example/latest.json&pollInterval=3000
+```
+
+來源送 `{"cmd":"feed","count":2}`、`{"sender":"svc-a","text":"…"}` 或純文字一行都收;
+文字模式只認「前綴 + 已知指令」(`!feed 2`、`!poke 25`、`!drop`…),所以整行包在別的協定裡也挑得出來,
+又不會把隨便一個驚嘆號當成指令。斷線自動重連、同來源冷卻、指令白名單都內建,
+參數表見 [PARAMS.md](PARAMS.md) 的「指令橋接」一節。widget 本體完全不用改。
 
 ## 🎛️ 我要調!(config.js)
 
@@ -97,7 +112,11 @@ poke.contentWindow.postMessage({ ns: 'poke-stroll', cmd: 'spawn', id: 143 }, '*'
 
 > 🔗 不想改檔案?幾乎所有參數都能直接掛在**網址後面**,像 `?count=10&ids=25,133`,
 > iframe 嵌入時各專案可以帶自己的參數。完整清單見 [PARAMS.md](PARAMS.md);
-> 部署站還同捆互動版文件 `params.html`(可搜尋、一鍵複製、底部即時預覽)。
+> 部署站還同捆互動版文件 `params.html`(可搜尋、一鍵複製、即時預覽,還有**調校台**——
+> 一參數一根拉桿,調完直接複製網址)。
+
+> 🎚️ 懶得一個一個挑?`?preset=aibi` 一次套用一整組調好的參數,個別參數還是蓋得過它
+> (`?preset=aibi&count=8` 就是「aibi 但八隻」)。清單與新增方式見 [PARAMS.md](PARAMS.md) 的「預設檔」一節。
 
 | 參數 | 預設 | 效果 |
 |------|------|------|
@@ -113,7 +132,10 @@ poke.contentWindow.postMessage({ ns: 'poke-stroll', cmd: 'spawn', id: 143 }, '*'
 | `bubbleSideGap` | `-5` | 側邊對話框跟身體的距離(點陣圖像素,會乘上放大倍率)。預設是負的=疊在身上,`0` 貼齊邊緣,正數則完全不重疊 |
 | `bubbleSideLift` | `2` | 側邊對話框的垂直微調 px(底邊錨在身高六成處,再往上加這幾 px) |
 | `shinyChance` | `1/100` | 色違機率,每隻獨立計算。調成 1 就是全員色違遊行 ✨,想回到正作手感就設 `1/4096` |
-| `theme` | `'none'` | 主題地面:`'grass'` 草地 / `'water'` 水域 / `'snow'` 雪地 / `'sand'` 沙灘 / `'rock'` 岩地 / `'dirt'` 土徑 / `'lava'` 熔岩 |
+| `theme` | `'random'` | 主題地面:`'grass'` 草地 / `'water'` 水域 / `'snow'` 雪地 / `'sand'` 沙灘 / `'rock'` 岩地 / `'dirt'` 土徑 / `'lava'` 熔岩 / `'none'` 關閉 |
+| `reflect` | `'on'` | 水面倒影(只在 `'water'` 出現)。水要夠深才看得出來:`?theme=water&themeHeight=40` |
+| `reflectOpacity` | `0.35` | 倒影濃度。`1` 就跟本體一樣實,水面反而不像水了 |
+| `reflectWave` | `1` | 水紋搖曳的倍速。`0` = 一池死水 |
 | `flybyChance` | `0.25` | 流星客串的觸發機率(每 15~20 秒擲骰一次,間隔與傳說機率也都可調) |
 | `hopHeight` | `3` | 跳步高度。調到 20 會變成爆米花 🍿 |
 | `baseSize` | `128` | 「大型」寶可夢的顯示高度 px,中型 = 0.8、小型 = 0.6 |
@@ -127,25 +149,30 @@ poke.contentWindow.postMessage({ ns: 'poke-stroll', cmd: 'spawn', id: 143 }, '*'
 ```
 poke-stroll/
 ├── pokemon_footer_widget.html  ← 入口:版面與樣式,以及 js/ 的載入順序(= 依賴順序)
+├── bridge.html                 ← 指令橋接:外部訊息來源 → 遙控指令(widget 本體不用改)
 ├── config.js                   ← 你的遊樂場:所有可調參數
 ├── pokemon_heights.js          ← 圖鑑身高對照表(離線可用,不用打 API)
 ├── pokemon_types.js            ← 圖鑑主屬性對照表(影子染色用)
 ├── pokemon_cameo.js            ← 流星客串抽選名單(飛行系 73 隻 + 會飛的傳說 9 隻)
 ├── js/                         ← 主程式,一個檔案一個職責:
-│   ├── params.js               ←   URL 參數白名單與覆寫
+│   ├── params.js               ←   URL 參數白名單與覆寫、預設檔(preset)
 │   ├── utils.js                ←   工具函式(亂數、體型分級…)
 │   ├── sprites.js              ←   像素圖資產(心情對話框/星星/樹果,字元畫 → canvas)
 │   ├── ground.js               ←   主題地面
 │   ├── weather.js              ←   天氣(雨/雪/風沙/火星)
 │   ├── sun.js                  ←   日照:跟著真實時間走的影子(方向/長短/濃淡)
+│   ├── reflect.js              ←   水面倒影(水域地形的鏡射)
 │   ├── pokemon.js              ←   Pokemon 類別(散步/發呆/寒暄/餵食/掙扎的狀態機)
 │   ├── flyby.js                ←   流星客串與信使鳥空投
 │   ├── feeding.js              ←   丟果實餵食
 │   ├── snatch.js               ←   空中搶食(賊鳥)
 │   ├── drag.js                 ←   滑鼠拖曳
 │   ├── remote.js               ←   postMessage 遙控
+│   ├── bridge.js               ←   指令橋接的解析與連線(給 bridge.html 用,不進 widget)
 │   └── main.js                 ←   主迴圈與啟動
-└── test/widget.test.js         ← 單元測試(只在開發時用,不影響執行)
+└── test/
+    ├── widget.test.js          ← 單元測試(只在開發時用,不影響執行)
+    └── params-doc.test.js      ← 文件同步檢查(白名單 ↔ PARAMS.md ↔ params.html)
 ```
 
 整個資料夾放在一起就好,沒有 npm、沒有 build、沒有框架——雙擊 `.html` 就能跑。

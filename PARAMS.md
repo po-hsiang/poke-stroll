@@ -27,10 +27,34 @@
         loading="lazy"></iframe>
 ```
 
+## 預設檔(Presets)
+
+參數有六十幾個,但多數場景不需要一個一個挑。`?preset=<名稱>` 一次套用一整組調好的參數:
+
+```html
+<iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/?preset=aibi" …></iframe>
+```
+
+| 名稱 | 給誰 | 展開後等於 |
+|------|------|------------|
+| `aibi` | AIBI 平台 | `count=4&speedVariance=1&boundsMin=0&boundsMax=1&bubblePosition=side&shinyChance=0.0025` |
+
+`aibi` 的取捨:**滿版散步**(`boundsMin=0&boundsMax=1`,貼齊平台全寬版面,左右不留白)、
+**個體速度差拉開**(`speedVariance=1`,四隻一起走才不會像列隊行進)、對話框擺側邊,
+色違壓回接近正作的稀有度(1/400)——這是長時間掛著的介面,要撞見才是驚喜。
+
+規則只有兩條:
+
+- **個別參數蓋得過預設檔**:`?preset=aibi&count=8` 就是「aibi 但八隻」。
+- **預設檔的值走同一套驗證**:它本身就是一段 query string,沒有第二套規則,也就沒有第二種壞法。
+
+> 想加新的預設檔:改 `js/params.js` 最上面的 `PRESETS`,值直接寫成 query string 即可。
+
 ## 參數總表
 
 | 參數 | 型別 | 允許範圍 | 預設 | 說明 |
 |------|------|----------|------|------|
+| `preset` | enum | `aibi` | — | **預設檔**:一次套用一整組調好的參數(見下方「預設檔」一節)。個別參數蓋得過它,`?preset=aibi&count=8` 就是「aibi 但八隻」 |
 | `count` | int | 1 ~ 50 | `4` | 同時生成的寶可夢數量 |
 | `minId` | int | 1 ~ 1025 | `1` | 隨機抽選的圖鑑編號下限 |
 | `maxId` | int | 1 ~ 1025 | `649` | 隨機抽選的圖鑑編號上限(650 以後沒有動態 GIF,會退回靜態圖) |
@@ -71,6 +95,9 @@
 | `themeHeight` | int | 4 ~ 200 | `6` | 主題地面的高度 px。內部以 2px 像素格繪製,實際高度會取到最接近的偶數;只在 `theme` ≠ `none` 時有意義 |
 | `weatherChance` | float | 0 ~ 1 | `0.5` | **天氣**:每次載入擲一次骰,中了整頁就下著這場天氣——種類由主題地面決定:**雨**(草地/水域/岩地/土徑,斜斜細細長長的藍色雨絲)、**雪**(雪地,白色小點慢慢飄、左右搖曳)、**風沙**(沙灘,橫向沙痕順風橫掃)、**火星**(熔岩,橘黃小火星從低處上飄漸滅)。風向(雨的斜向、沙的走向)每次隨機一邊;粒子全用 CSS 動畫循環,不吃主迴圈效能。`theme=none` 沒有場景就沒有天氣;`0` = 永遠晴天 |
 | `weatherDensity` | float | 0.2 ~ 5 | `1` | 天氣的**粒子密度倍率**:雨絲/雪花/沙痕/火星的數量 = 基準(依視窗寬換算)× 這個值。`2` = 傾盆大雨、`0.5` = 毛毛雨 |
+| `reflect` | enum | `on` / `off` | `on` | **水面倒影**(只在 `theme=water` 出現):水面下多一個上下顛倒的自己,面向與跳躍高度都跟著本體走——牠往上跳,水裡的就往下沉。鏡面取**水面**而不是腳底(腳其實泡在水面下),水面那條線兩側才接得起來。能畫的高度就是地面那條帶,所以預設的 6px 地面只留一抹濕痕,**把地面拉高才看得出是倒影**:`?theme=water&themeHeight=40`。`off` = 不畫(連元素都不會產生) |
+| `reflectOpacity` | float | 0 ~ 1 | `0.35` | 倒影濃度。`1` = 跟本體一樣實,水面就不像水了;`0` 等同關掉 |
+| `reflectWave` | float | 0 ~ 5 | `1` | 水紋左右搖曳的**倍速**:`2` = 兩倍快、`0` = 靜止無波的水面。搖曳是 CSS 動畫,不吃主迴圈效能;系統開了「減少動態效果」時自動靜止 |
 | `flybyDelayMin` | int | 1000 ~ 600000 | `15000` | **客串事件**:距離下一次「擲骰時點」的間隔下限 ms |
 | `flybyDelayMax` | int | 1000 ~ 600000 | `20000` | 擲骰間隔上限 ms(min > max 自動對調) |
 | `flybyChance` | float | 0 ~ 1 | `0.25` | 每次擲骰真的觸發客串的機率(`0` = 整個機制關閉)。觸發時一隻寶可夢從畫面外**沿隨機斜線航道、浮浮沉沉地**高速橫越(這趟可能左 45% 飛到右 60%,下一趟右 70% 飛到左 50%),不加入常駐陣容;色違吃全頁 `shinyChance`,中了會拖金色星塵尾跡 |
@@ -94,6 +121,7 @@
 亂帶參數不會弄壞頁面,規則如下(都會在瀏覽器 console 留下警告):
 
 - **不在表上的參數**:直接無視。
+- **不存在的 `preset`**:整個預設檔忽略,其餘參數照常生效(console 會列出可用名單)。
 - **非數字或超出允許範圍**:忽略該參數,使用預設值。
 - **`minId` > `maxId`** 或 **`lookTimeMin` > `lookTimeMax`**:自動對調。
 - **`boundsMin` >= `boundsMax`**:整組退回預設 0.1 ~ 0.9。
@@ -106,6 +134,8 @@
 
 | 想要的效果 | 網址參數 |
 |------------|----------|
+| AIBI 平台的標準配置 | `?preset=aibi` |
+| AIBI 配置但八隻 | `?preset=aibi&count=8` |
 | 專案吉祥物固定陣容(皮卡丘+伊布+噴火龍) | `?ids=25,133,6` |
 | 五隻伊布 | `?ids=133,133,133,133,133` |
 | 初代御三家世界 | `?minId=1&maxId=151&count=6` |
@@ -126,6 +156,10 @@
 | 大雪紛飛 | `?theme=snow&weatherChance=1&weatherDensity=2` |
 | 永遠晴天(不要天氣) | `?weatherChance=0` |
 | 海邊戲水(可達鴨一家+乘龍) | `?theme=water&ids=54,55,116,131` |
+| **看得出來的水面倒影**(水要夠深) | `?theme=water&themeHeight=40` |
+| 一池死水(倒影不搖) | `?theme=water&themeHeight=40&reflectWave=0` |
+| 倒影再清楚一點 | `?theme=water&themeHeight=40&reflectOpacity=0.6` |
+| 水域但不要倒影 | `?theme=water&reflect=off` |
 | 熔岩試膽(小火龍一家) | `?theme=lava&ids=4,5,6` |
 | 客串頻發(展示/測試用) | `?flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000` |
 | 傳說時刻(每次都是傳說級路過) | `?flybyChance=1&flybyLegendaryChance=1&flybyDelayMin=3000&flybyDelayMax=5000` |
@@ -210,9 +244,61 @@ window.addEventListener('message', e => {
 - **總開關**:`?remote=off` 後完全靜默(連回執都不給,像沒這功能)。
 - 刻意**不驗 origin**:指令全是無害的視覺效果、無機密無狀態,最壞情況是有人在他自己的頁面上讓皮卡丘跳舞。要鎖就用 `remote=off` 整個關閉。
 
-### 進階:接外部程式(wrapper 模式)
+### 指令橋接(bridge.html)
 
-後台服務、bot 等**外部程式**碰不到 postMessage(不同行程、沒有共同的瀏覽器語境)。做法是讓 OBS 或任何頁面載入一頁薄薄的 wrapper,由它對外連 WebSocket 收事件、對內轉譯成 postMessage:
+後台服務、bot 等**外部程式**碰不到 postMessage(不同行程、沒有共同的瀏覽器語境)。
+`bridge.html` 就是那道門:它對外連一個**訊息來源**、把收到的東西翻成遙控指令、對內丟進 iframe 裡的 widget。
+不用寫程式,帶網址參數就能用:
+
+```
+https://rd7-ai-gw-02.i17game.net/poke-stroll/bridge.html?ws=wss://your-service.example/stream
+https://rd7-ai-gw-02.i17game.net/poke-stroll/bridge.html?poll=https://your-service.example/latest.json&pollInterval=3000
+```
+
+widget 本體完全不用改,也不知道指令從哪來——來源相關的規則全關在這一層。
+
+**來源可以送三種格式**,同一條連線混著送也行:
+
+| 收到的東西 | 解讀 |
+|------------|------|
+| `{"cmd":"feed","count":2}` | 直接照做(欄位名與 postMessage 指令表一致,不必帶 `ns`) |
+| `{"sender":"svc-a","text":"…!feed 2…"}` | 從 `text` 挑指令;`sender`(或 `user`)用來算冷卻 |
+| 純文字一行 `…!feed 2…` | 從整行挑指令 |
+
+文字模式只認「**前綴 + 已知指令**」這個組合,所以整行包在別的協定裡(前面有時戳、路由前綴之類)也挑得出來,又不會把隨便一個驚嘆號當成指令。可用的指令詞:
+
+| 指令詞 | 等於 |
+|--------|------|
+| `!spawn` / `!spawn 143` | `spawn`(客串一隻) |
+| `!drop` | `spawn` + `delivery`(信使鳥空投果實) |
+| `!feed` / `!feed 3` | `feed`(天降果實,帶顆數) |
+| `!poke` / `!poke 25` | `poke`(戳一下) |
+| `!join 133` / `!leave` | `join` / `leave`(加入/送走常駐成員) |
+| `!burst` / `!roster` | `burst` / `roster` |
+
+**橋接頁自己的參數**(跟 widget 的參數分開,寫在 `bridge.html?` 後面):
+
+| 參數 | 預設 | 說明 |
+|------|------|------|
+| `ws` | — | WebSocket 來源網址。斷線自動重連,退避 1→2→4…秒,最多 30 秒 |
+| `poll` | — | 改用輪詢:定期 GET 這個網址,回傳 JSON 物件或陣列。與 `ws` 擇一 |
+| `pollInterval` | `3000` | 輪詢間隔 ms(500 ~ 600000) |
+| `hello` | — | 連上後要先送出的行,`\|` 分隔——有些文字協定得先報到才會開始送資料 |
+| `prefix` | `!` | 文字指令的前綴 |
+| `allow` | 全部 | 指令白名單,逗號分隔(如 `allow=feed,poke`)。看不懂的名稱會被剔除 |
+| `cooldown` | `3000` | **同一個 `sender` 的冷卻 ms**。widget 端的節流是「全場」額度,這一層讓額度不會被單一來源一口氣吃光。`0` = 不擋 |
+| `q` | — | 轉交給 widget 的參數,例 `q=preset%3Daibi`(記得 URL 編碼) |
+| `status` | `on` | 左上角的狀態列(連上了沒、送出幾道、最近一道)。`off` 收起來 |
+
+其他內建行為:來源送 `PING` 會自動回 `PONG`(許多文字協定的保活慣例);
+每道指令的回執若是 `ok:false`,會印在 console 上——除錯時不必猜是「沒送到」還是「送到了但被拒絕」。
+
+> 直接打開 `bridge.html`(不帶 `ws` / `poll`)會顯示用法說明,不是一片空白。
+
+### 進階:自己寫 wrapper
+
+來源的協定太特別、或想在轉譯這一層加自己的商業邏輯時,`bridge.html` 的作法照抄即可——
+本質就是一頁薄薄的 wrapper,對外收事件、對內轉譯成 postMessage:
 
 ```html
 <!-- wrapper.html:OBS 或任何頁面載入這一頁(widget 本體完全不用改) -->

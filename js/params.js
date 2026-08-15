@@ -5,6 +5,21 @@
 const CONFIG = window.POKE_CONFIG;
 
 // ---------------------------------------------------------
+// 預設檔 (Presets)
+// ?preset=aibi = 「先幫我把這一串參數打好」。
+// 值本身就是一段 query string，所以它走的是跟手打參數一模一樣的驗證路徑——
+// 沒有第二套規則，也就沒有第二種壞法；要看某個預設檔到底做了什麼，
+// 讀這一行就是全部。
+// 個別參數永遠蓋得過預設檔：?preset=aibi&count=8 就是「aibi 但八隻」。
+// ---------------------------------------------------------
+const PRESETS = {
+    // AIBI 平台：滿版散步（左右不留白，貼齊平台的全寬版面）、個體速度差拉開
+    // （四隻一起走才不會像列隊行進）、對話框擺側邊；色違壓回接近正作的稀有度
+    // （1/400），要撞見才是驚喜——這是長時間掛著的介面，不是短時間的表演
+    aibi: 'count=4&speedVariance=1&boundsMin=0&boundsMax=1&bubblePosition=side&shinyChance=0.0025',
+};
+
+// ---------------------------------------------------------
 // URL 參數覆寫 (Query String Overrides)
 // iframe 嵌入或直接開啟時可用 ?count=5&baseSize=120 客製，
 // 不帶參數就吃 config.js 的預設值。完整參數文件見 PARAMS.md
@@ -68,6 +83,9 @@ const QUERY_PARAMS = {
     snatchFadeRate:   { path: ['snatchFadeRate'],   type: 'float', min: 0,  max: 10 },
     drag:             { path: ['drag'],             type: 'enum',  values: ['on', 'off'] },
     dragStruggleRate: { path: ['dragStruggleRate'], type: 'float', min: 0,  max: 10 },
+    reflect:          { path: ['reflect'],          type: 'enum',  values: ['on', 'off'] },
+    reflectOpacity:   { path: ['reflectOpacity'],   type: 'float', min: 0,  max: 1 },
+    reflectWave:      { path: ['reflectWave'],      type: 'float', min: 0,  max: 5 },
 };
 
 // 'HH:MM'（17:30）或小數時數（17.5）→ 小數時數。看不懂就回 NaN，
@@ -84,8 +102,22 @@ function parseTimeParam(raw) {
 function applyQueryOverrides(config) {
     const qs = new URLSearchParams(location.search);
 
+    // 預設檔先展開成底層，網址上手打的參數再蓋上去。
+    // 展開後的每一個值照樣逐一驗證（跟手打的走同一段程式），
+    // 所以預設檔寫錯值也只是那一項被忽略，不會整組壞掉
+    const presetName = (qs.get('preset') ?? '').trim().toLowerCase();
+    let preset = null;
+    if (presetName) {
+        if (PRESETS[presetName]) {
+            preset = new URLSearchParams(PRESETS[presetName]);
+        } else {
+            console.warn(`[PokéFooter] 沒有這個預設檔：${presetName}（可用：${Object.keys(PRESETS).join(' / ')}）`);
+        }
+    }
+    const readParam = name => qs.get(name) ?? preset?.get(name) ?? null;
+
     for (const [name, spec] of Object.entries(QUERY_PARAMS)) {
-        const raw = qs.get(name);
+        const raw = readParam(name);
         if (raw === null) continue;
         let value;
         if (spec.type === 'enum') {
@@ -119,7 +151,7 @@ function applyQueryOverrides(config) {
 
     // ids=25,133,6：固定生成清單（取代 count/minId/maxId 的隨機抽選）。
     // 允許重複編號（五隻伊布也是一種浪漫），上限 50 隻
-    const ids = qs.get('ids');
+    const ids = readParam('ids');
     if (ids !== null) {
         const list = ids.split(',')
             .map(s => parseInt(s.trim(), 10))

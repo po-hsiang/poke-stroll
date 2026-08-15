@@ -183,7 +183,7 @@ for (const f of jsFiles) {
 // 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
 // global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
 vm.runInContext(
-    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS };',
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, PRESETS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -2591,6 +2591,312 @@ group('19. 色違星星特效定時重播');
         CONFIG.overcastShadow = savedOvercast;
         CONFIG.sunTime = 12;
         T.setSunOvercast(null);
+    }
+
+    // =====================================================
+    group('32. 預設檔（preset：一次套用一整組調好的參數）');
+    {
+        const savedSearch = sandbox.location.search;
+        // applyQueryOverrides 會就地改寫傳進去的設定，所以每次都給它一份影本，
+        // 別把整份測試共用的 CONFIG 弄髒（sizeTiers 的 Infinity 在這裡用不到）
+        const run = search => {
+            sandbox.location.search = search;
+            const cfg = JSON.parse(JSON.stringify(CONFIG));
+            T.applyQueryOverrides(cfg);
+            return cfg;
+        };
+
+        check('PRESETS 有 aibi', typeof T.PRESETS?.aibi === 'string');
+        check('aibi 的內容就是那一串 query string',
+            T.PRESETS.aibi === 'count=4&speedVariance=1&boundsMin=0&boundsMax=1'
+                + '&bubblePosition=side&shinyChance=0.0025',
+            T.PRESETS.aibi);
+        // 預設檔裡打錯參數名會靜靜地什麼都不做，這一條把它擋在測試階段
+        for (const [name, preset] of Object.entries(T.PRESETS)) {
+            const unknown = [...new URLSearchParams(preset).keys()]
+                .filter(k => !T.QUERY_PARAMS[k] && k !== 'ids');
+            check(`預設檔 ${name} 的每個參數都在白名單上`, unknown.length === 0,
+                unknown.join(', '));
+        }
+
+        const aibi = run('?preset=aibi');
+        check('?preset=aibi → 滿版活動範圍（0 ~ 1）',
+            aibi.bounds.min === 0 && aibi.bounds.max === 1);
+        check('?preset=aibi → 個體速度差 1、四隻、對話框在側邊',
+            aibi.speedVariance === 1 && aibi.count === 4 && aibi.bubblePosition === 'side');
+        check('?preset=aibi → 色違 1/400', aibi.shinyChance === 0.0025);
+        check('沒帶到的參數維持預設（baseSize 沒被動到）', aibi.baseSize === CONFIG.baseSize);
+
+        const mixed = run('?preset=aibi&count=8&shinyChance=1');
+        check('個別參數蓋得過預設檔', mixed.count === 8 && mixed.shinyChance === 1);
+        check('沒被蓋到的仍然來自預設檔',
+            mixed.bounds.min === 0 && mixed.bounds.max === 1 && mixed.speedVariance === 1);
+
+        const unknownPreset = run('?preset=沒有這個&count=7');
+        check('預設檔名稱不存在 → 整組忽略，其餘參數照常生效',
+            unknownPreset.count === 7 && unknownPreset.bounds.min === 0.1);
+
+        // 預設檔的值走的是跟手打參數同一條驗證路徑：超範圍的一樣被擋下
+        T.PRESETS.__bogus = 'count=999&baseSpeed=0.5';
+        const bogus = run('?preset=__bogus');
+        check('預設檔裡的值一樣要過範圍檢查（count=999 被擋，baseSpeed 照收）',
+            bogus.count === CONFIG.count && bogus.baseSpeed === 0.5);
+        delete T.PRESETS.__bogus;
+
+        T.PRESETS.__ids = 'ids=25,133';
+        const idsPreset = run('?preset=__ids');
+        check('預設檔也能帶 ids（白名單外的特例一併吃到）',
+            JSON.stringify(idsPreset.fixedIds) === '[25,133]' && idsPreset.count === 2);
+        delete T.PRESETS.__ids;
+
+        check('preset 名稱大小寫、前後空白都容忍',
+            run('?preset=%20AIBI%20').speedVariance === 1);
+
+        sandbox.location.search = savedSearch;
+    }
+
+    // =====================================================
+    group('33. 水面倒影（水域地形的鏡射）');
+    {
+        const savedTheme = CONFIG.theme;
+        const savedHeight = CONFIG.themeHeight;
+        const savedReflect = CONFIG.reflect;
+        const savedOpacity = CONFIG.reflectOpacity;
+        const savedWave = CONFIG.reflectWave;
+        const findReflection = p => p.el.children.find(c => c.className === 'reflection');
+
+        // ---- 載入與參數登記 ----
+        check('reflect.js 在載入清單裡，且排在用到它的 pokemon.js 之前',
+            jsFiles.includes('js/reflect.js')
+            && jsFiles.indexOf('js/reflect.js') < jsFiles.indexOf('js/pokemon.js'));
+        check('reflect 已登記（enum on/off）',
+            T.QUERY_PARAMS?.reflect?.type === 'enum'
+            && JSON.stringify(T.QUERY_PARAMS.reflect.values) === '["on","off"]');
+        check('reflectOpacity 已登記（float 0 ~ 1）',
+            T.QUERY_PARAMS?.reflectOpacity?.type === 'float'
+            && T.QUERY_PARAMS.reflectOpacity.min === 0 && T.QUERY_PARAMS.reflectOpacity.max === 1);
+        check('reflectWave 已登記（float 0 ~ 5）',
+            T.QUERY_PARAMS?.reflectWave?.type === 'float'
+            && T.QUERY_PARAMS.reflectWave.min === 0 && T.QUERY_PARAMS.reflectWave.max === 5);
+        check("config.js 預設 reflect = 'on' / 濃度 0.35 / 水紋 1 倍速",
+            CONFIG.reflect === 'on' && CONFIG.reflectOpacity === 0.35 && CONFIG.reflectWave === 1);
+        check('腳底離容器底邊的 1px 與 CSS 對得上（鏡射軸算得準的前提）',
+            T.SPRITE_FOOT_GAP === 1 && /\.sprite\s*\{[^}]*margin-bottom:\s*1px/.test(html));
+
+        // ---- 只有會反光的地形才有倒影 ----
+        CONFIG.themeHeight = 40; // 水深 40px：水面到頁面底邊都能畫
+        T.initGround('water');
+        check('水域：量測值 = 帶高 40、抬高 30（40 - 踩入 5×2）、會反光',
+            T.groundSurface.band === 40 && T.groundSurface.lift === 30
+            && T.groundSurface.reflect === 1,
+            JSON.stringify(T.groundSurface));
+        check('水域的反光強度 = 地形 × reflectOpacity', T.reflectStrength() === 0.35);
+        T.initGround('grass');
+        check('草地不反光', T.groundSurface.reflect === 0 && T.reflectStrength() === 0);
+        T.initGround('none');
+        check('沒有地面 → 量測值歸零',
+            T.groundSurface.band === 0 && T.groundSurface.reflect === 0);
+
+        // ---- 掛上去的三層與幾何 ----
+        T.initGround('water');
+        const wet = newPokemon(25);
+        const wrap = findReflection(wet);
+        check('水域的成員身上掛了倒影', !!wrap);
+        check('外層下緣貼齊頁面底邊、上緣就是水面',
+            wrap?.style.bottom === '-30px' && wrap?.style.height === '40px',
+            `${wrap?.style.bottom} / ${wrap?.style.height}`);
+        check('濃度吃 reflectOpacity', Number(wrap?.style.opacity) === 0.35);
+        const wave = wrap?.children[0];
+        check('中間層只管搖曳（水紋自己一層，不跟本體的 transform 打架）',
+            wave?.className === 'reflect-wave' && wave.style.animationDuration === '2.40s');
+        const mirror = wave?.children[0];
+        check('最內層是鏡射的本體，圖跟本體同一張',
+            mirror?.className === 'reflect-sprite' && mirror.src === wet.img.src);
+        // 鏡面在水面（腳底上方 band - lift = 10px），倒影的腳落在水面上方同樣距離，
+        // 再扣掉 sprite 腳底那 1px
+        check('鏡射軸取水面而不是腳底（水面兩側接得起來）',
+            mirror?.style.top === '-9px', mirror?.style.top);
+        wet.direction = 1; // 建構時的面向是隨機的，先釘住再看
+        wet.updateDOM();
+        check('倒影 = 同一個面向 + Y 軸翻過來',
+            mirror?.style.transform === 'scaleX(-1) scaleY(-1) translateY(0px)',
+            mirror?.style.transform);
+
+        // ---- 跟著本體走：轉向與跳躍 ----
+        wet.direction = -1;
+        wet.bobY = 4;
+        wet.updateDOM();
+        check('轉向時倒影跟著轉',
+            wet.reflection.style.transform.startsWith('scaleX(1) scaleY(-1)'),
+            wet.reflection.style.transform);
+        check('本體升高多少，水裡的就往下沉多少',
+            wet.reflection.style.transform.endsWith('translateY(-4px)'),
+            wet.reflection.style.transform);
+        check('倒影的位移與本體是同一個數字（只差在翻過來）',
+            wet.img.style.transform.includes('translateY(-4px)'));
+
+        // ---- 開關與水紋 ----
+        CONFIG.reflectWave = 0;
+        const still = newPokemon(25);
+        check('reflectWave = 0 → 靜止無波的水面',
+            findReflection(still)?.children[0].style.animation === 'none');
+        CONFIG.reflectWave = 2;
+        const fast = newPokemon(25);
+        check('reflectWave = 2 → 搖得兩倍快',
+            findReflection(fast)?.children[0].style.animationDuration === '1.20s');
+        CONFIG.reflectWave = savedWave;
+
+        CONFIG.reflect = 'off';
+        const dry = newPokemon(25);
+        check('reflect = off → 連元素都不產生', !findReflection(dry) && !dry.reflection);
+        CONFIG.reflect = savedReflect;
+        CONFIG.reflectOpacity = 0;
+        check('reflectOpacity = 0 等同關掉', !findReflection(newPokemon(25)));
+        CONFIG.reflectOpacity = savedOpacity;
+
+        T.initGround('grass');
+        check('非水域地形的成員身上沒有倒影（非水域場景成本是零）',
+            !findReflection(newPokemon(25)));
+
+        // ---- CSS 端的守則 ----
+        check('倒影疊在地面之上、影子之下', /\.reflection\s*\{[^}]*z-index:\s*-2/.test(html));
+        check('外層負責裁切（水面以下沒有更多空間了）',
+            /\.reflection\s*\{[^}]*overflow:\s*hidden/.test(html));
+        check('系統開了「減少動態效果」時水紋靜止',
+            /prefers-reduced-motion[\s\S]*\.reflect-wave\s*\{\s*animation:\s*none/.test(html));
+
+        T.initGround('none');
+        CONFIG.theme = savedTheme;
+        CONFIG.themeHeight = savedHeight;
+        T.pokemons.length = 0;
+    }
+
+    // =====================================================
+    group('34. 指令橋接（bridge.html：外部訊息來源 → 遙控指令）');
+    {
+        // js/bridge.js 不在 widget 的載入清單裡（它是 bridge.html 的東西），
+        // 所以另外開一個乾淨的 context 跑——順便證明它不依賴 widget 的任何全域
+        const bridgeBox = { console, URLSearchParams, Math, Number, JSON, Date, String, Array, Object };
+        vm.createContext(bridgeBox);
+        vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/bridge.js'), 'utf8'),
+            bridgeBox, { filename: 'js/bridge.js' });
+        vm.runInContext('globalThis.__B = { parseBridgeConfig, parseBridgeLine, bridgeCommand,'
+            + ' bridgeMessageToCommand, makeBridgeGate, BRIDGE_CMDS };', bridgeBox);
+        const B = bridgeBox.__B;
+        const cfg = B.parseBridgeConfig('');
+        const cmd = (text, c = cfg) => JSON.stringify(B.parseBridgeLine(text, c));
+
+        // ---- 設定 ----
+        check('預設：前綴 !、冷卻 3 秒、輪詢 3 秒、狀態列開著',
+            cfg.prefix === '!' && cfg.cooldown === 3000
+            && cfg.pollInterval === 3000 && cfg.status === 'on');
+        check('沒帶 allow 就是全部指令都放行', cfg.allow.size === B.BRIDGE_CMDS.length);
+        // Number(null) 是 0 不是 NaN——沒有這一條，每個沒帶的數字參數都會靜靜變成 0
+        check('沒帶的數字參數不會被 Number(null) 吃成 0',
+            B.parseBridgeConfig('?ws=x').cooldown === 3000);
+        const custom = B.parseBridgeConfig('?ws=wss://x.example/s&prefix=%23&allow=feed,poke&cooldown=0&status=off&q=preset%3Daibi');
+        check('來源、前綴、白名單、冷卻、狀態列都讀得到',
+            custom.ws === 'wss://x.example/s' && custom.prefix === '#'
+            && custom.cooldown === 0 && custom.status === 'off');
+        check('白名單只留下認得的指令',
+            custom.allow.size === 2 && custom.allow.has('feed') && !custom.allow.has('spawn'));
+        check('q 原樣轉交給 widget（?preset=aibi）', custom.query === 'preset=aibi');
+        check('allow 全部看不懂 → 當作沒帶（不要靜靜地全鎖）',
+            B.parseBridgeConfig('?allow=nope,zzz').allow.size === B.BRIDGE_CMDS.length);
+        check('輪詢間隔夾在 500 ~ 600000',
+            B.parseBridgeConfig('?pollInterval=10').pollInterval === 500);
+        check('hello 用 | 分隔成多行',
+            JSON.stringify(B.parseBridgeConfig('?hello=A%7CB').hello) === '["A","B"]');
+
+        // ---- 文字挑指令 ----
+        check('!feed 2 → feed count 2', cmd('!feed 2') === '{"cmd":"feed","count":2}');
+        check('整行包在別的協定裡也挑得出來',
+            cmd(':svc-a PRIVMSG #room :今天天氣真好 !feed 2 謝謝') === '{"cmd":"feed","count":2}');
+        check('沒帶數字就是不帶（widget 端自己隨機）', cmd('!feed') === '{"cmd":"feed"}');
+        check('!drop = 信使鳥空投（spawn + delivery）',
+            cmd('!drop') === '{"cmd":"spawn","delivery":true}');
+        check('!poke 25 → 只戳皮卡丘', cmd('!poke 25') === '{"cmd":"poke","id":25}');
+        check('圖鑑編號超出 1~1025 就當作沒帶', cmd('!join 9999') === '{"cmd":"join"}');
+        check('不是指令的行安靜跳過', cmd('今天天氣真好') === 'null');
+        check('前綴 + 不認識的字不算指令（隨便一個驚嘆號不會亂觸發）',
+            cmd('!好期待') === 'null' && cmd('!!!') === 'null');
+        check('沒有前綴的指令字不算數', cmd('feed 2') === 'null');
+        check('自訂前綴生效',
+            cmd('#feed', custom) === '{"cmd":"feed"}' && cmd('!feed', custom) === 'null');
+        check('白名單外的指令不轉發', cmd('#spawn', custom) === 'null');
+
+        // ---- 三種格式都收 ----
+        const asMsg = (raw, c = cfg) => B.bridgeMessageToCommand(raw, c);
+        check('JSON 指令直接照做',
+            JSON.stringify(asMsg('{"cmd":"feed","count":2}').msg) === '{"cmd":"feed","count":2}');
+        check('JSON 帶 text → 從 text 挑，sender 記下來算冷卻',
+            asMsg('{"sender":"svc-a","text":"!burst"}').sender === 'svc-a'
+            && asMsg('{"sender":"svc-a","text":"!burst"}').msg.cmd === 'burst');
+        check('user 也認（跟 sender 等價）', asMsg({ user: 'u1', text: '!poke' }).sender === 'u1');
+        check('壞掉的 JSON 退回當純文字處理',
+            asMsg('{"cmd":"feed"').msg === null && asMsg('{壞掉 !burst').msg.cmd === 'burst');
+        check('看不懂的物件回 null，不會炸',
+            asMsg({ hello: 1 }).msg === null && asMsg(null).msg === null);
+        check('JSON 指令一樣過白名單',
+            asMsg('{"cmd":"spawn"}', custom).msg === null);
+
+        // ---- 同來源冷卻 ----
+        const gate = B.makeBridgeGate(1000);
+        check('第一道放行', gate.allow('svc-a', 0) === true);
+        check('冷卻期內的第二道擋下', gate.allow('svc-a', 500) === false);
+        check('不同來源互不影響', gate.allow('svc-b', 500) === true);
+        check('過了冷卻就再放行', gate.allow('svc-a', 1000) === true);
+        check('沒有 sender 就不擋（來源沒給身分時照收）',
+            gate.allow(null, 0) === true && gate.allow(null, 0) === true);
+        check('cooldown = 0 → 整個關掉', B.makeBridgeGate(0).allow('svc-a', 0) === true
+            && B.makeBridgeGate(0).allow('svc-a', 0) === true);
+
+        // ---- 橋接頁本身 ----
+        const bridgeHtml = fs.readFileSync(path.join(ROOT, 'bridge.html'), 'utf8');
+        check('bridge.html 釘死 color-scheme: light（透明背景的老教訓）',
+            /:root\s*\{[^}]*color-scheme:\s*light/.test(bridgeHtml));
+        check('內嵌 widget 的 iframe 元素也對齊 color-scheme',
+            /#frame\s*\{[^}]*color-scheme:\s*light/.test(bridgeHtml));
+        check('底色透明（它可能自己就是最外層）',
+            /background:\s*transparent/.test(bridgeHtml));
+        check('載入 js/bridge.js 並啟動',
+            /<script src="\.\/js\/bridge\.js"><\/script>/.test(bridgeHtml)
+            && /startBridge\(\)/.test(bridgeHtml));
+        check('沒設定來源時有用法說明，不是一片空白', /id="help"/.test(bridgeHtml));
+        check('bridge.html 與 js/ 都會進 image',
+            /COPY[^\n]*bridge\.html[^\n]*\/usr\/share\/nginx\/html\//
+                .test(fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8')));
+    }
+
+    // =====================================================
+    group('35. 調校台（params.html：一參數一根拉桿）');
+    {
+        const page = fs.readFileSync(path.join(ROOT, 'params.html'), 'utf8');
+        check('調校台有自己的頁籤與面板',
+            /id="tab-tuner"/.test(page) && /id="panel-tuner"/.test(page)
+            && /TAB_KEYS = \['params', 'tuner'/.test(page));
+        check('控件是從同一份參數表長出來的（不會跟文件漂移）',
+            /for \(const p of PARAMS\.filter\(x => x\.group === g\)\)/.test(page));
+        check('預覽區的網址一改，調校台就跟著同步（單一真相）',
+            /function applyPreview[\s\S]{0,200}syncTuner\(\)/.test(page));
+
+        // 拉桿是從 range 欄位「a ~ b」推出來的，所以數值型參數的這一欄
+        // 必須長得標準——寫成別的格式會靜靜地退化成一個文字框
+        const rows = [...page.matchAll(
+            /name:\s*'(\w+)',\s*type:\s*'(\w+)',\s*range:\s*'([^']*)'/g)];
+        check(`參數表解析出 ${rows.length} 列（type + range 都在）`, rows.length >= 60);
+        const badNumeric = rows
+            .filter(([, , type]) => type === 'int' || type === 'float')
+            .filter(([, , , range]) => !/^\s*-?[\d.]+\s*~\s*-?[\d.]+/.test(range))
+            .map(m => m[1]);
+        check('每個數值型參數都有「a ~ b」的範圍（拉桿才生得出來）',
+            badNumeric.length === 0, badNumeric.join(', '));
+        const badEnum = rows
+            .filter(([, , type]) => type === 'enum')
+            .filter(([, , , range]) => !/^[\w.-]+( \/ [\w.-]+)*$/.test(range))
+            .map(m => m[1]);
+        check('每個 enum 參數的允許值都用 / 分隔（下拉才生得出來）',
+            badEnum.length === 0, badEnum.join(', '));
     }
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);

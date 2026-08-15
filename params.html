@@ -255,6 +255,68 @@
     #hero-snippet, #doc-embed-snippet { white-space: pre; line-height: 1.6; } /* 保留 iframe 範例的多行排版 */
     .recipe .row { display: flex; gap: 8px; margin-top: auto; }
 
+    /* ---- 調校台：一參數一列，左邊拉、右邊立刻看 ----
+       格線四欄：名稱 / 拉桿 / 數值 / 復原。窄螢幕塌成兩欄，
+       拉桿與數值各佔一行，不做橫向捲動 */
+    .tune-group { margin-top: 18px; }
+    .tune-group > summary {
+        font: 700 15px/1 var(--mono);
+        cursor: pointer;
+        padding: 10px 12px;
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        box-shadow: 3px 3px 0 var(--shadow);
+    }
+    .tune-group > summary::marker { color: var(--gold); }
+    .tune-group .n { color: var(--gold); }
+    .tune {
+        display: grid;
+        grid-template-columns: 210px 1fr 96px 30px;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 12px;
+        border-bottom: 1px solid #24324e;
+    }
+    .tune:hover { background: #1e2a44; }
+    .tune > label {
+        font: 700 14px var(--mono);
+        overflow-wrap: anywhere;
+        cursor: help;
+    }
+    .tune.changed > label { color: var(--gold); }
+    .tune.changed > label::after { content: ' ●'; font-size: 10px; vertical-align: middle; }
+    .tune input[type="range"] { width: 100%; accent-color: var(--gold); }
+    .tune input[type="number"], .tune input[type="text"], .tune select {
+        font: 13.5px var(--mono);
+        color: var(--ink);
+        background: var(--paper-deep);
+        border: 2px solid var(--ink);
+        padding: 6px 7px;
+        width: 100%;
+        min-width: 0;
+    }
+    /* enum、time、list 沒有拉桿：控件橫跨拉桿那一欄一起用滿 */
+    .tune.wide > .ctl { grid-column: 2 / 4; }
+    .tune-reset {
+        font: 700 13px/1 var(--mono);
+        color: var(--muted);
+        background: none;
+        border: none;
+        cursor: pointer;
+        visibility: hidden;
+    }
+    .tune.changed .tune-reset { visibility: visible; }
+    .tune-reset:hover { color: var(--gold); }
+    .tuner-filter { font: 700 13.5px/1 var(--mono); color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+    #tuner-groups.only-changed .tune:not(.changed) { display: none; }
+    .preset-note { color: var(--muted); font-size: 14px; }
+    #tuner-query { display: block; padding: 10px 12px; overflow-x: auto; white-space: nowrap; }
+    @media (max-width: 720px) {
+        .tune { grid-template-columns: 1fr 96px 30px; }
+        .tune > label { grid-column: 1 / -1; }
+        .tune.wide > .ctl { grid-column: 1 / 3; }
+    }
+
     /* ---- 遙控 API：多行程式碼區塊 ---- */
     .codeblock {
         display: block;
@@ -408,12 +470,20 @@
         <b>左／右</b>是文件、預覽對半分(滿高畫面, 測飛行軌跡用), 選<b>無</b>就整塊關掉。</p>
         <nav class="tabs" role="tablist" aria-label="文件分頁">
             <button class="tab-btn" role="tab" id="tab-params" aria-controls="panel-params" aria-selected="true">📋 參數總表</button>
+            <button class="tab-btn" role="tab" id="tab-tuner" aria-controls="panel-tuner" aria-selected="false">🎚️ 調校台</button>
             <button class="tab-btn" role="tab" id="tab-embed" aria-controls="panel-embed" aria-selected="false">🖼️ iframe 嵌入範例</button>
             <button class="tab-btn" role="tab" id="tab-remote" aria-controls="panel-remote" aria-selected="false">📡 postMessage 遙控</button>
         </nav>
     </header>
 
     <div class="tab-panel" id="panel-params" role="tabpanel" aria-labelledby="tab-params">
+
+    <section id="presets-sec">
+        <h2>預設檔</h2>
+        <p class="sec-note">參數有 <span id="param-count-2"></span> 個, 但多數場景不用一個一個挑。<code>?preset=名稱</code> 一次套用一整組調好的參數; <b>個別參數蓋得過它</b>——<code>?preset=aibi&amp;count=8</code> 就是「aibi 但八隻」。</p>
+        <div class="recipes" id="presets"></div>
+        <p class="hint">預設檔的值本身就是一段 query string, 走的是跟手打參數一模一樣的驗證路徑——沒有第二套規則, 也就沒有第二種壞法。要加新的預設檔: 改 <code>js/params.js</code> 最上面的 <code>PRESETS</code>。</p>
+    </section>
 
     <section id="params">
         <h2>參數總表</h2>
@@ -452,6 +522,23 @@
         <h2>範例食譜</h2>
         <p class="sec-note">按「▶ 預覽」直接在底部軌道看效果, 滿意再複製。</p>
         <div class="recipes" id="recipes"></div>
+    </section>
+    </div>
+
+    <div class="tab-panel" id="panel-tuner" role="tabpanel" aria-labelledby="tab-tuner" hidden>
+    <section id="tuner-sec">
+        <h2>調校台</h2>
+        <p class="sec-note">這裡拉, 預覽區立刻看。只有<b>改過的</b>參數會進網址——沒動過的就不佔位置, 網址永遠只留你真正要的那幾個。</p>
+        <div class="toolbar">
+            <button class="btn primary" id="tuner-copy-url">📋 複製網址</button>
+            <button class="btn" id="tuner-copy-embed">📋 複製嵌入碼</button>
+            <button class="btn" id="tuner-reset">↺ 全部復原</button>
+            <label class="tuner-filter"><input type="checkbox" id="tuner-only-changed"> 只看改過的</label>
+        </div>
+        <code class="q" id="tuner-query">(還沒動過任何參數)</code>
+        <div id="tuner-groups"></div>
+        <p class="hint">拉桿放開才會重載預覽(重載 = 重抽一批寶可夢), 所以拉的過程不會一直閃。
+            預覽區的網址列也還能直接編輯, 兩邊隨時同步。</p>
     </section>
     </div>
 
@@ -589,8 +676,96 @@
             </ul>
         </div>
 
+        <h2 style="margin-top:40px">指令橋接(bridge.html)</h2>
+        <p class="sec-note">後台服務、bot 等<b>外部程式</b>碰不到 postMessage(不同行程、沒有共同的瀏覽器語境)。
+            同捆的 <code>bridge.html</code> 就是那道門: 對外連一個<b>訊息來源</b>、把收到的東西翻成遙控指令、對內丟進 iframe 裡的 widget。
+            不用寫程式, 帶網址參數就能用; widget 本體完全不用改, 也不知道指令從哪來。</p>
+
+        <div class="card recipe" style="margin-bottom:16px">
+            <span class="label">開一頁就開始運作(擇一)</span>
+            <code class="q" id="bridge-ws">bridge.html?ws=wss://your-service.example/stream</code>
+            <code class="q" id="bridge-poll">bridge.html?poll=https://your-service.example/latest.json&amp;pollInterval=3000</code>
+            <div class="row">
+                <button class="btn" data-copy-el="bridge-ws">📋 複製 ws 版</button>
+                <button class="btn" data-copy-el="bridge-poll">📋 複製輪詢版</button>
+                <a class="btn" href="./bridge.html" target="_blank" rel="noopener"
+                   style="display:inline-flex; align-items:center; text-decoration:none">↗ 開啟 bridge.html</a>
+            </div>
+            <p class="hint" style="margin:0">直接開(不帶來源)會顯示用法說明, 不是一片空白。</p>
+        </div>
+
+        <div class="tablewrap" style="margin-bottom:16px">
+            <table>
+                <thead><tr><th>來源送來的東西</th><th>解讀</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td class="name">{"cmd":"feed","count":2}</td>
+                        <td class="desc">直接照做。欄位名與上面的指令表一致, <b>不必</b>帶 <code>ns</code></td>
+                    </tr>
+                    <tr>
+                        <td class="name">{"sender":"svc-a","text":"…"}</td>
+                        <td class="desc">從 <code>text</code> 挑指令; <code>sender</code>(或 <code>user</code>)用來算冷卻</td>
+                    </tr>
+                    <tr>
+                        <td class="name">純文字一行</td>
+                        <td class="desc">從整行挑指令。只認「<b>前綴 + 已知指令</b>」這個組合, 所以整行包在別的協定裡(前面有時戳、路由前綴之類)也挑得出來, 又不會把隨便一個驚嘆號當成指令</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <p class="sec-note" style="margin-bottom:8px">文字模式認得的指令詞(前綴可改):</p>
+        <div class="tablewrap" style="margin-bottom:16px">
+            <table style="min-width:520px">
+                <thead><tr><th>指令詞</th><th>等於</th></tr></thead>
+                <tbody>
+                    <tr><td class="name">!spawn / !spawn 143</td><td class="desc"><code>spawn</code> 客串一隻橫越</td></tr>
+                    <tr><td class="name">!drop</td><td class="desc"><code>spawn</code> + <code>delivery</code> 信使鳥空投果實</td></tr>
+                    <tr><td class="name">!feed / !feed 3</td><td class="desc"><code>feed</code> 天降果實(帶顆數)</td></tr>
+                    <tr><td class="name">!poke / !poke 25</td><td class="desc"><code>poke</code> 戳一下</td></tr>
+                    <tr><td class="name">!join 133 / !leave</td><td class="desc"><code>join</code> / <code>leave</code> 加入、送走常駐成員</td></tr>
+                    <tr><td class="name">!burst / !roster</td><td class="desc"><code>burst</code> / <code>roster</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <p class="sec-note" style="margin-bottom:8px">橋接頁自己的參數(跟 widget 的參數分開, 寫在 <code>bridge.html?</code> 後面):</p>
+        <div class="tablewrap" style="margin-bottom:16px">
+            <table>
+                <thead><tr><th>參數</th><th>預設</th><th>說明</th></tr></thead>
+                <tbody>
+                    <tr><td class="name">ws</td><td class="def">—</td>
+                        <td class="desc">WebSocket 來源網址。斷線自動重連, 退避 1→2→4…秒, 最多 30 秒</td></tr>
+                    <tr><td class="name">poll</td><td class="def">—</td>
+                        <td class="desc">改用輪詢: 定期 GET 這個網址, 回傳 JSON 物件或陣列。與 <code>ws</code> 擇一</td></tr>
+                    <tr><td class="name">pollInterval</td><td class="def">3000</td>
+                        <td class="desc">輪詢間隔 ms(500 ~ 600000)</td></tr>
+                    <tr><td class="name">hello</td><td class="def">—</td>
+                        <td class="desc">連上後要先送出的行, <code>|</code> 分隔——有些文字協定得先報到才會開始送資料</td></tr>
+                    <tr><td class="name">prefix</td><td class="def">!</td>
+                        <td class="desc">文字指令的前綴</td></tr>
+                    <tr><td class="name">allow</td><td class="def">全部</td>
+                        <td class="desc">指令白名單, 逗號分隔(如 <code>allow=feed,poke</code>)。看不懂的名稱會被剔除</td></tr>
+                    <tr><td class="name">cooldown</td><td class="def">3000</td>
+                        <td class="desc"><b>同一個 sender 的冷卻 ms</b>。widget 端的節流是「全場」額度, 這一層讓額度不會被單一來源一口氣吃光。<code>0</code> = 不擋</td></tr>
+                    <tr><td class="name">q</td><td class="def">—</td>
+                        <td class="desc">轉交給 widget 的參數, 例 <code>q=preset%3Daibi</code>(記得 URL 編碼)</td></tr>
+                    <tr><td class="name">status</td><td class="def">on</td>
+                        <td class="desc">左上角的狀態列(連上了沒、送出幾道、最近一道)。<code>off</code> 收起來</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card rules" style="margin-bottom:16px">
+            <ul>
+                <li><b>保活</b>: 來源送 <code>PING</code> 會自動回 <code>PONG</code>(許多文字協定的慣例)。</li>
+                <li><b>除錯</b>: 回執若是 <code>ok:false</code> 會印在 console——不必猜是「沒送到」還是「送到了但被拒絕」。</li>
+                <li><b>兩層防護</b>: 橋接頁擋同來源的高頻, widget 端另有全場每秒節流, 兩層各管各的。</li>
+            </ul>
+        </div>
+
         <div class="card recipe">
-            <span class="label">進階: 接外部程式(wrapper 模式)——瀏覽器外的程式碰不到 postMessage, 讓 wrapper 對外連 WebSocket、對內轉譯</span>
+            <span class="label">進階: 自己寫 wrapper——來源協定太特別、或想在轉譯這層加自己的商業邏輯時, 照抄這個骨架</span>
             <code class="codeblock" id="wrapper-snippet">&lt;!-- wrapper.html: OBS 或任何頁面載入這一頁(widget 本體完全不用改) --&gt;
 &lt;iframe id="poke" src="./pokemon_footer_widget.html"
         style="position:fixed; inset:0; width:100%; height:100%; border:none;"&gt;&lt;/iframe&gt;
@@ -640,6 +815,8 @@
     // sample 是「加進預覽」用的示範值，刻意跟預設值不同才看得出變化
     // =========================================================
     const PARAMS = [
+        { name: 'preset',         type: 'enum',  range: 'aibi',          def: '—',      group: '生成', sample: 'preset=aibi',
+          desc: '預設檔：一次套用一整組調好的參數（清單見上方「預設檔」一節）。個別參數蓋得過它——?preset=aibi&count=8 就是「aibi 但八隻」。預設檔的值本身就是一段 query string，走的是跟手打參數一模一樣的驗證路徑，沒有第二套規則' },
         { name: 'count',          type: 'int',   range: '1 ~ 50',        def: '4',      group: '生成', sample: 'count=8',
           desc: '同時生成的寶可夢數量' },
         { name: 'minId',          type: 'int',   range: '1 ~ 1025',      def: '1',      group: '生成', sample: 'minId=152',
@@ -720,6 +897,12 @@
           desc: '天氣：每次載入擲一次骰，中了整頁就下著這場天氣——種類由主題地面決定：雨（草地/水域/岩地/土徑，斜斜細細長長的藍色雨絲）、雪（雪地，白色小點慢慢飄、左右搖曳）、風沙（沙灘，橫向沙痕順風橫掃）、火星（熔岩，橘黃小火星從低處上飄漸滅）。風向（雨的斜向、沙的走向）每次隨機一邊；粒子全用 CSS 動畫循環，不吃主迴圈效能。theme=none 沒有場景就沒有天氣；0 = 永遠晴天' },
         { name: 'weatherDensity', type: 'float', range: '0.2 ~ 5',       def: '1',      group: '動畫與外觀', sample: 'theme=snow&weatherChance=1&weatherDensity=2',
           desc: '天氣的粒子密度倍率：雨絲/雪花/沙痕/火星的數量 = 基準（依視窗寬換算）× 這個值。2 = 傾盆大雨、0.5 = 毛毛雨' },
+        { name: 'reflect',        type: 'enum',  range: 'on / off',      def: 'on',     group: '動畫與外觀', sample: 'theme=water&themeHeight=40',
+          desc: '水面倒影（只在 theme=water 出現）：水面下多一個上下顛倒的自己，面向與跳躍高度都跟著本體走——牠往上跳，水裡的就往下沉。鏡面取「水面」而不是腳底（腳其實泡在水面下），水面那條線兩側才接得起來。能畫的高度就是地面那條帶，所以預設的 6px 地面只留一抹濕痕，把地面拉高才看得出是倒影：?theme=water&themeHeight=40。off = 不畫（連元素都不會產生）' },
+        { name: 'reflectOpacity', type: 'float', range: '0 ~ 1',         def: '0.35',   group: '動畫與外觀', sample: 'theme=water&themeHeight=40&reflectOpacity=0.6',
+          desc: '倒影濃度。1 = 跟本體一樣實，水面就不像水了；0 等同關掉' },
+        { name: 'reflectWave',    type: 'float', range: '0 ~ 5',         def: '1',      group: '動畫與外觀', sample: 'theme=water&themeHeight=40&reflectWave=0',
+          desc: '水紋左右搖曳的倍速：2 = 兩倍快、0 = 靜止無波的水面。搖曳是 CSS 動畫，不吃主迴圈效能；系統開了「減少動態效果」時自動靜止' },
         { name: 'flybyDelayMin',  type: 'int',   range: '1000 ~ 600000', def: '15000',  group: '客串事件', sample: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000',
           desc: '客串事件：距離下一次「擲骰時點」的間隔下限 ms' },
         { name: 'flybyDelayMax',  type: 'int',   range: '1000 ~ 600000', def: '20000',  group: '客串事件', sample: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000',
@@ -756,6 +939,16 @@
           desc: '抓在手上時掙扎動畫的倍速（2 = 兩倍快，0 = 抓著但不掙扎）。註：GIF 本身的播放速率瀏覽器不開放 JS 控制，所以掙扎感是 widget 自己畫的擺盪 + 上下抖動，這個值調的是那套動畫' },
     ];
 
+    // 預設檔：與 widget 的 js/params.js 裡的 PRESETS 對照（query 欄位必須一字不差）
+    const PRESET_CARDS = [
+        {
+            name: 'aibi',
+            label: 'AIBI 平台',
+            query: 'count=4&speedVariance=1&boundsMin=0&boundsMax=1&bubblePosition=side&shinyChance=0.0025',
+            note: '滿版散步（左右不留白，貼齊平台全寬版面）、個體速度差拉開（四隻一起走才不會像列隊行進）、對話框擺側邊；色違壓回接近正作的稀有度（1/400）——長時間掛著的介面，要撞見才是驚喜。',
+        },
+    ];
+
     const RECIPES = [
         { label: '專案吉祥物固定陣容（皮卡丘＋伊布＋噴火龍）', query: 'ids=25,133,6' },
         { label: '五隻伊布', query: 'ids=133,133,133,133,133' },
@@ -778,6 +971,10 @@
         { label: '大雪紛飛', query: 'theme=snow&weatherChance=1&weatherDensity=2' },
         { label: '永遠晴天（不要天氣）', query: 'weatherChance=0' },
         { label: '海邊戲水（可達鴨一家＋乘龍）', query: 'theme=water&ids=54,55,116,131' },
+        { label: '看得出來的水面倒影（水要夠深）', query: 'theme=water&themeHeight=40' },
+        { label: '一池死水（倒影不搖）', query: 'theme=water&themeHeight=40&reflectWave=0' },
+        { label: '倒影再清楚一點', query: 'theme=water&themeHeight=40&reflectOpacity=0.6' },
+        { label: '水域但不要倒影', query: 'theme=water&themeHeight=40&reflect=off' },
         { label: '熔岩試膽（小火龍一家）', query: 'theme=lava&ids=4,5,6' },
         { label: '客串頻發（展示/測試用）', query: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000' },
         { label: '傳說時刻（每次都是傳說級路過）', query: 'flybyChance=1&flybyLegendaryChance=1&flybyDelayMin=3000&flybyDelayMax=5000' },
@@ -809,6 +1006,7 @@
     }
     function applyPreview(q) {
         if (q !== undefined) queryInput.value = q;
+        syncTuner(); // 調校台跟著網址走：手動編輯、食譜卡、預設檔都同一個真相
         const src = './pokemon_footer_widget.html' + (currentQuery() ? '?' + currentQuery() : '');
         ensureDockVisible(); // 預覽被關掉時按了套用 → 自動叫回來，不然看不到效果
         // 先清空再載入：即使 query 沒變也強制重載（= 重抽一批）
@@ -822,7 +1020,7 @@
     // ---------------------------------------------------------
     // 三大頁籤：切換 + #hash 深連結（#params / #embed / #remote）
     // ---------------------------------------------------------
-    const TAB_KEYS = ['params', 'embed', 'remote'];
+    const TAB_KEYS = ['params', 'tuner', 'embed', 'remote'];
     function showTab(key) {
         for (const k of TAB_KEYS) {
             const on = k === key;
@@ -1045,6 +1243,255 @@
 
         recipesEl.appendChild(card);
     }
+
+    // ---------------------------------------------------------
+    // 預設檔卡
+    // ---------------------------------------------------------
+    document.getElementById('param-count-2').textContent = PARAMS.length;
+    const presetsEl = document.getElementById('presets');
+    for (const p of PRESET_CARDS) {
+        const card = document.createElement('div');
+        card.className = 'card recipe';
+
+        const label = document.createElement('span');
+        label.className = 'label';
+        label.textContent = `${p.label}　?preset=${p.name}`;
+        card.appendChild(label);
+
+        const note = document.createElement('span');
+        note.className = 'preset-note';
+        note.textContent = p.note;
+        card.appendChild(note);
+
+        const q = document.createElement('code');
+        q.className = 'q';
+        q.textContent = '= ?' + p.query;
+        card.appendChild(q);
+
+        const row = document.createElement('div');
+        row.className = 'row';
+        const preview = document.createElement('button');
+        preview.className = 'btn primary';
+        preview.textContent = '▶ 預覽';
+        preview.addEventListener('click', () => applyPreview('preset=' + p.name));
+        const copy = document.createElement('button');
+        copy.className = 'btn';
+        copy.textContent = '📋 複製';
+        copy.addEventListener('click', e => copyText('?preset=' + p.name, e.currentTarget));
+        // 想從這一組再微調：展開成個別參數，調校台就能一項一項動
+        const expand = document.createElement('button');
+        expand.className = 'btn';
+        expand.textContent = '🎚️ 展開來調';
+        expand.title = '展開成個別參數並跳到調校台';
+        expand.addEventListener('click', () => {
+            applyPreview(p.query);
+            showTab('tuner');
+            history.replaceState(null, '', '#tuner');
+        });
+        row.appendChild(preview);
+        row.appendChild(copy);
+        row.appendChild(expand);
+        card.appendChild(row);
+
+        presetsEl.appendChild(card);
+    }
+
+    // ---------------------------------------------------------
+    // 調校台：控件從「同一份參數表」長出來，不會跟文件漂移。
+    // 展示用的欄位就是規格——range 欄的 '1 ~ 50' 給拉桿、
+    // 'top / side / none' 給下拉，其餘（ids 的清單、time 的 HH:MM）用文字框
+    // ---------------------------------------------------------
+    function tuneSpec(p) {
+        const num = p.range.match(/^\s*(-?[\d.]+)\s*~\s*(-?[\d.]+)/);
+        if ((p.type === 'int' || p.type === 'float') && num) {
+            const min = Number(num[1]);
+            const max = Number(num[2]);
+            return { kind: 'range', min, max, step: p.type === 'int' ? 1 : niceStep(max - min) };
+        }
+        if (p.type === 'enum') {
+            return { kind: 'enum', values: p.range.split('/').map(s => s.trim()).filter(Boolean) };
+        }
+        return { kind: 'text' };
+    }
+    // 拉桿刻度：整個範圍切約一百格，再貼到最接近的「好看的數字」
+    function niceStep(span) {
+        return [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1].find(s => s >= span / 100) ?? 1;
+    }
+    // 「預設」欄是寫給人看的：'—' 與 'auto' 當成沒有值，'1/100' 當成 0.01
+    function tuneDefault(p) {
+        if (p.def === '—' || p.def === 'auto') return '';
+        const frac = p.def.match(/^(\d+)\/(\d+)$/);
+        return frac ? String(Number(frac[1]) / Number(frac[2])) : p.def;
+    }
+    // 值進網址前的最小消毒：& 與空白會把 query 切壞；逗號與冒號留原樣
+    // （ids=25,133,6 與 sunTime=17:30 編碼過就沒法讀了）
+    const tuneEncode = v => encodeURIComponent(String(v).trim())
+        .replace(/%2C/g, ',').replace(/%3A/g, ':');
+
+    const tuneRows = new Map();  // 參數名 -> 這一列的控件與更新函式
+    const tuneState = new Map(); // 參數名 -> 明確指定的值（沒動過的不在裡面）
+    let tuneExtra = [];          // 網址上有、但不在參數表裡的（打錯字的也留著，不默默吃掉）
+    const tunerGroupsEl = document.getElementById('tuner-groups');
+    const tunerQueryEl = document.getElementById('tuner-query');
+
+    // 目前的網址：部署環境用「目前網址的目錄」當 base，本機 file:// 退回正式站
+    function widgetUrl() {
+        const base = location.protocol.startsWith('http')
+            ? new URL('.', location.href).href
+            : PROD_BASE;
+        const q = currentQuery();
+        return base + (q ? '?' + q : '');
+    }
+
+    // 目前狀態組回 query string（照參數表的順序，讀起來才有條理）
+    function tuneQuery() {
+        const parts = [];
+        for (const p of PARAMS) {
+            if (tuneState.has(p.name)) parts.push(`${p.name}=${tuneEncode(tuneState.get(p.name))}`);
+        }
+        return parts.concat(tuneExtra).join('&');
+    }
+
+    // 改完一項就重載預覽（重載 = 重抽一批，跟按「套用」同一套行為）
+    function applyTuner() {
+        applyPreview(tuneQuery());
+    }
+
+    // 把目前狀態畫回所有控件與標記。從網址同步回來、或按了復原都走這裡
+    function refreshTuner() {
+        for (const [name, row] of tuneRows) row.refresh();
+        for (const box of tunerGroupsEl.children) {
+            const changed = box.querySelectorAll('.tune.changed').length;
+            box.querySelector('.n').textContent = changed ? ` ${changed} 項已改` : '';
+        }
+        const q = tuneQuery();
+        tunerQueryEl.textContent = q ? '?' + q : '(還沒動過任何參數)';
+    }
+
+    // 預覽區的網址 → 調校台。手動編輯網址列、按食譜卡、套預設檔都會走到這裡，
+    // 兩邊因此永遠是同一個真相
+    function syncTuner() {
+        if (!tuneRows.size) return;
+        tuneState.clear();
+        tuneExtra = [];
+        for (const [k, v] of new URLSearchParams(currentQuery())) {
+            if (tuneRows.has(k)) tuneState.set(k, v);
+            else tuneExtra.push(`${k}=${tuneEncode(v)}`);
+        }
+        refreshTuner();
+    }
+
+    for (const g of GROUPS.slice(1)) { // 跳過「全部」
+        const box = document.createElement('details');
+        box.className = 'tune-group';
+        box.open = true;
+        const sum = document.createElement('summary');
+        sum.textContent = g;
+        const n = document.createElement('span');
+        n.className = 'n';
+        sum.appendChild(n);
+        box.appendChild(sum);
+
+        for (const p of PARAMS.filter(x => x.group === g)) {
+            const spec = tuneSpec(p);
+            const def = tuneDefault(p);
+            const row = document.createElement('div');
+            row.className = 'tune' + (spec.kind === 'range' ? '' : ' wide');
+            row.dataset.name = p.name;
+
+            const lab = document.createElement('label');
+            lab.textContent = p.name;
+            lab.title = p.desc; // 說明就掛在名稱上，不必為了看一句話跳回總表
+            row.appendChild(lab);
+
+            // 指定值 / 清空。清空 = 回到預設，該參數就從網址消失
+            const commit = v => {
+                if (v === null || v === '') tuneState.delete(p.name);
+                else tuneState.set(p.name, v);
+                refreshTuner();
+                applyTuner();
+            };
+
+            let slider = null;
+            let field;
+            if (spec.kind === 'range') {
+                slider = document.createElement('input');
+                slider.type = 'range';
+                slider.min = spec.min;
+                slider.max = spec.max;
+                slider.step = spec.step;
+                slider.setAttribute('aria-label', p.name);
+                // 拖曳中只更新數字（不重載），放開手才套用——
+                // 拉的過程不會一路重抽寶可夢
+                slider.addEventListener('input', () => { field.value = slider.value; });
+                slider.addEventListener('change', () => commit(slider.value));
+                row.appendChild(slider);
+
+                field = document.createElement('input');
+                field.type = 'number';
+                field.min = spec.min;
+                field.max = spec.max;
+                // 數字框放行任何精度：拉桿有刻度是為了好拉，
+                // 但想輸入 0.0025 這種刻度外的值不該被擋
+                field.step = p.type === 'int' ? 1 : 'any';
+            } else if (spec.kind === 'enum') {
+                field = document.createElement('select');
+                field.className = 'ctl';
+                const blank = document.createElement('option');
+                blank.value = '';
+                blank.textContent = def ? `（預設 ${def}）` : '（不指定）';
+                field.appendChild(blank);
+                for (const v of spec.values) {
+                    const o = document.createElement('option');
+                    o.value = v;
+                    o.textContent = v;
+                    field.appendChild(o);
+                }
+            } else {
+                field = document.createElement('input');
+                field.type = 'text';
+                field.className = 'ctl';
+                field.placeholder = def || p.range;
+            }
+            field.setAttribute('aria-label', p.name);
+            field.addEventListener('change', () => commit(field.value.trim()));
+            row.appendChild(field);
+
+            const reset = document.createElement('button');
+            reset.className = 'tune-reset';
+            reset.textContent = '↺';
+            reset.title = `${p.name} 回到預設`;
+            reset.addEventListener('click', () => commit(null));
+            row.appendChild(reset);
+
+            tuneRows.set(p.name, {
+                refresh() {
+                    const on = tuneState.has(p.name);
+                    const value = on ? tuneState.get(p.name) : def;
+                    row.classList.toggle('changed', on);
+                    field.value = value;
+                    if (slider) slider.value = value === '' ? spec.min : value;
+                },
+            });
+            box.appendChild(row);
+        }
+        tunerGroupsEl.appendChild(box);
+    }
+
+    document.getElementById('tuner-reset').addEventListener('click', () => {
+        tuneState.clear();
+        tuneExtra = [];
+        refreshTuner();
+        applyTuner();
+    });
+    document.getElementById('tuner-copy-url')
+        .addEventListener('click', e => copyText(widgetUrl(), e.currentTarget));
+    document.getElementById('tuner-copy-embed')
+        .addEventListener('click', e => copyText(embedSnippet(), e.currentTarget));
+    document.getElementById('tuner-only-changed').addEventListener('change', e => {
+        tunerGroupsEl.classList.toggle('only-changed', e.currentTarget.checked);
+    });
+    syncTuner();
 </script>
 </body>
 </html>

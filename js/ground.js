@@ -24,6 +24,7 @@ const GROUND_THEMES = {
     water: {
         inset: 5,
         flow: 16,
+        reflect: 1, // 水面會照出東西來（強度倍率，見 js/reflect.js）
         top: ['#1b4a7a', '#d8f1ff'],
         fill: '#3f7fd4',
         speckles: [{ color: '#6faae8', density: 0.05 }, { color: '#2c62ad', density: 0.04 }],
@@ -84,6 +85,14 @@ const GROUND_THEMES = {
     },
 };
 
+// 這塊地面鋪完後的量測值。倒影是「畫在水面上」的東西，座標系綁在地面
+// 而不是寶可夢身上，所以由這裡量、由 js/reflect.js 用（沒地面就全是 0）
+const groundSurface = {
+    band: 0,    // 地面總高度（畫面 px）＝ 水面到頁面底邊，倒影能畫的全部空間
+    lift: 0,    // 寶可夢抬高量（畫面 px）＝ 腳底到頁面底邊
+    reflect: 0, // 反光強度倍率：0 = 這種地形不反光
+};
+
 // 生成主題貼片，回傳 dataURL（GROUND_TILE_W × artH 點陣 px）
 function buildGroundTexture(theme, artH) {
     const canvas = document.createElement('canvas');
@@ -135,7 +144,13 @@ function resolveTheme(themeName) {
 // theme 不存在（none / 打錯字）就不鋪、回傳 0，一切維持原樣
 function initGround(themeName) {
     const theme = GROUND_THEMES[resolveTheme(themeName)];
-    if (!theme) return 0;
+    if (!theme) {
+        // 沒鋪地面（none / 打錯字）：量測值歸零，倒影也就不會出現
+        groundSurface.band = 0;
+        groundSurface.lift = 0;
+        groundSurface.reflect = 0;
+        return 0;
+    }
     // 高度以畫面 px 指定（themeHeight），內部換成 2px 像素格的列數，
     // 所以實際高度會取到最接近的偶數；最少 3 列（頂緣 2 列 + 至少 1 列底）
     const artH = Math.max(3, Math.round((CONFIG.themeHeight ?? 6) / GROUND_SCALE));
@@ -152,5 +167,10 @@ function initGround(themeName) {
         ground.style.setProperty('--flow-duration', `${theme.flow}s`);
     }
     app.appendChild(ground);
-    return Math.max(0, displayH - theme.inset * GROUND_SCALE);
+    // 抬高量 = 地面高度 - 踩入深度：腳底沉進表面，水域就是泡到小腿的那一段
+    const lift = Math.max(0, displayH - theme.inset * GROUND_SCALE);
+    groundSurface.band = displayH;
+    groundSurface.lift = lift;
+    groundSurface.reflect = theme.reflect ?? 0;
+    return lift;
 }

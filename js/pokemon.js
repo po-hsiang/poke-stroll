@@ -122,6 +122,10 @@ class Pokemon {
 
         this.el.appendChild(this.img);
 
+        // 水面倒影：站在會反光的地形上才掛（水域），其餘地形連元素都不會有。
+        // 掛在容器裡 → 位置、隱藏、移除都跟著本體走，不必另外照顧
+        attachReflection(this);
+
         // 滑鼠互動（三種按法各司其職，見「滑鼠拖曳」一節的分流表）。
         // OBS 可用來源的「互動」視窗玩；iframe 預設 pointer-events: none 點不到，
         // 想開放給訪客要自行拿掉（取捨見 README）
@@ -799,6 +803,12 @@ class Pokemon {
         // 掙扎的傾角接在最後（沒在掙扎時不寫，字串維持原樣）
         const tilt = this.struggleAngle ? ` rotate(${this.struggleAngle.toFixed(1)}deg)` : '';
         this.img.style.transform = `scaleX(${scale}) translateY(${-lift}px)${tilt}`;
+
+        // 水裡的那個照抄面向與高度，Y 軸翻過來（掙扎的傾角不抄：
+        // 被抓在手上時 lift 早就把倒影沉到水面以下、裁光了）
+        if (this.reflection) {
+            this.reflection.style.transform = reflectTransform(scale, lift);
+        }
 
         // 跳起來時影子縮小、變淡，強化離地的感覺
         // （走路跳步以自身跳高為滿格；離地高度以 20px 為滿格，取較高者）。

@@ -6,23 +6,23 @@
 
 ```bash
 # 建置(版本號與 .env 的 VERSION 一致)
-docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.40.0 .
+docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.41.0 .
 
 # 本機試跑
-docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.40.0
+docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.41.0
 # 瀏覽器 / OBS 瀏覽器來源開 http://localhost:8080/ 即可看到 widget
 ```
 
 ## 推上 Google Artifact Registry
 
 ```bash
-docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.40.0
+docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.41.0
 ```
 
 ## 雲端主機部署
 
 ```bash
-docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.40.0
+docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.41.0
 docker compose up -d
 ```
 
@@ -45,6 +45,7 @@ docker compose up -d
 | 直接觀看 / iframe 嵌入 | `https://rd7-ai-gw-02.i17game.net/poke-stroll/` |
 | 完整檔名(等價) | `https://rd7-ai-gw-02.i17game.net/poke-stroll/pokemon_footer_widget.html` |
 | 參數互動文件(丟給嵌入方同仁) | `https://rd7-ai-gw-02.i17game.net/poke-stroll/params.html` |
+| 指令橋接(外部訊息來源 → 遙控指令) | `https://rd7-ai-gw-02.i17game.net/poke-stroll/bridge.html?ws=…` |
 
 ## 同仁 iframe 嵌入範例
 
@@ -56,6 +57,9 @@ docker compose up -d
 
 想要不同的生成數量、體型、固定陣容?在網址後掛 query string 即可,例如
 `/poke-stroll/?count=5&ids=25,133,6`,各專案互不影響。完整參數見 [PARAMS.md](PARAMS.md)。
+
+常用配置已經包成**預設檔**,一個參數就好:AIBI 平台用 `/poke-stroll/?preset=aibi`。
+新增預設檔改 `js/params.js` 的 `PRESETS`(值就是一段 query string),不必動其他程式。
 
 ## CI
 

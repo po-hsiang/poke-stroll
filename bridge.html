@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PokéStroll 指令橋接</title>
+    <style>
+        /* 這一頁是 widget 的外殼，透明背景的規矩跟著本體走：
+           釘死 light，並在 iframe「元素」上也對齊——內外文件的 color-scheme
+           不一致時，瀏覽器會在 iframe 後面墊一塊不透明底（見 widget 的註解） */
+        :root { color-scheme: light; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: transparent;
+            font-family: "Segoe UI", "Noto Sans TC", system-ui, sans-serif;
+        }
+        /* widget 佔滿整頁：橋接頁通常自己就是最外層（瀏覽器來源、或被別人嵌）。
+           這裡刻意「不」加 pointer-events: none——直接開這一頁時，
+           抓取、戳、丟果實都還玩得動；要當頁尾嵌進別的網站，
+           請在你自己那一側的 <iframe> 元素上加 pointer-events: none */
+        #frame {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            color-scheme: light;
+        }
+
+        /* 狀態列：連上了沒、送出幾道、最近一道是什麼。?status=off 整條收起來 */
+        #status {
+            position: fixed;
+            top: 8px;
+            left: 8px;
+            z-index: 10;
+            max-width: calc(100% - 16px);
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #e8eef6;
+            background: rgba(18, 22, 30, 0.82);
+            border-left: 3px solid #7d8798;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #status[data-state="live"] { border-left-color: #4ec27a; }
+        #status[data-state="wait"] { border-left-color: #e0b341; }
+        #status[data-state="down"] { border-left-color: #e06c5a; }
+
+        /* 沒設定來源時的說明卡：開著一個什麼都不做的空白頁最難除錯 */
+        #help {
+            position: fixed;
+            inset: auto 0 0 0;
+            margin: 0 auto 12px;
+            max-width: 720px;
+            width: calc(100% - 24px);
+            box-sizing: border-box;
+            padding: 16px 20px;
+            border-radius: 10px;
+            background: rgba(18, 22, 30, 0.92);
+            color: #dbe3ec;
+            font-size: 13px;
+            line-height: 1.7;
+        }
+        #help h1 { margin: 0 0 8px; font-size: 15px; color: #fff; }
+        #help p { margin: 0 0 8px; }
+        #help code {
+            font-family: "Cascadia Code", Consolas, monospace;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 1px 5px;
+            border-radius: 4px;
+            word-break: break-all;
+        }
+        #help a { color: #7fb2ff; }
+        #help ul { margin: 6px 0 0; padding-left: 20px; }
+    </style>
+</head>
+<body>
+
+<iframe id="frame" title="PokéStroll"></iframe>
+<div id="status" data-state="idle">啟動中…</div>
+
+<div id="help" hidden>
+    <h1>🔌 指令橋接</h1>
+    <p>這一頁把<b>外部訊息來源</b>的內容翻成 widget 的遙控指令。在網址後面指定來源就會開始運作：</p>
+    <p><code>bridge.html?ws=wss://your-service.example/stream</code><br>
+       <code>bridge.html?poll=https://your-service.example/latest.json&amp;pollInterval=3000</code></p>
+    <p>來源送純文字（含 <code>!feed 2</code> 這類指令詞）、<code>{"cmd":"feed","count":2}</code>
+       或 <code>{"sender":"svc-a","text":"…"}</code> 都收。</p>
+    <ul>
+        <li><code>prefix</code> 指令前綴（預設 <code>!</code>）、<code>allow</code> 指令白名單、<code>cooldown</code> 同來源冷卻 ms</li>
+        <li><code>q</code> 轉交給 widget 的參數，例：<code>q=preset%3Daibi</code></li>
+        <li><code>status=off</code> 收起這條狀態列</li>
+    </ul>
+    <p>完整說明見 <a href="./params.html#remote">參數文件的「postMessage 遙控」一節</a>。</p>
+</div>
+
+<!-- 純函式與執行期都在這一支；widget 本體完全不用改 -->
+<script src="./js/bridge.js"></script>
+<script>
+    // 回執：widget 每道指令都會回一則 { ns, re, ok, … }，失敗的直接印出來，
+    // 除錯時不必猜是「沒送到」還是「送到了但被拒絕」
+    window.addEventListener('message', e => {
+        if (!e.data || e.data.ns !== 'poke-stroll' || !e.data.re) return;
+        if (e.data.ok === false) console.warn('[PokéBridge] 指令被拒絕：', e.data);
+    });
+    startBridge();
+</script>
+</body>
+</html>

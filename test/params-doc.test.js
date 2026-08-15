@@ -17,7 +17,8 @@ function check(cond, msg) {
     }
 }
 
-// 1) widget 的 QUERY_PARAMS 白名單（＋ids：白名單外手動處理的特例）。
+// 1) widget 的 QUERY_PARAMS 白名單，外加兩個白名單外手動處理的特例：
+//    ids（逗號清單）與 preset（預設檔，展開成一整段 query string）。
 // 白名單住在 js/params.js（0.38.0 起主程式拆進 js/，一檔一職責）
 const widget = read('js/params.js');
 const qpBlock = widget.match(/const QUERY_PARAMS = \{([\s\S]*?)\n\s*\};/);
@@ -26,6 +27,7 @@ const widgetKeys = new Set(
     [...(qpBlock ? qpBlock[1] : '').matchAll(/(\w+):\s*\{\s*path/g)].map(m => m[1])
 );
 widgetKeys.add('ids');
+widgetKeys.add('preset');
 check(widgetKeys.size > 20, `widget 白名單解析出 ${widgetKeys.size} 個參數（含 ids）`);
 
 // 2) PARAMS.md「參數總表」章節的每一列。
@@ -39,7 +41,8 @@ const mdKeys = new Set(
 );
 
 // 3) params.html 資料陣列的 name 欄位
-const pageBlock = read('params.html').match(/const PARAMS = \[([\s\S]*?)\n\s*\];/);
+const page = read('params.html');
+const pageBlock = page.match(/const PARAMS = \[([\s\S]*?)\n\s*\];/);
 check(!!pageBlock, '能在 params.html 中找到 PARAMS 資料陣列');
 const pageKeys = new Set(
     [...(pageBlock ? pageBlock[1] : '').matchAll(/name:\s*'(\w+)'/g)].map(m => m[1])
@@ -62,9 +65,22 @@ for (const a of sources) {
     }
 }
 
+// 4) 預設檔同樣三方同步。js/params.js 的 PRESETS 是真理，PARAMS.md 與 params.html
+// 各抄了一份「展開後長什麼樣」給人看——抄錯就是文件在騙人，而且騙得很難發現
+const presetBlock = widget.match(/const PRESETS = \{([\s\S]*?)\n\};/);
+check(!!presetBlock, '能在 widget 中找到 PRESETS 區塊');
+const presets = [...(presetBlock ? presetBlock[1] : '').matchAll(/^\s{4}(\w+):\s*'([^']*)'/gm)];
+check(presets.length > 0, `widget 解析出 ${presets.length} 個預設檔`);
+for (const [, name, query] of presets) {
+    check(md.includes(`\`${name}\``) && md.includes(query),
+        `PARAMS.md 收錄預設檔 ${name}，展開內容一字不差`);
+    check(page.includes(`name: '${name}'`) && page.includes(query),
+        `params.html 收錄預設檔 ${name}，展開內容一字不差`);
+}
+
 console.log('==============================================');
 if (failed) {
     console.log(`文件同步檢查失敗 ${failed} 項`);
     process.exit(1);
 }
-console.log(`文件同步檢查通過（三方各 ${widgetKeys.size} 個參數一致）`);
+console.log(`文件同步檢查通過（三方各 ${widgetKeys.size} 個參數、${presets.length} 個預設檔一致）`);
