@@ -240,6 +240,65 @@
             100% { transform: translate(var(--sway), var(--rise)); opacity: 0; }
         }
 
+        /* 夜晚演出（night）：入夜後才出現的星空、螢火蟲、地面光暈。
+           這裡「刻意沒有」整頁的夜色底：鋪一層色溫就會蓋掉 OBS 場景與嵌入方
+           的網頁，而背景透明是這個 widget 的前提。所以夜色全做成元素——
+           粒子與貼著地面的漸層，天空本身維持全透明（詳見 js/night.js）。
+           整層的 opacity 由 JS 依日落後經過的時間逐步調整，transition
+           讓兩秒一次的節流看起來是連續變暗的 */
+        #night {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 1; /* 與天氣同層：地面之上、散步成員之下，夜色是背景 */
+            transition: opacity 2s linear;
+        }
+        #night > * {
+            position: absolute;
+            will-change: opacity;
+        }
+        /* 星星：點陣風就是一顆小方點（不做圓角）。
+           在自己的兩個亮度之間來回，週期與相位每顆都不同 */
+        .night-star {
+            animation: star-twinkle var(--dur) ease-in-out var(--delay) infinite alternate;
+        }
+        @keyframes star-twinkle {
+            from { opacity: var(--dim); }
+            to   { opacity: var(--lit); }
+        }
+        /* 螢火蟲：兩層才有「一邊飄一邊明滅」的感覺——
+           外層緩緩游移，內層自己一明一滅（週期刻意跟飄移錯開） */
+        .night-firefly {
+            animation: firefly-drift var(--dur) ease-in-out var(--delay) infinite alternate;
+            will-change: transform;
+        }
+        @keyframes firefly-drift {
+            to { transform: translate(var(--dx), var(--dy)); }
+        }
+        .night-firefly > div {
+            width: 3px;
+            height: 3px;
+            border-radius: 50%; /* 唯一的例外：發光的光點是圓的，方的看起來像壞點 */
+            animation: firefly-blink var(--blink) ease-in-out var(--delay) infinite alternate;
+        }
+        @keyframes firefly-blink {
+            from { opacity: 0.15; }
+            to   { opacity: 1; }
+        }
+        /* 地面光暈：貼著頁面底邊的一條漸層，最濃處在地面表面、往上收乾成
+           全透明。高度與顏色由 JS 依 nightGlow 與地面高度算好寫進 style */
+        #night-glow {
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            /* 閃爍與飄移收掉，靜態的星點與光暈留著——那是氛圍，不是動態 */
+            .night-star, .night-firefly, .night-firefly > div { animation: none; }
+            #night { transition: none; }
+        }
+
         /* 丟果實餵食：點「空白處」掉下的像素樹果（canvas 畫的，不吃外部素材）。
            不可點擊——它是被吃的，不是被戳的；縮放錨在底邊中央，
            被咬小時往地面收，不會浮空 */
@@ -306,7 +365,9 @@
     <script src="./js/ground.js"></script>
     <script src="./js/weather.js"></script>
     <script src="./js/sun.js"></script>
+    <script src="./js/night.js"></script>
     <script src="./js/reflect.js"></script>
+    <script src="./js/roster.js"></script>
     <script src="./js/pokemon.js"></script>
     <script src="./js/flyby.js"></script>
     <script src="./js/feeding.js"></script>

@@ -7,14 +7,8 @@ function randomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// 產生不重複的隨機 ID 陣列
-function getUniqueRandomIds(count, min, max) {
-    const ids = new Set();
-    while(ids.size < count) {
-        ids.add(randomInt(min, max));
-    }
-    return Array.from(ids);
-}
+// 註：「抽哪幾隻」不在這裡——那已經不只是隨機取數，還要照 team 與夜行偏好
+// 篩名單，整套住在 js/roster.js 的 pickRoster()
 
 // 查不到身高時的保底體型：取 sizeTiers 正中間那一級（預設三級 = 中型）。
 // 不寫死數字，調整 sizeTiers 時保底值會自己跟上

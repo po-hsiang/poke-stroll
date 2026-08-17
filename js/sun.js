@@ -43,6 +43,26 @@ function sunHours() {
     return now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
 }
 
+// 夜色濃度 0 ~ 1：0 = 白天、1 = 全黑的深夜。夜晚演出（星空、螢火蟲、地面
+// 光暈）的濃淡與夜行陣容的判定都讀這一個值，「幾點算晚上」才只有一種答案。
+// 日落「之後」才開始暗（天文上的暮光也是這樣），花 nightFade 分鐘漸暗到底；
+// 日出「之前」反向漸亮，天亮的那一刻剛好歸零。
+// 這是唯一與「晨昏色溫」有關的東西，而且刻意只輸出一個數字——沒有任何
+// 整頁的底色：透明背景是這個 widget 的前提，見 js/night.js 開頭
+function nightLevel() {
+    const rise = CONFIG.sunrise ?? 6;
+    const set = CONFIG.sunset ?? 18;
+    if (!(set > rise)) return 0; // 參數顛倒（applyQueryOverrides 已修過）就不猜
+    const fade = Math.min(Math.max(CONFIG.nightFade ?? 45, 0), 180) / 60; // 分 → 小時
+    const h = sunHours();
+    if (h >= rise && h < set) return 0; // 白天
+    // 日落後往前算、日出前往後算，兩邊都取「離白天多遠」，跨過午夜也不必特判
+    const since = h >= set ? h - set : rise - h;
+    // nightFade = 0 就是這條斜坡的極限：日落「那一刻」還是 0，之後直接跳到全黑
+    if (fade === 0) return since > 0 ? 1 : 0;
+    return Math.min(since / fade, 1);
+}
+
 // 重算太陽狀態。時間、天氣、參數任一改變都可以直接呼叫
 function refreshSun() {
     const ambient = Math.min(Math.max(CONFIG.ambientShadow ?? 0.55, 0), 1);

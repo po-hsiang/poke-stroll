@@ -51,7 +51,7 @@ function parseBridgeConfig(search) {
         // 沒帶 allow 就是全開；帶了但全部看不懂，也當作沒帶（不要靜靜地全鎖）
         allow: new Set(allowRaw.length ? allowRaw : BRIDGE_CMDS),
         cooldown: num('cooldown', 3000, 0, 600000),
-        // 傳給 widget 的參數：bridge.html?q=preset%3Daibi 就是橋接 + 預設檔
+        // 傳給 widget 的參數：bridge.html?q=theme%3Dgrass 就是橋接 + 草地主題
         query: (qs.get('q') ?? '').replace(/^\?/, ''),
         status: (qs.get('status') ?? 'on').toLowerCase() === 'off' ? 'off' : 'on',
     };

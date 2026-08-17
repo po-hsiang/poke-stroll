@@ -18,7 +18,8 @@ function check(cond, msg) {
 }
 
 // 1) widget 的 QUERY_PARAMS 白名單，外加兩個白名單外手動處理的特例：
-//    ids（逗號清單）與 preset（預設檔，展開成一整段 query string）。
+//    ids 與 team——兩個都收「逗號清單」，而白名單的型別只驗單一個值，
+//    所以它們在 applyQueryOverrides 裡各自手工解析。
 // 白名單住在 js/params.js（0.38.0 起主程式拆進 js/，一檔一職責）
 const widget = read('js/params.js');
 const qpBlock = widget.match(/const QUERY_PARAMS = \{([\s\S]*?)\n\s*\};/);
@@ -27,8 +28,8 @@ const widgetKeys = new Set(
     [...(qpBlock ? qpBlock[1] : '').matchAll(/(\w+):\s*\{\s*path/g)].map(m => m[1])
 );
 widgetKeys.add('ids');
-widgetKeys.add('preset');
-check(widgetKeys.size > 20, `widget 白名單解析出 ${widgetKeys.size} 個參數（含 ids）`);
+widgetKeys.add('team');
+check(widgetKeys.size > 20, `widget 白名單解析出 ${widgetKeys.size} 個參數（含 ids、team）`);
 
 // 2) PARAMS.md「參數總表」章節的每一列。
 // 只認這一章：文件後面還有別的表格（postMessage 的指令表、回執欄位表），
@@ -65,22 +66,21 @@ for (const a of sources) {
     }
 }
 
-// 4) 預設檔同樣三方同步。js/params.js 的 PRESETS 是真理，PARAMS.md 與 params.html
-// 各抄了一份「展開後長什麼樣」給人看——抄錯就是文件在騙人，而且騙得很難發現
-const presetBlock = widget.match(/const PRESETS = \{([\s\S]*?)\n\};/);
-check(!!presetBlock, '能在 widget 中找到 PRESETS 區塊');
-const presets = [...(presetBlock ? presetBlock[1] : '').matchAll(/^\s{4}(\w+):\s*'([^']*)'/gm)];
-check(presets.length > 0, `widget 解析出 ${presets.length} 個預設檔`);
-for (const [, name, query] of presets) {
-    check(md.includes(`\`${name}\``) && md.includes(query),
-        `PARAMS.md 收錄預設檔 ${name}，展開內容一字不差`);
-    check(page.includes(`name: '${name}'`) && page.includes(query),
-        `params.html 收錄預設檔 ${name}，展開內容一字不差`);
-}
+// 4) 屬性名單三方同步。widget 的 POKE_TYPE_NAMES 是 team 參數的允許值，
+// 兩份文件各抄了一份給人看——抄漏一種屬性，讀者就以為那一種不能打
+const roster = read('js/roster.js');
+const namesBlock = roster.match(/const POKE_TYPE_NAMES = \[([\s\S]*?)\n\];/);
+check(!!namesBlock, '能在 widget 中找到 POKE_TYPE_NAMES 區塊');
+const typeNames = [...(namesBlock ? namesBlock[1] : '').matchAll(/'(\w+)'/g)].map(m => m[1]);
+check(typeNames.length === 18, `widget 解析出 ${typeNames.length} 種屬性（應為 18）`);
+// 文件裡的完整清單長這樣：normal / fire / … / fairy（順序也一致才不會漏抄）
+const typeList = typeNames.join(' / ');
+check(md.includes(typeList), 'PARAMS.md 的 team 允許值收齊十八種屬性');
+check(page.includes(typeList), 'params.html 的 team 允許值收齊十八種屬性');
 
 console.log('==============================================');
 if (failed) {
     console.log(`文件同步檢查失敗 ${failed} 項`);
     process.exit(1);
 }
-console.log(`文件同步檢查通過（三方各 ${widgetKeys.size} 個參數、${presets.length} 個預設檔一致）`);
+console.log(`文件同步檢查通過（三方各 ${widgetKeys.size} 個參數、${typeNames.length} 種屬性一致）`);

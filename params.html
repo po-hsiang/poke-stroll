@@ -309,7 +309,6 @@
     .tune-reset:hover { color: var(--gold); }
     .tuner-filter { font: 700 13.5px/1 var(--mono); color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
     #tuner-groups.only-changed .tune:not(.changed) { display: none; }
-    .preset-note { color: var(--muted); font-size: 14px; }
     #tuner-query { display: block; padding: 10px 12px; overflow-x: auto; white-space: nowrap; }
     @media (max-width: 720px) {
         .tune { grid-template-columns: 1fr 96px 30px; }
@@ -478,13 +477,6 @@
 
     <div class="tab-panel" id="panel-params" role="tabpanel" aria-labelledby="tab-params">
 
-    <section id="presets-sec">
-        <h2>預設檔</h2>
-        <p class="sec-note">參數有 <span id="param-count-2"></span> 個, 但多數場景不用一個一個挑。<code>?preset=名稱</code> 一次套用一整組調好的參數; <b>個別參數蓋得過它</b>——<code>?preset=aibi&amp;count=8</code> 就是「aibi 但八隻」。</p>
-        <div class="recipes" id="presets"></div>
-        <p class="hint">預設檔的值本身就是一段 query string, 走的是跟手打參數一模一樣的驗證路徑——沒有第二套規則, 也就沒有第二種壞法。要加新的預設檔: 改 <code>js/params.js</code> 最上面的 <code>PRESETS</code>。</p>
-    </section>
-
     <section id="params">
         <h2>參數總表</h2>
         <p class="sec-note">共 <span id="param-count"></span> 個參數。點<b>參數名稱</b>直接複製; 點列尾的 <code>+</code> 把該參數（帶示範值）加進預覽區。用下方子頁籤依分類篩選(遙控類參數也在這)。</p>
@@ -514,6 +506,8 @@
                 <li><b><code>boundsMin</code> &gt;= <code>boundsMax</code></b>: 整組退回預設 0.1 ~ 0.9。</li>
                 <li><b><code>count</code> 超過可抽選的編號數量</b>: 自動夾到 <code>maxId - minId + 1</code>(避免抽選卡死)。</li>
                 <li><b><code>ids</code> 內的非法編號</b>: 逐一剔除, 全部非法才退回隨機抽選。</li>
+                <li><b><code>team</code> 內不認識的屬性名</b>: 逐一剔除, 全部都不認識才當作沒帶(回到不限屬性)。</li>
+                <li><b><code>team</code> 可抽的名單比 <code>count</code> 短</b>: <code>count</code> 夾到名單長度; 名單完全是空的(該編號範圍內沒有那個屬性)則退回隨機抽選。</li>
             </ul>
         </div>
     </section>
@@ -749,7 +743,7 @@
                     <tr><td class="name">cooldown</td><td class="def">3000</td>
                         <td class="desc"><b>同一個 sender 的冷卻 ms</b>。widget 端的節流是「全場」額度, 這一層讓額度不會被單一來源一口氣吃光。<code>0</code> = 不擋</td></tr>
                     <tr><td class="name">q</td><td class="def">—</td>
-                        <td class="desc">轉交給 widget 的參數, 例 <code>q=preset%3Daibi</code>(記得 URL 編碼)</td></tr>
+                        <td class="desc">轉交給 widget 的參數, 例 <code>q=theme%3Dgrass%26count%3D6</code>(記得 URL 編碼: <code>=</code> 是 <code>%3D</code>、<code>&amp;</code> 是 <code>%26</code>)</td></tr>
                     <tr><td class="name">status</td><td class="def">on</td>
                         <td class="desc">左上角的狀態列(連上了沒、送出幾道、最近一道)。<code>off</code> 收起來</td></tr>
                 </tbody>
@@ -815,8 +809,6 @@
     // sample 是「加進預覽」用的示範值，刻意跟預設值不同才看得出變化
     // =========================================================
     const PARAMS = [
-        { name: 'preset',         type: 'enum',  range: 'aibi',          def: '—',      group: '生成', sample: 'preset=aibi',
-          desc: '預設檔：一次套用一整組調好的參數（清單見上方「預設檔」一節）。個別參數蓋得過它——?preset=aibi&count=8 就是「aibi 但八隻」。預設檔的值本身就是一段 query string，走的是跟手打參數一模一樣的驗證路徑，沒有第二套規則' },
         { name: 'count',          type: 'int',   range: '1 ~ 50',        def: '4',      group: '生成', sample: 'count=8',
           desc: '同時生成的寶可夢數量' },
         { name: 'minId',          type: 'int',   range: '1 ~ 1025',      def: '1',      group: '生成', sample: 'minId=152',
@@ -825,6 +817,8 @@
           desc: '隨機抽選的圖鑑編號上限（650 以後沒有動態 GIF，會退回靜態圖）' },
         { name: 'ids',            type: 'list',  range: '各 1 ~ 1025，最多 50 隻', def: '—', group: '生成', sample: 'ids=25,133,6',
           desc: '固定生成清單，逗號分隔（如 ids=25,133,6）。設了就無視 count / minId / maxId 的隨機抽選；允許重複編號' },
+        { name: 'team',           type: 'enum',  range: 'normal / fire / water / electric / grass / ice / fighting / poison / ground / flying / psychic / bug / rock / ghost / dragon / dark / steel / fairy', def: '—', group: '生成', sample: 'team=fire',
+          desc: '主題隊伍：只抽這個屬性的寶可夢。十八種屬性的英文名都可以打，也可以用逗號並列多種（team=ghost,dark 就是一隊夜行系）。查的是「主屬性」——對照表只存主屬性，副屬性算不進來，所以飛行系特別少：全 1025 隻裡主屬性是 flying 的只有 9 隻，預設範圍（maxId=649）內更是只有 1 隻，大比鳥（一般/飛行）這種「副屬性才是飛行」的都不算。可抽的名單比 count 短時 count 會自動夾住；該範圍內完全沒有那個屬性（team=dark&maxId=151，惡屬性要到第二世代才有）就退回隨機抽選。與 nightRoster 同時設定時以 team 為準' },
         { name: 'baseSpeed',      type: 'float', range: '0 ~ 10',        def: '0.25',   group: '移動與範圍', sample: 'baseSpeed=0.6',
           desc: '基礎移動速度（px/幀，60fps 基準）' },
         { name: 'speedVariance',  type: 'float', range: '0 ~ 10',        def: '0.25',   group: '移動與範圍', sample: 'speedVariance=1',
@@ -901,6 +895,18 @@
           desc: '水面倒影（只在 theme=water 出現）：水面下多一個上下顛倒的自己，面向與跳躍高度都跟著本體走——牠往上跳，水裡的就往下沉。鏡面取「水面」而不是腳底（腳其實泡在水面下），水面那條線兩側才接得起來。能畫的高度就是地面那條帶，所以預設的 6px 地面只留一抹濕痕，把地面拉高才看得出是倒影：?theme=water&themeHeight=40。off = 不畫（連元素都不會產生）' },
         { name: 'reflectOpacity', type: 'float', range: '0 ~ 1',         def: '0.35',   group: '動畫與外觀', sample: 'theme=water&themeHeight=40&reflectOpacity=0.6',
           desc: '倒影濃度。1 = 跟本體一樣實，水面就不像水了；0 等同關掉' },
+        { name: 'night',          type: 'enum',  range: 'on / off',      def: 'on',     group: '夜晚演出', sample: 'sunTime=23:00',
+          desc: '夜晚演出總開關：天黑之後才出現的星空、螢火蟲、地面光暈。刻意沒有月亮，也刻意沒有整頁的夜色底——鋪一層色溫就會蓋掉 OBS 場景與嵌入方的網頁，而背景透明是這個 widget 的前提，所以夜色全做成元素（粒子與貼著地面的漸層），天空本身維持全透明。幾點算晚上看 sunrise / sunset，掛著整晚會自己入夜、自己天亮；想立刻看效果就釘死時刻 ?sunTime=23:00。off = 整套關掉（連元素都不會產生）' },
+        { name: 'nightStars',     type: 'int',   range: '0 ~ 400',       def: '70',     group: '夜晚演出', sample: 'sunTime=23:00&nightStars=200',
+          desc: '星星數量。撒在畫面上半部（下面留給地面與散步的舞台），每顆有自己的亮度、閃爍週期與相位，所以不會齊步閃。0 = 不要星空。⚠️ 星空需要偏暗的背景才看得出來——星星是亮點，亮點疊在白底上本來就不會顯色，而我們不能鋪一層夜色底去製造對比（那就破了透明背景）。深色與中間調的背景都很清楚，淺色網頁上會看不見；那種情況把這一項設 0，留螢火蟲與地面光暈就好' },
+        { name: 'nightFireflies', type: 'int',   range: '0 ~ 120',       def: '12',     group: '夜晚演出', sample: 'sunTime=23:00&nightFireflies=40',
+          desc: '螢火蟲數量。貼近地面緩緩游移的光點，一邊飄一邊明滅（明滅的週期刻意跟飄移錯開，才不會每次都在同一點亮起來）。0 = 不要螢火蟲' },
+        { name: 'nightGlow',      type: 'float', range: '0 ~ 1',         def: '0.35',   group: '夜晚演出', sample: 'theme=grass&themeHeight=24&sunTime=23:00&nightGlow=1',
+          desc: '地面光暈的濃度：貼著地面往上暈開的一層微光，最濃處在地面表面，上緣永遠收乾成全透明（不是一塊蓋住背景的色板）。光是「積在地面上」的，所以沒鋪地面（theme=none）時這一項自動不生效。0 = 不要光暈' },
+        { name: 'nightFade',      type: 'int',   range: '0 ~ 180',       def: '45',     group: '夜晚演出', sample: 'sunTime=18:10&nightFade=15',
+          desc: '日落後漸暗（日出前漸亮）要花幾分鐘。天文上的暮光也是日落「之後」才開始，所以日落那一刻夜色還是 0，之後才慢慢浮出來。0 = 不漸變，日落瞬間直接入夜。夜行陣容（nightRoster）以「夜色過半」為門檻，所以這個值也會挪動它的判定時刻' },
+        { name: 'nightRoster',    type: 'float', range: '0 ~ 1',         def: '0.75',   group: '夜晚演出', sample: 'sunTime=23:00&nightRoster=1',
+          desc: '夜間偏抽「夜行系」的機率，每個名額各擲一次骰（不是整批換掉——晚上偶爾混進一隻不是夜行系的，反而像抽出來的而不是排好的）。原作沒有「夜行」這個屬性，這裡取最接近的幽靈 + 惡：惡屬性和晝夜循環同在第二世代登場，出沒時段也幾乎都壓在天黑之後。預設範圍（1~649）內這兩種共 44 隻。1 = 整批都是；0 = 不偏抽，晚上跟白天抽一樣的東西。team 有指定時以 team 為準。這一項只影響「抽誰」，跟 night 的視覺演出是兩個獨立開關' },
         { name: 'reflectWave',    type: 'float', range: '0 ~ 5',         def: '1',      group: '動畫與外觀', sample: 'theme=water&themeHeight=40&reflectWave=0',
           desc: '水紋左右搖曳的倍速：2 = 兩倍快、0 = 靜止無波的水面。搖曳是 CSS 動畫，不吃主迴圈效能；系統開了「減少動態效果」時自動靜止' },
         { name: 'flybyDelayMin',  type: 'int',   range: '1000 ~ 600000', def: '15000',  group: '客串事件', sample: 'flybyChance=1&flybyDelayMin=2000&flybyDelayMax=4000',
@@ -939,16 +945,6 @@
           desc: '抓在手上時掙扎動畫的倍速（2 = 兩倍快，0 = 抓著但不掙扎）。註：GIF 本身的播放速率瀏覽器不開放 JS 控制，所以掙扎感是 widget 自己畫的擺盪 + 上下抖動，這個值調的是那套動畫' },
     ];
 
-    // 預設檔：與 widget 的 js/params.js 裡的 PRESETS 對照（query 欄位必須一字不差）
-    const PRESET_CARDS = [
-        {
-            name: 'aibi',
-            label: 'AIBI 平台',
-            query: 'count=4&speedVariance=1&boundsMin=0&boundsMax=1&bubblePosition=side&shinyChance=0.0025',
-            note: '滿版散步（左右不留白，貼齊平台全寬版面）、個體速度差拉開（四隻一起走才不會像列隊行進）、對話框擺側邊；色違壓回接近正作的稀有度（1/400）——長時間掛著的介面，要撞見才是驚喜。',
-        },
-    ];
-
     const RECIPES = [
         { label: '專案吉祥物固定陣容（皮卡丘＋伊布＋噴火龍）', query: 'ids=25,133,6' },
         { label: '五隻伊布', query: 'ids=133,133,133,133,133' },
@@ -984,6 +980,19 @@
         { label: '慢動作搶食（俯衝慢、餘韻長）', query: 'snatchChance=1&snatchDistance=0&snatchDiveRate=0.8&snatchShrinkRate=0.5&snatchFadeRate=0.5' },
         { label: '安心吃飯（永遠沒有賊鳥）', query: 'snatchChance=0' },
         { label: '完全不要地面（關掉預設的隨機地面）', query: 'theme=none' },
+        { label: '一隊火系', query: 'team=fire' },
+        { label: '一隊水系在水邊', query: 'team=water&theme=water&themeHeight=40' },
+        { label: '幽靈屋（純幽靈屬性）', query: 'team=ghost' },
+        { label: '夜行陣容（幽靈＋惡，不必等天黑）', query: 'team=ghost,dark&count=6' },
+        { label: '一隊龍（全 1025 隻裡抽）', query: 'team=dragon&maxId=1025' },
+        { label: '看夜晚演出（釘死 23:00）', query: 'sunTime=23:00' },
+        { label: '滿天星斗', query: 'sunTime=23:00&nightStars=250' },
+        { label: '螢火蟲成群', query: 'sunTime=23:00&nightFireflies=45' },
+        { label: '草地上的夜色光暈（光暈開到最濃）', query: 'theme=grass&themeHeight=24&sunTime=23:00&nightGlow=1' },
+        { label: '看黃昏怎麼慢慢暗下來（15 分鐘漸暗，釘在剛入夜）', query: 'sunTime=18:05&nightFade=15' },
+        { label: '整晚都是幽靈（夜行偏好開到滿）', query: 'sunTime=23:00&nightRoster=1&count=6' },
+        { label: '晚上也照常隨機（關掉夜行偏好）', query: 'nightRoster=0' },
+        { label: '完全不要夜晚演出', query: 'night=off' },
         { label: '黃昏長影（釘死 17:30）', query: 'sunTime=17:30' },
         { label: '正午（影子縮回腳下）', query: 'sunTime=12' },
         { label: '深夜（只剩腳下的接地影）', query: 'sunTime=0' },
@@ -1006,7 +1015,7 @@
     }
     function applyPreview(q) {
         if (q !== undefined) queryInput.value = q;
-        syncTuner(); // 調校台跟著網址走：手動編輯、食譜卡、預設檔都同一個真相
+        syncTuner(); // 調校台跟著網址走：手動編輯、食譜卡都同一個真相
         const src = './pokemon_footer_widget.html' + (currentQuery() ? '?' + currentQuery() : '');
         ensureDockVisible(); // 預覽被關掉時按了套用 → 自動叫回來，不然看不到效果
         // 先清空再載入：即使 query 沒變也強制重載（= 重抽一批）
@@ -1242,58 +1251,6 @@
         card.appendChild(row);
 
         recipesEl.appendChild(card);
-    }
-
-    // ---------------------------------------------------------
-    // 預設檔卡
-    // ---------------------------------------------------------
-    document.getElementById('param-count-2').textContent = PARAMS.length;
-    const presetsEl = document.getElementById('presets');
-    for (const p of PRESET_CARDS) {
-        const card = document.createElement('div');
-        card.className = 'card recipe';
-
-        const label = document.createElement('span');
-        label.className = 'label';
-        label.textContent = `${p.label}　?preset=${p.name}`;
-        card.appendChild(label);
-
-        const note = document.createElement('span');
-        note.className = 'preset-note';
-        note.textContent = p.note;
-        card.appendChild(note);
-
-        const q = document.createElement('code');
-        q.className = 'q';
-        q.textContent = '= ?' + p.query;
-        card.appendChild(q);
-
-        const row = document.createElement('div');
-        row.className = 'row';
-        const preview = document.createElement('button');
-        preview.className = 'btn primary';
-        preview.textContent = '▶ 預覽';
-        preview.addEventListener('click', () => applyPreview('preset=' + p.name));
-        const copy = document.createElement('button');
-        copy.className = 'btn';
-        copy.textContent = '📋 複製';
-        copy.addEventListener('click', e => copyText('?preset=' + p.name, e.currentTarget));
-        // 想從這一組再微調：展開成個別參數，調校台就能一項一項動
-        const expand = document.createElement('button');
-        expand.className = 'btn';
-        expand.textContent = '🎚️ 展開來調';
-        expand.title = '展開成個別參數並跳到調校台';
-        expand.addEventListener('click', () => {
-            applyPreview(p.query);
-            showTab('tuner');
-            history.replaceState(null, '', '#tuner');
-        });
-        row.appendChild(preview);
-        row.appendChild(copy);
-        row.appendChild(expand);
-        card.appendChild(row);
-
-        presetsEl.appendChild(card);
     }
 
     // ---------------------------------------------------------

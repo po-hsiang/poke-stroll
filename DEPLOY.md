@@ -58,9 +58,6 @@ docker compose up -d
 想要不同的生成數量、體型、固定陣容?在網址後掛 query string 即可,例如
 `/poke-stroll/?count=5&ids=25,133,6`,各專案互不影響。完整參數見 [PARAMS.md](PARAMS.md)。
 
-常用配置已經包成**預設檔**,一個參數就好:AIBI 平台用 `/poke-stroll/?preset=aibi`。
-新增預設檔改 `js/params.js` 的 `PRESETS`(值就是一段 query string),不必動其他程式。
-
 ## CI
 
 每個 push / PR 會自動跑 `.github/workflows/ci.yml`:單元測試(`node test/widget.test.js`)+

@@ -53,7 +53,8 @@ const REMOTE_COMMANDS = {
         return { ok: true, count: shinies.length };
     },
     // 加入一隻「常駐」成員（會留下來散步，不是路過的客串）：
-    // 帶 id 指定誰入隊，不帶就照 minId/maxId 隨機抽。
+    // 帶 id 指定誰入隊，不帶就照 minId/maxId 抽（一樣吃 team 與夜行偏好，
+    // 見 js/roster.js——半夜補進來的那一隻也該是夜行系）。
     // 上限跟 count 參數同一個天花板，指令灌不爆隊伍
     join(msg) {
         if (pokemons.length >= (QUERY_PARAMS.count?.max ?? 50)) {
@@ -66,7 +67,7 @@ const REMOTE_COMMANDS = {
                 return { ok: false, reason: 'id must be 1~1025' };
             }
         } else {
-            id = randomInt(CONFIG.minId, CONFIG.maxId);
+            id = pickOne(CONFIG.minId, CONFIG.maxId);
         }
         // 出生跑道隨機挑一條，跟開頁時的排隊邏輯同一套座標系
         getSizeScale(id).then(scale => pokemons.push(new Pokemon(

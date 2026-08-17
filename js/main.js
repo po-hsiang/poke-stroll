@@ -16,8 +16,9 @@ async function init() {
     // 下起雨雪風沙就把直射光打散（投射影變短變軟，見 sun.js）
     setSunOvercast(initWeather(themeName));
 
-    // URL 有帶 ?ids= 就用固定清單，否則照 count/minId/maxId 隨機抽
-    const ids = CONFIG.fixedIds ?? getUniqueRandomIds(CONFIG.count, CONFIG.minId, CONFIG.maxId);
+    // URL 有帶 ?ids= 就用固定清單，否則照 count/minId/maxId 抽
+    // （抽選還會吃 team 與夜行偏好，規則全在 js/roster.js）
+    const ids = CONFIG.fixedIds ?? pickRoster(CONFIG.count, CONFIG.minId, CONFIG.maxId);
 
     // 先向 PokéAPI 查每隻的身高，決定體型分級（並行查詢）
     const scales = await Promise.all(ids.map(getSizeScale));
@@ -41,7 +42,8 @@ function gameLoop(timestamp) {
     const deltaTime = Math.min(timestamp - lastTime, 100);
     lastTime = timestamp;
 
-    updateSun(deltaTime); // 太陽先走（節流）：影子的方向與長短是全場共用的
+    updateSun(deltaTime);   // 太陽先走（節流）：影子的方向與長短是全場共用的
+    updateNight(deltaTime); // 夜色跟著時間濃淡（節流）：入夜才建元素，白天整層收起來
 
     pokemons.forEach(p => p.update(deltaTime, pokemons));
 

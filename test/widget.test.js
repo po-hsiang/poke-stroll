@@ -183,7 +183,7 @@ for (const f of jsFiles) {
 // 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
 // global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
 vm.runInContext(
-    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, PRESETS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP };',
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -2594,9 +2594,12 @@ group('19. 色違星星特效定時重播');
     }
 
     // =====================================================
-    group('32. 預設檔（preset：一次套用一整組調好的參數）');
+    group('32. 陣容（team 主題隊伍 / nightRoster 夜行偏好）');
     {
         const savedSearch = sandbox.location.search;
+        const savedTypes = sandbox.window.POKE_TYPES;
+        const savedTeam = CONFIG.team;
+        const savedRoster = CONFIG.nightRoster;
         // applyQueryOverrides 會就地改寫傳進去的設定，所以每次都給它一份影本，
         // 別把整份測試共用的 CONFIG 弄髒（sizeTiers 的 Infinity 在這裡用不到）
         const run = search => {
@@ -2606,57 +2609,275 @@ group('19. 色違星星特效定時重播');
             return cfg;
         };
 
-        check('PRESETS 有 aibi', typeof T.PRESETS?.aibi === 'string');
-        check('aibi 的內容就是那一串 query string',
-            T.PRESETS.aibi === 'count=4&speedVariance=1&boundsMin=0&boundsMax=1'
-                + '&bubblePosition=side&shinyChance=0.0025',
-            T.PRESETS.aibi);
-        // 預設檔裡打錯參數名會靜靜地什麼都不做，這一條把它擋在測試階段
-        for (const [name, preset] of Object.entries(T.PRESETS)) {
-            const unknown = [...new URLSearchParams(preset).keys()]
-                .filter(k => !T.QUERY_PARAMS[k] && k !== 'ids');
-            check(`預設檔 ${name} 的每個參數都在白名單上`, unknown.length === 0,
-                unknown.join(', '));
+        // 全域的假對照表只有兩筆（給影子染色用），這一組要真的抽名單，
+        // 換一張夠用的：火 3 隻、水 2 隻、幽靈 3 隻、惡 2 隻
+        sandbox.window.POKE_TYPES = {
+            4: 'fire', 5: 'fire', 6: 'fire',
+            7: 'water', 8: 'water',
+            25: 'electric', 143: 'normal',
+            92: 'ghost', 93: 'ghost', 94: 'ghost',
+            197: 'dark', 198: 'dark',
+        };
+
+        check('十八種屬性一個不少', T.POKE_TYPE_NAMES.length === 18);
+        check('屬性名就是對照表的值域（抽樣比對）',
+            ['normal', 'fire', 'ghost', 'dark', 'fairy', 'steel']
+                .every(t => T.POKE_TYPE_NAMES.includes(t)));
+        check('夜行系 = 幽靈 + 惡（原作沒有「夜行」這個屬性）',
+            JSON.stringify(T.NOCTURNAL_TYPES) === '["ghost","dark"]');
+
+        // ---- typePool：名單本身 ----
+        check('typePool 只挑出該屬性的編號',
+            JSON.stringify(T.typePool(['fire'], 1, 649)) === '[4,5,6]');
+        check('typePool 吃得下多個屬性，並且照編號排序',
+            JSON.stringify(T.typePool(['ghost', 'dark'], 1, 649)) === '[92,93,94,197,198]');
+        check('typePool 尊重 minId / maxId',
+            JSON.stringify(T.typePool(['ghost', 'dark'], 1, 151)) === '[92,93,94]');
+        check('該範圍沒有那個屬性就是空名單（惡屬性要到第二世代才有）',
+            T.typePool(['dark'], 1, 151).length === 0);
+
+        // ---- sampleUnique：抽選不重複、不卡死 ----
+        const ten = T.sampleUnique([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 4);
+        check('sampleUnique 抽出要求的數量', ten.length === 4);
+        check('sampleUnique 抽出來的不重複', new Set(ten).size === 4);
+        check('sampleUnique 抽出來的都在名單內', ten.every(id => id >= 1 && id <= 10));
+        check('名單比要的少 → 給得出多少就多少（不會卡在湊不滿的迴圈）',
+            T.sampleUnique([1, 2], 5).length === 2);
+        check('sampleUnique 排除 taken 裡的',
+            T.sampleUnique([1, 2, 3], 3, new Set([2])).every(id => id !== 2));
+
+        // ---- team 參數解析 ----
+        check('team=fire → 只抽火屬性', JSON.stringify(run('?team=fire').team) === '["fire"]');
+        check('team 大小寫、前後空白都容忍',
+            JSON.stringify(run('?team=%20FIRE%20').team) === '["fire"]');
+        check('team=ghost,dark → 逗號並列多個屬性',
+            JSON.stringify(run('?team=ghost,dark').team) === '["ghost","dark"]');
+        check('team 重複的屬性只留一份',
+            JSON.stringify(run('?team=fire,fire').team) === '["fire"]');
+        check('team 裡打錯的屬性名逐一剔除，剩下的照用',
+            JSON.stringify(run('?team=fire,notatype').team) === '["fire"]');
+        check('team 全部打錯 → 當作沒帶（回到不限屬性）',
+            run('?team=notatype').team === null);
+        check('沒帶 team → 維持設定檔的預設', run('?count=2').team === CONFIG.team);
+
+        // ---- team 與 count 的合理性修正 ----
+        check('count 超過該屬性的名單長度 → 夾到名單長度（火只有 3 隻）',
+            run('?team=fire&count=10').count === 3);
+        check('count 沒超過就不動', run('?team=fire&count=2').count === 2);
+        check('名單是空的就不動 count（抽選那端會退回全範圍）',
+            run('?team=dark&maxId=151&count=6').count === 6);
+        check('ids 指定時 team 不參與夾 count（固定清單優先）',
+            run('?team=fire&ids=25,133,143').count === 3);
+
+        // ---- pickRoster：team ----
+        CONFIG.nightRoster = 0;
+        CONFIG.team = ['fire'];
+        const fireTeam = T.pickRoster(3, 1, 649);
+        check('pickRoster 照 team 抽（全員都是火屬性）',
+            fireTeam.length === 3 && fireTeam.every(id => [4, 5, 6].includes(id)),
+            JSON.stringify(fireTeam));
+        CONFIG.team = 'fire'; // config.js 手寫成字串也算一種屬性
+        check('team 寫成單一字串也認得（不會被拆成四個字母）',
+            T.pickRoster(2, 1, 649).every(id => [4, 5, 6].includes(id)));
+        CONFIG.team = ['dark'];
+        const impossible = T.pickRoster(3, 1, 151);
+        check('team 在該範圍抽不到東西 → 退回全範圍隨機（而不是生不出來）',
+            impossible.length === 3 && impossible.every(id => id >= 1 && id <= 151),
+            JSON.stringify(impossible));
+        CONFIG.team = null;
+
+        // ---- pickRoster：夜行偏好 ----
+        const savedSunTime = CONFIG.sunTime;
+        CONFIG.nightRoster = 1; // 全中，才能斷言「整批都是夜行系」
+        CONFIG.sunTime = 12;
+        check('白天不偏抽（夜色 0 → nightBias 0）', T.nightBias() === 0);
+        const noon = T.pickRoster(4, 1, 649);
+        check('白天抽出來的還是全範圍', noon.length === 4);
+
+        CONFIG.sunTime = 23;
+        check('深夜的 nightBias 就是 nightRoster', T.nightBias() === 1);
+        const midnight = T.pickRoster(4, 1, 649);
+        check('nightRoster=1 的深夜 → 整批都是夜行系',
+            midnight.length === 4 && midnight.every(id => [92, 93, 94, 197, 198].includes(id)),
+            JSON.stringify(midnight));
+
+        CONFIG.nightRoster = 0;
+        check('nightRoster=0 → 就算是深夜也不偏抽', T.nightBias() === 0);
+
+        // 夜行名單比要的數量少：不夠的照全範圍補齊，總數還是對的
+        CONFIG.nightRoster = 1;
+        const short = T.pickRoster(8, 1, 649);
+        check('夜行名單不夠（只有 5 隻）→ 其餘照全範圍補到 8 隻',
+            short.length === 8 && new Set(short).size === 8,
+            JSON.stringify(short));
+        check('補齊的部分不會跟夜行系那幾隻重複', new Set(short).size === short.length);
+
+        // 夜行名單在這個範圍是空的：整個機制安靜地讓路
+        const noNocturnal = T.pickRoster(3, 1, 91);
+        check('該範圍沒有夜行系 → 照全範圍抽，不報錯也不少人',
+            noNocturnal.length === 3 && noNocturnal.every(id => id >= 1 && id <= 91));
+
+        // team 與 nightRoster 同時開：明講的 team 贏
+        CONFIG.team = ['fire'];
+        const both = T.pickRoster(3, 1, 649);
+        check('team 與夜行偏好同時開 → team 為準（明講的意圖優先）',
+            both.every(id => [4, 5, 6].includes(id)), JSON.stringify(both));
+        CONFIG.team = null;
+
+        // pickOne：遙控 join 補人走同一條路
+        check('pickOne 也吃夜行偏好', [92, 93, 94, 197, 198].includes(T.pickOne(1, 649)));
+        CONFIG.nightRoster = 0;
+        const one = T.pickOne(1, 649);
+        check('pickOne 回傳單一個合法編號', Number.isInteger(one) && one >= 1 && one <= 649);
+
+        // 出生跑道 = index，所以順序必須是洗過的（照批次排會讓夜行系擠在同一側）
+        CONFIG.nightRoster = 0.5;
+        CONFIG.sunTime = 23;
+        let sorted = 0;
+        for (let i = 0; i < 40; i++) {
+            const batch = T.pickRoster(6, 1, 649);
+            const asc = batch.every((id, idx) => idx === 0 || batch[idx - 1] <= id);
+            if (asc) sorted++;
         }
+        check('回傳的順序是洗過的（40 批裡不會每批都照編號排）', sorted < 40, `${sorted}/40 批是升冪`);
 
-        const aibi = run('?preset=aibi');
-        check('?preset=aibi → 滿版活動範圍（0 ~ 1）',
-            aibi.bounds.min === 0 && aibi.bounds.max === 1);
-        check('?preset=aibi → 個體速度差 1、四隻、對話框在側邊',
-            aibi.speedVariance === 1 && aibi.count === 4 && aibi.bubblePosition === 'side');
-        check('?preset=aibi → 色違 1/400', aibi.shinyChance === 0.0025);
-        check('沒帶到的參數維持預設（baseSize 沒被動到）', aibi.baseSize === CONFIG.baseSize);
-
-        const mixed = run('?preset=aibi&count=8&shinyChance=1');
-        check('個別參數蓋得過預設檔', mixed.count === 8 && mixed.shinyChance === 1);
-        check('沒被蓋到的仍然來自預設檔',
-            mixed.bounds.min === 0 && mixed.bounds.max === 1 && mixed.speedVariance === 1);
-
-        const unknownPreset = run('?preset=沒有這個&count=7');
-        check('預設檔名稱不存在 → 整組忽略，其餘參數照常生效',
-            unknownPreset.count === 7 && unknownPreset.bounds.min === 0.1);
-
-        // 預設檔的值走的是跟手打參數同一條驗證路徑：超範圍的一樣被擋下
-        T.PRESETS.__bogus = 'count=999&baseSpeed=0.5';
-        const bogus = run('?preset=__bogus');
-        check('預設檔裡的值一樣要過範圍檢查（count=999 被擋，baseSpeed 照收）',
-            bogus.count === CONFIG.count && bogus.baseSpeed === 0.5);
-        delete T.PRESETS.__bogus;
-
-        T.PRESETS.__ids = 'ids=25,133';
-        const idsPreset = run('?preset=__ids');
-        check('預設檔也能帶 ids（白名單外的特例一併吃到）',
-            JSON.stringify(idsPreset.fixedIds) === '[25,133]' && idsPreset.count === 2);
-        delete T.PRESETS.__ids;
-
-        check('preset 名稱大小寫、前後空白都容忍',
-            run('?preset=%20AIBI%20').speedVariance === 1);
-
+        CONFIG.sunTime = savedSunTime;
+        CONFIG.team = savedTeam;
+        CONFIG.nightRoster = savedRoster;
+        sandbox.window.POKE_TYPES = savedTypes;
         sandbox.location.search = savedSearch;
     }
 
     // =====================================================
-    group('33. 水面倒影（水域地形的鏡射）');
+    group('33. 夜晚演出（星空 / 螢火蟲 / 地面光暈）');
+    {
+        const savedSunTime = CONFIG.sunTime;
+        const savedNight = CONFIG.night;
+        const savedStars = CONFIG.nightStars;
+        const savedFlies = CONFIG.nightFireflies;
+        const savedGlow = CONFIG.nightGlow;
+        const savedFade = CONFIG.nightFade;
+        const savedThemeHeight = CONFIG.themeHeight;
+
+        // ---- nightLevel：幾點算晚上、有多黑 ----
+        const at = h => { CONFIG.sunTime = h; return T.nightLevel(); };
+        CONFIG.sunrise = 6;
+        CONFIG.sunset = 18;
+        CONFIG.nightFade = 60; // 一小時漸暗，換算好對
+        check('正午是白天（夜色 0）', at(12) === 0);
+        check('日出那一刻剛好歸零', at(6) === 0);
+        check('日落那一刻還是白天（暮光是日落「之後」才開始）', at(18) === 0);
+        check('日落後半小時 = 半暗', Math.abs(at(18.5) - 0.5) < 1e-9);
+        check('日落後一小時 = 全黑', at(19) === 1);
+        check('深夜維持全黑', at(23) === 1 && at(2) === 1);
+        check('日出前半小時 = 半暗（反向漸亮）', Math.abs(at(5.5) - 0.5) < 1e-9);
+        check('跨過午夜不必特判（00:30 仍是全黑）', at(0.5) === 1);
+        CONFIG.nightFade = 0;
+        check('nightFade=0 → 日落後直接入夜，沒有漸變',
+            at(18.01) === 1 && at(18) === 0);
+        CONFIG.nightFade = 45;
+        check('預設 45 分鐘：日落後 45 分整全黑', at(18.75) === 1);
+        check('預設 45 分鐘：日落後 15 分是三分之一', Math.abs(at(18.25) - 1 / 3) < 1e-9);
+        // 日出晚於日落（參數顛倒）時不猜——applyQueryOverrides 已經修過一次了
+        CONFIG.sunrise = 18;
+        CONFIG.sunset = 6;
+        check('sunrise / sunset 顛倒 → 不猜，一律當白天', at(23) === 0);
+        CONFIG.sunrise = 6;
+        CONFIG.sunset = 18;
+
+        // ---- 建元素 ----
+        // 前面的組別可能留下地面，先確定這裡是「沒有地面」的狀態
+        T.initGround('none');
+        // 白天不該建任何東西：絕大多數的頁面都是白天開的，那就是零成本
+        CONFIG.sunTime = 12;
+        T.updateNight(T.NIGHT_TICK_MS);
+        check('白天不建夜景元素', T.getNightEl() === null);
+
+        CONFIG.sunTime = 23;
+        CONFIG.nightStars = 12;
+        CONFIG.nightFireflies = 3;
+        CONFIG.nightGlow = 0.5;
+        T.updateNight(T.NIGHT_TICK_MS);
+        const el = T.getNightEl();
+        check('入夜才建元素', el !== null && el.id === 'night');
+        const stars = el.children.filter(c => c.className === 'night-star');
+        const flies = el.children.filter(c => c.className === 'night-firefly');
+        const glows = el.children.filter(c => c.id === 'night-glow');
+        check('星星照 nightStars 生成', stars.length === 12, `${stars.length} 顆`);
+        check('螢火蟲照 nightFireflies 生成', flies.length === 3, `${flies.length} 隻`);
+        check('螢火蟲是兩層（外層飄、內層明滅）',
+            flies.every(f => f.children.length === 1));
+        check('沒鋪地面就沒有地面光暈（theme=none）', glows.length === 0);
+        check('整層的 opacity 就是夜色濃度', el.style.opacity === '1.000', el.style.opacity);
+        check('星星撒在上半部（不壓到地面與舞台）',
+            stars.every(s => parseFloat(s.style.top) < 72));
+        check('每顆星星都有自己的閃爍週期與相位',
+            new Set(stars.map(s => s.style.getPropertyValue('--dur')
+                + s.style.getPropertyValue('--delay'))).size > 1);
+        check('星星帶著靜態亮度（reduced-motion 關掉動畫時才不會全亮）',
+            stars.every(s => parseFloat(s.style.opacity) > 0));
+        check('螢火蟲貼近地面（bottom 46% 以內）',
+            flies.every(f => parseFloat(f.style.bottom) <= 46));
+
+        // 天亮就收起來，不是留在畫面上
+        CONFIG.sunTime = 12;
+        T.updateNight(T.NIGHT_TICK_MS);
+        check('天亮 → 整層收起來（display: none）', T.getNightEl().hidden === true);
+        CONFIG.sunTime = 23;
+        T.updateNight(T.NIGHT_TICK_MS);
+        check('再入夜 → 同一層拿回來用，不重建', T.getNightEl() === el);
+
+        // 節流：不到間隔不重算
+        el.style.opacity = 'x';
+        T.updateNight(1);
+        check('沒到 NIGHT_TICK_MS 不重算', el.style.opacity === 'x');
+        T.updateNight(T.NIGHT_TICK_MS);
+        check('到了間隔才重算', el.style.opacity === '1.000');
+
+        // 黃昏：濃度介於 0 與 1 之間
+        CONFIG.sunTime = 18.25; // 日落後 15 分，nightFade 45 → 1/3
+        T.updateNight(T.NIGHT_TICK_MS);
+        check('黃昏是慢慢浮出來的（opacity 介於 0 與 1）',
+            T.getNightEl().style.opacity === '0.333', T.getNightEl().style.opacity);
+
+        // ---- 地面光暈綁在地面上 ----
+        CONFIG.themeHeight = 40;
+        const lift = T.initGround('water');
+        CONFIG.sunTime = 23;
+        const glowEl = (() => {
+            // 前一層是 theme=none 時建的（沒有光暈），重建一次才量得到
+            T.getNightEl().remove();
+            return T.buildNight() && T.getNightEl().children.find(c => c.id === 'night-glow');
+        })();
+        check('有地面時才有地面光暈', !!glowEl);
+        check('光暈高度 = 地面高度 + 往上暈開的那一段',
+            glowEl.style.height === `${T.groundSurface.band + T.NIGHT_GLOW_RISE}px`,
+            glowEl.style.height);
+        check('光暈是漸層而且上緣完全透明（不是一塊蓋住背景的色板）',
+            glowEl.style.background.includes('linear-gradient')
+            && glowEl.style.background.includes('0) 100%'),
+            glowEl.style.background);
+        void lift;
+        T.initGround('none'); // 收乾淨，後面的組別不該看到地面
+
+        // ---- 各自可以關掉 ----
+        CONFIG.nightStars = 0;
+        CONFIG.nightFireflies = 0;
+        CONFIG.nightGlow = 0;
+        T.getNightEl().remove();
+        check('三樣全關 → 連容器都不建', T.buildNight() === false);
+
+        CONFIG.sunTime = savedSunTime;
+        CONFIG.night = savedNight;
+        CONFIG.nightStars = savedStars;
+        CONFIG.nightFireflies = savedFlies;
+        CONFIG.nightGlow = savedGlow;
+        CONFIG.nightFade = savedFade;
+        CONFIG.themeHeight = savedThemeHeight;
+    }
+
+    // =====================================================
+    group('34. 水面倒影（水域地形的鏡射）');
     {
         const savedTheme = CONFIG.theme;
         const savedHeight = CONFIG.themeHeight;
@@ -2772,7 +2993,7 @@ group('19. 色違星星特效定時重播');
     }
 
     // =====================================================
-    group('34. 指令橋接（bridge.html：外部訊息來源 → 遙控指令）');
+    group('35. 指令橋接（bridge.html：外部訊息來源 → 遙控指令）');
     {
         // js/bridge.js 不在 widget 的載入清單裡（它是 bridge.html 的東西），
         // 所以另外開一個乾淨的 context 跑——順便證明它不依賴 widget 的任何全域
@@ -2794,13 +3015,13 @@ group('19. 色違星星特效定時重播');
         // Number(null) 是 0 不是 NaN——沒有這一條，每個沒帶的數字參數都會靜靜變成 0
         check('沒帶的數字參數不會被 Number(null) 吃成 0',
             B.parseBridgeConfig('?ws=x').cooldown === 3000);
-        const custom = B.parseBridgeConfig('?ws=wss://x.example/s&prefix=%23&allow=feed,poke&cooldown=0&status=off&q=preset%3Daibi');
+        const custom = B.parseBridgeConfig('?ws=wss://x.example/s&prefix=%23&allow=feed,poke&cooldown=0&status=off&q=theme%3Dgrass%26count%3D6');
         check('來源、前綴、白名單、冷卻、狀態列都讀得到',
             custom.ws === 'wss://x.example/s' && custom.prefix === '#'
             && custom.cooldown === 0 && custom.status === 'off');
         check('白名單只留下認得的指令',
             custom.allow.size === 2 && custom.allow.has('feed') && !custom.allow.has('spawn'));
-        check('q 原樣轉交給 widget（?preset=aibi）', custom.query === 'preset=aibi');
+        check('q 原樣轉交給 widget（?theme=grass&count=6）', custom.query === 'theme=grass&count=6');
         check('allow 全部看不懂 → 當作沒帶（不要靜靜地全鎖）',
             B.parseBridgeConfig('?allow=nope,zzz').allow.size === B.BRIDGE_CMDS.length);
         check('輪詢間隔夾在 500 ~ 600000',
@@ -2869,7 +3090,7 @@ group('19. 色違星星特效定時重播');
     }
 
     // =====================================================
-    group('35. 調校台（params.html：一參數一根拉桿）');
+    group('36. 調校台（params.html：一參數一根拉桿）');
     {
         const page = fs.readFileSync(path.join(ROOT, 'params.html'), 'utf8');
         check('調校台有自己的頁籤與面板',

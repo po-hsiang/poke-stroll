@@ -5,21 +5,6 @@
 const CONFIG = window.POKE_CONFIG;
 
 // ---------------------------------------------------------
-// 預設檔 (Presets)
-// ?preset=aibi = 「先幫我把這一串參數打好」。
-// 值本身就是一段 query string，所以它走的是跟手打參數一模一樣的驗證路徑——
-// 沒有第二套規則，也就沒有第二種壞法；要看某個預設檔到底做了什麼，
-// 讀這一行就是全部。
-// 個別參數永遠蓋得過預設檔：?preset=aibi&count=8 就是「aibi 但八隻」。
-// ---------------------------------------------------------
-const PRESETS = {
-    // AIBI 平台：滿版散步（左右不留白，貼齊平台的全寬版面）、個體速度差拉開
-    // （四隻一起走才不會像列隊行進）、對話框擺側邊；色違壓回接近正作的稀有度
-    // （1/400），要撞見才是驚喜——這是長時間掛著的介面，不是短時間的表演
-    aibi: 'count=4&speedVariance=1&boundsMin=0&boundsMax=1&bubblePosition=side&shinyChance=0.0025',
-};
-
-// ---------------------------------------------------------
 // URL 參數覆寫 (Query String Overrides)
 // iframe 嵌入或直接開啟時可用 ?count=5&baseSize=120 客製，
 // 不帶參數就吃 config.js 的預設值。完整參數文件見 PARAMS.md
@@ -86,6 +71,12 @@ const QUERY_PARAMS = {
     reflect:          { path: ['reflect'],          type: 'enum',  values: ['on', 'off'] },
     reflectOpacity:   { path: ['reflectOpacity'],   type: 'float', min: 0,  max: 1 },
     reflectWave:      { path: ['reflectWave'],      type: 'float', min: 0,  max: 5 },
+    night:            { path: ['night'],            type: 'enum',  values: ['on', 'off'] },
+    nightStars:       { path: ['nightStars'],       type: 'int',   min: 0,  max: 400 },
+    nightFireflies:   { path: ['nightFireflies'],   type: 'int',   min: 0,  max: 120 },
+    nightGlow:        { path: ['nightGlow'],        type: 'float', min: 0,  max: 1 },
+    nightFade:        { path: ['nightFade'],        type: 'int',   min: 0,  max: 180 },
+    nightRoster:      { path: ['nightRoster'],      type: 'float', min: 0,  max: 1 },
 };
 
 // 'HH:MM'（17:30）或小數時數（17.5）→ 小數時數。看不懂就回 NaN，
@@ -102,22 +93,8 @@ function parseTimeParam(raw) {
 function applyQueryOverrides(config) {
     const qs = new URLSearchParams(location.search);
 
-    // 預設檔先展開成底層，網址上手打的參數再蓋上去。
-    // 展開後的每一個值照樣逐一驗證（跟手打的走同一段程式），
-    // 所以預設檔寫錯值也只是那一項被忽略，不會整組壞掉
-    const presetName = (qs.get('preset') ?? '').trim().toLowerCase();
-    let preset = null;
-    if (presetName) {
-        if (PRESETS[presetName]) {
-            preset = new URLSearchParams(PRESETS[presetName]);
-        } else {
-            console.warn(`[PokéFooter] 沒有這個預設檔：${presetName}（可用：${Object.keys(PRESETS).join(' / ')}）`);
-        }
-    }
-    const readParam = name => qs.get(name) ?? preset?.get(name) ?? null;
-
     for (const [name, spec] of Object.entries(QUERY_PARAMS)) {
-        const raw = readParam(name);
+        const raw = qs.get(name);
         if (raw === null) continue;
         let value;
         if (spec.type === 'enum') {
@@ -151,7 +128,7 @@ function applyQueryOverrides(config) {
 
     // ids=25,133,6：固定生成清單（取代 count/minId/maxId 的隨機抽選）。
     // 允許重複編號（五隻伊布也是一種浪漫），上限 50 隻
-    const ids = readParam('ids');
+    const ids = qs.get('ids');
     if (ids !== null) {
         const list = ids.split(',')
             .map(s => parseInt(s.trim(), 10))
@@ -163,6 +140,20 @@ function applyQueryOverrides(config) {
         } else {
             console.warn('[PokéFooter] ids 參數沒有任何合法編號（1~1025），已忽略');
         }
+    }
+
+    // team=fire（或 team=ghost,dark）：只抽這些屬性的寶可夢。
+    // 白名單外的特例，跟 ids 一樣手動處理——因為它收的是「清單」，
+    // 而 enum 只驗單一個值。打錯的屬性名逐一剔除，全部都打錯就當作沒帶
+    const team = qs.get('team');
+    if (team !== null) {
+        const asked = [...new Set(team.split(',').map(s => s.trim().toLowerCase()).filter(Boolean))];
+        const known = asked.filter(t => POKE_TYPE_NAMES.includes(t));
+        const unknown = asked.filter(t => !POKE_TYPE_NAMES.includes(t));
+        if (unknown.length) {
+            console.warn(`[PokéFooter] team 忽略不認識的屬性：${unknown.join(', ')}（允許值：${POKE_TYPE_NAMES.join(' / ')}）`);
+        }
+        config.team = known.length ? known : null;
     }
 
     // 參數彼此的合理性修正：
@@ -192,5 +183,14 @@ function applyQueryOverrides(config) {
     }
     if (!config.fixedIds) {
         config.count = Math.min(config.count, config.maxId - config.minId + 1);
+        // team 會把可抽的名單縮得比整段編號範圍還小，count 得跟著夾住——
+        // 同樣是「抽不重複卻湊不滿」的死結。名單是空的（例如 team=dark&maxId=151，
+        // 惡屬性要到第二世代才有）就不動 count：抽選那一端會退回全範圍
+        if (config.team) {
+            // config.js 手寫成 team: 'fire' 也算一種屬性（URL 帶進來的一定是陣列）
+            const types = typeof config.team === 'string' ? [config.team] : config.team;
+            const size = typePool(types, config.minId, config.maxId).length;
+            if (size > 0) config.count = Math.min(config.count, size);
+        }
     }
 }
