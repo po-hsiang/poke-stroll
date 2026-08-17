@@ -2598,6 +2598,7 @@ group('19. 色違星星特效定時重播');
     {
         const savedSearch = sandbox.location.search;
         const savedTypes = sandbox.window.POKE_TYPES;
+        const savedSubtypes = sandbox.window.POKE_SUBTYPES;
         const savedTeam = CONFIG.team;
         const savedRoster = CONFIG.nightRoster;
         // applyQueryOverrides 會就地改寫傳進去的設定，所以每次都給它一份影本，
@@ -2618,6 +2619,14 @@ group('19. 色違星星特效定時重播');
             92: 'ghost', 93: 'ghost', 94: 'ghost',
             197: 'dark', 198: 'dark',
         };
+        // 副屬性是稀疏表，只有雙屬性的才在裡面。這裡刻意鋪出三種關鍵情形：
+        //   6  火/飛行  → team=flying 要抓得到（主屬性表裡牠是火）
+        //   94 幽靈/毒  → 主屬性已經是幽靈，副屬性不該讓牠被算兩次
+        //   248 岩/惡   → 主屬性表沒有這個編號，只有副屬性是惡：
+        //                 team=dark 要抓得到，夜行池「不」該抓到（只認主屬性）
+        sandbox.window.POKE_SUBTYPES = {
+            6: 'flying', 94: 'poison', 12: 'flying', 248: 'dark', 479: 'ghost',
+        };
 
         check('十八種屬性一個不少', T.POKE_TYPE_NAMES.length === 18);
         check('屬性名就是對照表的值域（抽樣比對）',
@@ -2629,12 +2638,33 @@ group('19. 色違星星特效定時重播');
         // ---- typePool：名單本身 ----
         check('typePool 只挑出該屬性的編號',
             JSON.stringify(T.typePool(['fire'], 1, 649)) === '[4,5,6]');
+        // 248（岩/惡）與 479（電/幽靈）是靠副屬性進來的
         check('typePool 吃得下多個屬性，並且照編號排序',
-            JSON.stringify(T.typePool(['ghost', 'dark'], 1, 649)) === '[92,93,94,197,198]');
+            JSON.stringify(T.typePool(['ghost', 'dark'], 1, 649)) === '[92,93,94,197,198,248,479]');
+        check('同一組屬性只認主屬性時就少了那兩隻',
+            JSON.stringify(T.typePool(['ghost', 'dark'], 1, 649, 'primary')) === '[92,93,94,197,198]');
         check('typePool 尊重 minId / maxId',
             JSON.stringify(T.typePool(['ghost', 'dark'], 1, 151)) === '[92,93,94]');
         check('該範圍沒有那個屬性就是空名單（惡屬性要到第二世代才有）',
             T.typePool(['dark'], 1, 151).length === 0);
+
+        // ---- typePool：主屬性 vs 主副都算 ----
+        check('預設兩槽都算：副屬性是飛行的也抓得到（噴火龍是火/飛行）',
+            JSON.stringify(T.typePool(['flying'], 1, 649)) === '[6,12]');
+        check('slots=primary 只認主屬性：飛行系一個都抓不到',
+            T.typePool(['flying'], 1, 649, 'primary').length === 0);
+        check('主屬性就命中的不會被算兩次（94 幽靈/毒 只出現一次）',
+            T.typePool(['ghost', 'poison'], 1, 649).filter(id => id === 94).length === 1);
+        check('主屬性表沒收、只有副屬性命中的也抓得到（248 岩/惡）',
+            T.typePool(['dark'], 1, 649).includes(248));
+        check('slots=primary 抓不到只有副屬性命中的（248 主屬性是岩）',
+            !T.typePool(['dark'], 1, 649, 'primary').includes(248));
+        // 副屬性表沒載到也不能炸（獨立檔案，可能被拿掉）
+        sandbox.window.POKE_SUBTYPES = undefined;
+        check('副屬性表沒載到 → 自動退回只看主屬性，不報錯',
+            JSON.stringify(T.typePool(['fire'], 1, 649)) === '[4,5,6]'
+            && T.typePool(['flying'], 1, 649).length === 0);
+        sandbox.window.POKE_SUBTYPES = { 6: 'flying', 94: 'poison', 12: 'flying', 248: 'dark', 479: 'ghost' };
 
         // ---- sampleUnique：抽選不重複、不卡死 ----
         const ten = T.sampleUnique([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 4);
@@ -2668,6 +2698,11 @@ group('19. 色違星星特效定時重播');
             run('?team=dark&maxId=151&count=6').count === 6);
         check('ids 指定時 team 不參與夾 count（固定清單優先）',
             run('?team=fire&ids=25,133,143').count === 3);
+        // 夾 count 用的名單也要算副屬性，否則會夾得比實際抽得到的還少
+        check('夾 count 的名單也算副屬性（飛行有 6、12 兩隻）',
+            run('?team=flying&count=6').count === 2);
+        check('惡有 197、198、248 三隻（248 只有副屬性是惡）',
+            run('?team=dark&count=9').count === 3);
 
         // ---- pickRoster：team ----
         CONFIG.nightRoster = 0;
@@ -2684,6 +2719,12 @@ group('19. 色違星星特效定時重播');
         check('team 在該範圍抽不到東西 → 退回全範圍隨機（而不是生不出來）',
             impossible.length === 3 && impossible.every(id => id >= 1 && id <= 151),
             JSON.stringify(impossible));
+        // team 抽選要吃副屬性：飛行系的兩隻都是「主屬性不是飛行」的
+        CONFIG.team = ['flying'];
+        const flyTeam = T.pickRoster(2, 1, 649);
+        check('team=flying 抽得到副屬性才是飛行的（噴火龍 6、巴大蝶 12）',
+            flyTeam.length === 2 && flyTeam.every(id => [6, 12].includes(id)),
+            JSON.stringify(flyTeam));
         CONFIG.team = null;
 
         // ---- pickRoster：夜行偏好 ----
@@ -2700,6 +2741,17 @@ group('19. 色違星星特效定時重播');
         check('nightRoster=1 的深夜 → 整批都是夜行系',
             midnight.length === 4 && midnight.every(id => [92, 93, 94, 197, 198].includes(id)),
             JSON.stringify(midnight));
+        // 這一條是刻意的不對稱：team 吃副屬性，夜行「只」認主屬性槽。
+        // 248（岩/惡）與 479（電/幽靈）的副屬性都在夜行名單上，但主屬性不是，
+        // 所以夜行池不該收牠們——把這條改壞了，晚上就會混進班基拉斯與洛托姆
+        // count 刻意不超過夜行名單長度（5 隻），這樣就完全不會走「補齊」那條路
+        // ——補齊是正常的全範圍隨機，248 出現在那裡並不算破功
+        const many = [];
+        for (let i = 0; i < 30; i++) many.push(...T.pickRoster(4, 1, 649));
+        check('夜行只認主屬性：248（岩/惡）不會被當成夜行系抽進來',
+            !many.includes(248), `出現 ${many.filter(id => id === 248).length} 次`);
+        check('夜行只認主屬性：479（電/幽靈）也不會',
+            !many.includes(479), `出現 ${many.filter(id => id === 479).length} 次`);
 
         CONFIG.nightRoster = 0;
         check('nightRoster=0 → 就算是深夜也不偏抽', T.nightBias() === 0);
@@ -2745,6 +2797,7 @@ group('19. 色違星星特效定時重播');
         CONFIG.team = savedTeam;
         CONFIG.nightRoster = savedRoster;
         sandbox.window.POKE_TYPES = savedTypes;
+        sandbox.window.POKE_SUBTYPES = savedSubtypes;
         sandbox.location.search = savedSearch;
     }
 
@@ -3118,6 +3171,71 @@ group('19. 色違星星特效定時重播');
             .map(m => m[1]);
         check('每個 enum 參數的允許值都用 / 分隔（下拉才生得出來）',
             badEnum.length === 0, badEnum.join(', '));
+    }
+
+    // =====================================================
+    // 這一組驗的是「真的那張表」而不是假的：上面所有陣容測試都用假對照表
+    // （才控制得住斷言），但那也意味著真表如果重新產錯了，沒人會發現。
+    // pokemon_types.js 是自動產生的檔案，產壞的方式很安靜——少一半、
+    // 屬性名拼錯、副屬性跟主屬性重複，看起來都還是一份合法的 JS
+    group('37. 屬性對照表的資料健全性（真的那張表）');
+    {
+        const box = { window: {} };
+        vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'pokemon_types.js'), 'utf8'), box);
+        const primary = box.window.POKE_TYPES;
+        const sub = box.window.POKE_SUBTYPES;
+        const names = new Set(T.POKE_TYPE_NAMES);
+
+        check('主屬性表 1~1025 一隻都不缺', Object.keys(primary || {}).length === 1025,
+            String(Object.keys(primary || {}).length));
+        const gaps = [];
+        for (let id = 1; id <= 1025; id++) if (!primary[id]) gaps.push(id);
+        check('編號連續無空洞', gaps.length === 0, gaps.slice(0, 10).join(', '));
+        const badPrimary = Object.keys(primary).filter(id => !names.has(primary[id]));
+        check('主屬性的值全都是那十八種屬性名', badPrimary.length === 0,
+            badPrimary.slice(0, 5).map(id => `${id}=${primary[id]}`).join(', '));
+
+        check('副屬性表存在且是稀疏的（只有雙屬性的才在裡面）',
+            !!sub && Object.keys(sub).length > 0 && Object.keys(sub).length < 1025,
+            String(Object.keys(sub || {}).length));
+        const badSub = Object.keys(sub).filter(id => !names.has(sub[id]));
+        check('副屬性的值也全都是那十八種屬性名', badSub.length === 0,
+            badSub.slice(0, 5).map(id => `${id}=${sub[id]}`).join(', '));
+        const subOutOfRange = Object.keys(sub).filter(id => Number(id) < 1 || Number(id) > 1025);
+        check('副屬性的編號都落在 1~1025', subOutOfRange.length === 0,
+            subOutOfRange.slice(0, 5).join(', '));
+        const sameBoth = Object.keys(sub).filter(id => sub[id] === primary[id]);
+        check('沒有「副屬性跟主屬性一樣」的資料（那是產表出錯）',
+            sameBoth.length === 0, sameBoth.slice(0, 5).join(', '));
+
+        // 抽幾隻手動確認的：產表管線換掉時，這幾條會先叫
+        check('噴火龍 #6 是火/飛行', primary[6] === 'fire' && sub[6] === 'flying');
+        check('皮卡丘 #25 是純電（副屬性查不到）',
+            primary[25] === 'electric' && sub[25] === undefined);
+        check('班基拉斯 #248 是岩/惡', primary[248] === 'rock' && sub[248] === 'dark');
+        check('耿鬼 #94 是幽靈/毒', primary[94] === 'ghost' && sub[94] === 'poison');
+
+        // team=flying 能不能成軍，全靠副屬性——這是這次改動的重點
+        const flyBoth = [];
+        const flyPrim = [];
+        for (let id = 1; id <= 649; id++) {
+            if (primary[id] === 'flying' || sub[id] === 'flying') flyBoth.push(id);
+            if (primary[id] === 'flying') flyPrim.push(id);
+        }
+        check('預設範圍內主屬性是飛行的只有 1 隻（所以才需要副屬性）',
+            flyPrim.length === 1, JSON.stringify(flyPrim));
+        check('算進副屬性後飛行系有 82 隻，team=flying 湊得出隊伍',
+            flyBoth.length === 82, String(flyBoth.length));
+
+        // 客串名單（另一份靜態表）本來就是兩槽都算過的，兩邊應該完全對得上
+        const cameo = { window: {} };
+        vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'pokemon_cameo.js'), 'utf8'), cameo);
+        const cameoAll = [...cameo.window.POKE_FLYING, ...cameo.window.POKE_LEGENDARY];
+        const notFlying = cameoAll.filter(id => primary[id] !== 'flying' && sub[id] !== 'flying');
+        check('客串名單全員的任一屬性槽都含飛行（兩份靜態表對得上）',
+            notFlying.length === 0, notFlying.slice(0, 10).join(', '));
+        check('客串名單的隻數與「兩槽都算」的飛行系一致',
+            cameoAll.length === flyBoth.length, `客串 ${cameoAll.length} / 飛行 ${flyBoth.length}`);
     }
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);

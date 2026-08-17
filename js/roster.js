@@ -5,10 +5,15 @@
 //   2. team=fire    只抽這些屬性——明講的意圖，蓋過下面那一層
 //   3. nightRoster  夜間偏抽夜行系（機率性，每個名額各擲一次骰）
 //
-// 屬性查的是 pokemon_types.js 的「主屬性」（slot 1），因為那張表只存主屬性
-// （它本來是給影子染色用的）。所以副屬性算不進來：team=flying 抽得到的是
-// 主屬性就是飛行的那十來隻（暴風雪鳥、鐵殼昆蟲那類），大比鳥（一般/飛行）
-// 不在其中——這是資料的邊界，不是 bug，文件也照這個說法寫。
+// 這兩層查屬性的方式「刻意不同」，別把它們統一掉：
+//   team        主副屬性都算（POKE_TYPES + POKE_SUBTYPES）。「你算不算火系」
+//               是成員資格題，噴火龍是火/飛行，兩邊都該算牠。飛行系尤其明顯：
+//               主屬性是飛行的只有 9 隻，把副屬性算進來是 109 隻——不算副屬性
+//               的 team=flying 根本湊不出一支隊伍。
+//   nightRoster 只算主屬性。幽靈與惡多半本來就掛在主屬性槽（耿鬼、月精靈、
+//               勾魂眼、瑪狃拉都是），漏掉的是班基拉斯（岩/惡）、洛托姆
+//               （電/幽靈）這種「氣質上不算夜行」的；而且「夜行」是氣質不是
+//               能力，主屬性才是那隻的主體。把副屬性也算進來只會讓夜晚變雜。
 // ---------------------------------------------------------
 
 // 十八種屬性的英文名 = pokemon_types.js 的值域，也就是 team 參數的允許值
@@ -23,14 +28,18 @@ const POKE_TYPE_NAMES = [
 // 單獨用名單太薄——加上惡才撐得起「整晚都是這一味」的體感。
 const NOCTURNAL_TYPES = ['ghost', 'dark'];
 
-// 指定屬性在 [min, max] 之間的所有編號
-function typePool(types, min, max) {
-    const table = window.POKE_TYPES;
-    if (!table) return []; // 對照表沒載到（獨立檔案，可能被拿掉）就當作沒有名單
+// 指定屬性在 [min, max] 之間的所有編號。
+// slots = 'both'（預設，主副屬性任一命中就算）或 'primary'（只看主屬性）。
+// 副屬性表是稀疏的——單屬性的查不到，undefined 不會等於任何屬性名，所以
+// 不必特別擋。表沒載到（獨立檔案，可能被拿掉）就當作那一半不存在
+function typePool(types, min, max, slots = 'both') {
+    const primary = window.POKE_TYPES;
+    if (!primary) return []; // 連主屬性都沒有就沒得挑了
+    const sub = slots === 'both' ? window.POKE_SUBTYPES : null;
     const want = new Set(types);
     const pool = [];
     for (let id = min; id <= max; id++) {
-        if (want.has(table[id])) pool.push(id);
+        if (want.has(primary[id]) || (sub && want.has(sub[id]))) pool.push(id);
     }
     return pool;
 }
@@ -90,7 +99,8 @@ function pickRoster(count, min, max) {
 
     const bias = nightBias();
     if (bias > 0) {
-        const pool = typePool(NOCTURNAL_TYPES, min, max);
+        // 'primary'：夜行只認主屬性槽（理由見本檔開頭），跟 team 刻意不同
+        const pool = typePool(NOCTURNAL_TYPES, min, max, 'primary');
         if (pool.length) {
             // 逐個名額擲骰，不是「整批換成夜行系」：晚上才會偶爾混進一隻
             // 不是夜行系的，那一隻反而讓整批看起來是抽出來的而不是排好的
