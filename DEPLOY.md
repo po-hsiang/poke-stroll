@@ -6,23 +6,23 @@
 
 ```bash
 # 建置(版本號與 .env 的 VERSION 一致)
-docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.43.0 .
+docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.44.0 .
 
 # 本機試跑
-docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.43.0
+docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.44.0
 # 瀏覽器 / OBS 瀏覽器來源開 http://localhost:8080/ 即可看到 widget
 ```
 
 ## 推上 Google Artifact Registry
 
 ```bash
-docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.43.0
+docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.44.0
 ```
 
 ## 雲端主機部署
 
 ```bash
-docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.43.0
+docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.44.0
 docker compose up -d
 ```
 
@@ -42,9 +42,10 @@ docker compose up -d
 
 | 用途 | 網址 |
 |------|------|
-| 直接觀看 / iframe 嵌入 | `https://rd7-ai-gw-02.i17game.net/poke-stroll/` |
+| 直接觀看 / iframe 嵌入(**根路徑固定是 widget 本體**) | `https://rd7-ai-gw-02.i17game.net/poke-stroll/` |
 | 完整檔名(等價) | `https://rd7-ai-gw-02.i17game.net/poke-stroll/pokemon_footer_widget.html` |
-| 參數互動文件(丟給嵌入方同仁) | `https://rd7-ai-gw-02.i17game.net/poke-stroll/params.html` |
+| 展示著陸頁(丟給還不知道這是什麼的人) | `https://rd7-ai-gw-02.i17game.net/poke-stroll/home.html` |
+| 參數互動文件與一鍵嵌入碼(丟給要串接的同仁) | `https://rd7-ai-gw-02.i17game.net/poke-stroll/params.html` |
 | 指令橋接(外部訊息來源 → 遙控指令) | `https://rd7-ai-gw-02.i17game.net/poke-stroll/bridge.html?ws=…` |
 
 ## 同仁 iframe 嵌入範例
@@ -72,6 +73,7 @@ Docker 建置 + 容器冒煙測試(每個靜態檔 200、快取標頭正確、RE
 - **Traefik 埠改 v2 正式寫法**:舊範本的 `traefik.basic.port` 是 v1 語法,v2 閘道不吃,先前能動全靠自動偵測 EXPOSE 埠;已改成 `traefik.http.services.<name>.loadbalancer.server.port` 明示。
 - **不發佈 ports**:Traefik 與容器同在 `ipa_service_net`,從 docker network 內直達容器的 80,不需要把埠發佈到主機——發佈出去等於多一條繞過閘道的直連通道。本機測試走 `docker run -p 8080:80`(見上方指令),完全不經 compose,不受影響。
 - **尾斜線 301**:compose 裡多一組 `redirectregex` middleware,把 `/poke-stroll`(無尾斜線)導向 `/poke-stroll/`。頁面內 `./config.js` 等相對路徑以「目錄」為基準,少了尾斜線資源會被瀏覽器解析到網站根路徑而 404。API 服務不在乎這個,靜態頁必須處理。
+- **著陸頁不搶根路徑**:`home.html` 是店面,但根路徑 `/poke-stroll/` 維持出 widget 本體。已經上線的 iframe 與 OBS 來源指的都是根路徑,把它換成一頁介紹文,人家的頁尾會瞬間變成一整頁店面——網址一旦發出去就是契約,新功能自己另開檔名。
 - **可嵌入性**:nginx 預設不送 `X-Frame-Options` / `frame-ancestors`,任何網站都能 iframe。若日後要限制,再加 header 白名單即可。
-- **寶可夢圖片來源**:sprite 是「訪客的瀏覽器」直接向 `raw.githubusercontent.com` 抓的,和我們的主機無關;身高/屬性對照表已烘進 image,不打外部 API。
+- **寶可夢圖片來源**:sprite 是「訪客的瀏覽器」直接向 `raw.githubusercontent.com` 抓的,和我們的主機無關;身高/屬性/名稱三張對照表已烘進 image,不打外部 API。
 - **調整動畫參數**:`config.js` 烘在 image 裡,改參數需要重新 build。刻意不掛 volume——這站沒有主機端狀態,image 即全部,回滾 = 換 tag。

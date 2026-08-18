@@ -122,14 +122,17 @@ const REMOTE_COMMANDS = {
         }
         return { ok: true, count: dropped };
     },
-    // 盤點常駐陣容（查詢用，不動畫面）：每隻的圖鑑編號、是否色違、
+    // 盤點常駐陣容（查詢用，不動畫面）：每隻的圖鑑編號、繁中名、是否色違、
     // 體型倍率（0.6 小 / 0.8 中 / 1 大）。外部程式要做陣容面板、
-    // 投票名單之類的整合，資料從這裡拿
+    // 投票名單之類的整合，資料從這裡拿——名字一併給，串接方不必自己再備一張對照表
+    // （nametag: 'off' 也照給：關的是畫面上那塊牌子，不是資料）
     roster() {
         return {
             ok: true,
             count: pokemons.length,
-            roster: pokemons.map(p => ({ id: p.id, shiny: p.isShiny, size: p.sizeScale })),
+            roster: pokemons.map(p => ({
+                id: p.id, name: pokeName(p.id), shiny: p.isShiny, size: p.sizeScale,
+            })),
         };
     },
 };

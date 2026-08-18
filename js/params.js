@@ -28,6 +28,8 @@ const QUERY_PARAMS = {
     bubbleSideLift:   { path: ['bubbleSideLift'],   type: 'int',   min: -50, max: 100 },
     bubbleLayer:      { path: ['bubbleLayer'],      type: 'enum',  values: ['front', 'behind'] },
     idleJumpChance:   { path: ['idleJumpChance'],   type: 'float', min: 0,  max: 1 },
+    nametag:          { path: ['nametag'],          type: 'enum',  values: ['off', 'hover', 'on'] },
+    nametagSize:      { path: ['nametagSize'],      type: 'int',   min: 6,  max: 40 },
     shinyChance:      { path: ['shinyChance'],      type: 'float', min: 0,  max: 1 },
     shinyBurstDuration: { path: ['shinyBurstDuration'], type: 'int', min: 100, max: 10000 },
     shinyBurstScale:  { path: ['shinyBurstScale'],  type: 'float', min: 0.1, max: 5 },

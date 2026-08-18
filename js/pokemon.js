@@ -126,6 +126,11 @@ class Pokemon {
         // 掛在容器裡 → 位置、隱藏、移除都跟著本體走，不必另外照顧
         attachReflection(this);
 
+        // 名牌（頭頂的「No.25 皮卡丘」）：同樣掛在容器裡，nametag: 'off' 時不產生。
+        // 要在色違登場的閃光之前掛好——placeBubble 會問名牌佔了頭頂沒有
+        this.nametag = null;
+        attachNametag(this);
+
         // 滑鼠互動（三種按法各司其職，見「滑鼠拖曳」一節的分流表）。
         // OBS 可用來源的「互動」視窗玩；iframe 預設 pointer-events: none 點不到，
         // 想開放給訪客要自行拿掉（取捨見 README）
@@ -354,7 +359,13 @@ class Pokemon {
         } else {
             this.bubble.style.left = '50%';
             this.bubble.style.transform = 'translateX(-50%)';
-            this.bubble.style.bottom = 'calc(100% + 2px)';
+            // 名牌常駐（nametag: 'on'）時頭頂已經被佔走，對話框往上讓一層。
+            // 'hover' 模式不讓：那塊名牌平常是收著的，為了偶爾滑過去的那一秒
+            // 永遠空一排並不划算——真的滑過去時名牌在上層（z-index 3），
+            // 蓋住的是對話框而不是名字
+            const tagH = (CONFIG.nametag ?? 'hover') === 'on' && this.nametag
+                ? this.nametag.offsetHeight + 2 : 0;
+            this.bubble.style.bottom = `calc(100% + ${2 + tagH}px)`;
         }
         this.bubbleSide = bubbleSide; // 記住實際擺在哪側，換側時才動 DOM
     }

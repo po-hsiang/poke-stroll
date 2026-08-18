@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#101828">
+<title>PokéStroll — 讓寶可夢在你的畫面底部散步</title>
+<meta name="description" content="零依賴、零安裝、零後端的像素寶可夢頁尾小工具。背景透明, 塞進 OBS 或任何網頁都不用調。">
+<style>
+    /* 這一頁是「店面」, 視覺語彙直接沿用 params.html 的夜間像素風——
+       同一個產品不該有兩套長相。差別在職責:
+         params.html  已經決定要用的人 → 參考手冊(67 個參數怎麼調)
+         home.html    還不知道這是什麼的人 → 三十秒內回答「長怎樣、怎麼弄一個」
+       主角是舞台上那一排真的在跑的寶可夢, 不是文案。 */
+    :root {
+        color-scheme: dark;
+        --bg: #101828;
+        --ink: #e7ecf6;
+        --muted: #93a1ba;
+        --paper: #182238;
+        --paper-deep: #0d1526;
+        --line: #2b3a58;
+        --gold: #ffc934;
+        --gold-ink: #241d05;
+        --gold-soft: rgba(255, 201, 52, .16);
+        --blue: #8ab4ff;
+        --shadow: rgba(0, 0, 0, .5);
+        --mono: ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+        --sans: 'Segoe UI', 'Noto Sans TC', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+        font: 16px/1.75 var(--sans);
+        color: var(--ink);
+        background-color: var(--bg);
+        /* sprite 編輯器的透明棋盤格, 壓到極低對比當底紋 */
+        background-image:
+            conic-gradient(#0e1524 25%, #121b2e 0 50%, #0e1524 0 75%, #121b2e 0);
+        background-size: 28px 28px;
+    }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+    a { color: var(--blue); }
+    code {
+        font-family: var(--mono);
+        font-size: .92em;
+        color: #dbe4f5;
+        background: var(--paper-deep);
+        border: 1px solid var(--line);
+        padding: 1px 5px;
+    }
+
+    /* ---- Hero ---- */
+    header { padding: 48px 0 0; }
+    .eyebrow {
+        font: 700 13px/1 var(--mono);
+        letter-spacing: .35em;
+        color: var(--muted);
+        margin: 0 0 18px 4px;
+    }
+    .h1-bubble {
+        display: inline-block;
+        position: relative;
+        background: var(--paper);
+        border: 3px solid var(--ink);
+        box-shadow: 6px 6px 0 var(--shadow);
+        padding: 18px 28px 14px;
+        margin-bottom: 26px;
+    }
+    .h1-bubble::after { /* 尾巴朝下, 指向舞台上的牠們 */
+        content: '';
+        position: absolute;
+        left: 34px;
+        bottom: -12px;
+        width: 16px;
+        height: 16px;
+        background: var(--paper);
+        border-right: 3px solid var(--ink);
+        border-bottom: 3px solid var(--ink);
+        transform: rotate(45deg);
+    }
+    h1 {
+        margin: 0;
+        font: 800 clamp(24px, 4.4vw, 34px)/1.25 var(--mono);
+        letter-spacing: .02em;
+    }
+    h1 .dot { color: var(--gold); }
+    .lead { max-width: 660px; margin: 0 0 26px; font-size: 17px; }
+    .lead b { background: var(--gold-soft); padding: 0 3px; }
+
+    /* ---- 舞台:真的在跑的 widget ----
+       iframe 元素上要釘 color-scheme: light——本頁宣告了 dark, 內外不一致時
+       瀏覽器會在 iframe 後面墊一塊不透明底, 透明就沒了(widget 註解裡有這段血淚) */
+    .stage {
+        position: relative;
+        border: 3px solid var(--ink);
+        box-shadow: 6px 6px 0 var(--shadow);
+        background: var(--paper-deep);
+        overflow: hidden;
+    }
+    .stage iframe {
+        display: block;
+        width: 100%;
+        height: 230px;
+        border: none;
+        color-scheme: light;
+    }
+    .stage-hint {
+        position: absolute;
+        top: 8px;
+        left: 10px;
+        font: 12.5px/1.5 var(--mono);
+        color: var(--muted);
+        pointer-events: none; /* 提示不擋操作:下面那一排是可以直接玩的 */
+    }
+    .stage-hint b { color: var(--gold); }
+
+    .scenes { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 10px; align-items: center; }
+    .btn {
+        font: 700 13.5px/1 var(--mono);
+        color: var(--ink);
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        box-shadow: 2px 2px 0 var(--shadow);
+        padding: 8px 11px;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .btn:hover { background: var(--gold-soft); }
+    .btn:active { transform: translate(2px, 2px); box-shadow: none; }
+    .btn.primary { background: var(--gold); color: var(--gold-ink); }
+    .btn.primary:hover { background: #ffd75e; }
+    .btn[aria-pressed="true"] { background: var(--gold); color: var(--gold-ink); }
+    .btn:focus-visible, a:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+    .sep { width: 2px; align-self: stretch; background: var(--line); margin: 0 4px; }
+
+    .urlbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .urlbar code {
+        flex: 1 1 320px;
+        min-width: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+        padding: 7px 9px;
+        border: 2px solid var(--ink);
+        box-shadow: inset 2px 2px 0 rgba(0,0,0,.35);
+    }
+    .urlnote { font-size: 14px; color: var(--muted); margin: 8px 2px 0; }
+
+    /* ---- 區塊 ---- */
+    section { margin-top: 64px; }
+    h2 {
+        font: 800 20px/1.3 var(--mono);
+        margin: 0 0 6px;
+    }
+    h2::before { content: '◆ '; color: var(--gold); }
+    .sec-note { margin: 0 0 20px; color: var(--muted); max-width: 660px; }
+
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 14px;
+    }
+    .card {
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        box-shadow: 4px 4px 0 var(--shadow);
+        padding: 16px 18px;
+    }
+    .card h3 {
+        margin: 0 0 6px;
+        font: 700 16px/1.4 var(--sans);
+    }
+    .card h3 .ico { margin-right: 6px; }
+    .card p { margin: 0; color: #c4cee1; font-size: 15px; }
+    /* 卡片裡的程式碼片段:窄欄位放不下就換行, 不做橫向捲動(很不直覺,
+       而且看得到的那半截會讓人以為那就是全部)。要一字不差的完整片段
+       請按「一鍵嵌入碼」, 那裡才是給人複製的地方 */
+    .card code {
+        display: block;
+        margin-top: 10px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12.5px;
+        line-height: 1.7;
+        padding: 9px 10px;
+    }
+
+    /* 為什麼可以放心用:數字先講, 說明在後 */
+    .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+    .fact { border-left: 3px solid var(--gold); padding: 2px 0 2px 14px; }
+    .fact b { display: block; font: 800 22px/1.3 var(--mono); }
+    .fact span { color: var(--muted); font-size: 14.5px; }
+
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+    .cta a {
+        font: 700 15px/1 var(--mono);
+        text-decoration: none;
+        color: var(--ink);
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        box-shadow: 3px 3px 0 var(--shadow);
+        padding: 14px 18px;
+    }
+    .cta a:hover { background: var(--gold-soft); }
+    .cta a.primary { background: var(--gold); color: var(--gold-ink); }
+    .cta a.primary:hover { background: #ffd75e; }
+
+    footer {
+        margin: 72px 0 40px;
+        padding-top: 20px;
+        border-top: 2px solid var(--line);
+        font-size: 14px;
+        color: var(--muted);
+    }
+    footer p { margin: 4px 0; }
+
+    /* 複製後的像素小泡泡, 跟 params.html 同一顆 */
+    #toast {
+        position: fixed;
+        z-index: 90;
+        font: 700 13px/1 var(--mono);
+        background: var(--gold);
+        color: var(--gold-ink);
+        border: 2px solid var(--ink);
+        box-shadow: 3px 3px 0 var(--shadow);
+        padding: 8px 10px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .12s;
+    }
+    #toast.show { opacity: 1; }
+
+    @media (max-width: 560px) {
+        .stage iframe { height: 190px; }
+        .stage-hint { display: none; } /* 窄螢幕上提示會壓到牠們 */
+    }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+    <header>
+        <p class="eyebrow">POKÉSTROLL / 寶可夢漫步</p>
+        <div class="h1-bubble"><h1>讓寶可夢在你的<br>畫面底部散步<span class="dot">.</span></h1></div>
+        <p class="lead">一個 HTML 檔, 拖進瀏覽器底下就有一排寶可夢在走來走去、蹦蹦跳跳、偶爾停下來盯著你看。
+        <b>背景本來就是透明的</b>, 塞進 OBS 或任何網頁都不用調; <b>零依賴、零安裝、零後端</b>,
+        沒有 npm、沒有 build、沒有框架。</p>
+
+        <div class="stage">
+            <p class="stage-hint">↓ 這一排是真的在跑 —— <b>左鍵拖著走、右鍵戳一下、點空白處丟果實</b></p>
+            <iframe id="stage-frame" title="PokéStroll 即時展示" src="./pokemon_footer_widget.html"></iframe>
+        </div>
+
+        <div class="scenes" id="scenes" role="group" aria-label="場景"></div>
+        <div class="scenes" style="margin-top:0">
+            <button class="btn" id="toggle-nametag" aria-pressed="false" title="頭頂顯示名字與圖鑑編號">🏷️ 名牌</button>
+            <button class="btn" id="reroll" title="同樣的設定, 重抽一批">🎲 重抽一批</button>
+            <span class="sep" aria-hidden="true"></span>
+            <span class="urlnote" style="margin:0">場景其實就是換一串網址參數 ↓</span>
+        </div>
+        <div class="urlbar">
+            <code id="scene-url">?</code>
+            <button class="btn primary" id="copy-url">📋 複製網址</button>
+        </div>
+        <p class="urlnote">全部設定都是這樣掛在網址後面的, 一共 69 個參數, <b>不用改任何程式或設定檔</b>。
+        想一根一根拉著調, 文件頁有調校台。</p>
+    </header>
+
+    <section>
+        <h2>牠們會做什麼</h2>
+        <p class="sec-note">每一隻有自己的步調與個性, 不會像閱兵。下面挑六件最看得出來的,
+        其餘二十幾種細節在文件裡。</p>
+        <div class="grid">
+            <div class="card">
+                <h3><span class="ico">🚶</span>散步、蹦跳、發呆</h3>
+                <p>速度與跳步節奏每隻都不同; 隨機停下來看向鏡頭, 偶爾原地開心跳一下,
+                然後裝沒事繼續走。前方太近有同伴就掉頭, 不會黏成一坨。</p>
+            </div>
+            <div class="card">
+                <h3><span class="ico">💬</span>心情對話框</h3>
+                <p>發呆時冒出愛心、音符、黑線團、Zzz……牧場物語式的無聲交流。
+                全部是手繪像素圖, 不吃外部素材; 尾巴會朝內指回本體, 轉身自動換邊。</p>
+            </div>
+            <div class="card">
+                <h3><span class="ico">🍐</span>丟果實, 還會被搶</h3>
+                <p>點空白處掉一顆樹果, 最近且有空的那隻停下手邊的事跑過來三口吃掉。
+                丟太遠會被半路殺出的飛行系叼走 —— 餵得近護得住, 丟得遠賭一把。</p>
+            </div>
+            <div class="card">
+                <h3><span class="ico">🌅</span>跟著真實時間走</h3>
+                <p>早上影子往左倒、下午往右, 正午最短最深。天黑之後有星空、螢火蟲與地面光暈,
+                晚上還會偏抽幽靈與惡系。掛整晚會自己入夜、自己天亮。</p>
+            </div>
+            <div class="card">
+                <h3><span class="ico">✨</span>色違彩蛋</h3>
+                <p>每隻獨立擲骰(預設 1/100, 比正作的 1/4096 慷慨得多)。中獎的以色違配色登場,
+                金色閃光 + 像素星星四散昭告天下, 之後每隔十幾秒還會重播一輪。</p>
+            </div>
+            <div class="card">
+                <h3><span class="ico">🏷️</span>牠叫什麼名字</h3>
+                <p>滑鼠移到身上就浮出「No.25 皮卡丘」。名字對照表隨檔案一起送, 離線可用、不打 API;
+                OBS 沒有滑鼠, 加 <code style="display:inline;padding:1px 5px">?nametag=on</code> 就一直掛著。</p>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>三種用法</h2>
+        <p class="sec-note">三種都不用後端。要調參數就掛在網址後面, 各專案帶自己的一組, 互不影響。</p>
+        <div class="grid">
+            <div class="card">
+                <h3><span class="ico">🌐</span>嵌進你的網站</h3>
+                <p>一個 iframe 釘在頁尾。背景透明、點擊穿透, 不會擋到頁面上的任何按鈕。</p>
+                <code>&lt;iframe
+  src="…/poke-stroll/"
+  style="position:fixed;
+    bottom:0; left:0;
+    width:100%; height:200px;
+    border:none;
+    pointer-events:none;
+    color-scheme:light;"&gt;
+&lt;/iframe&gt;</code>
+            </div>
+            <div class="card">
+                <h3><span class="ico">🎬</span>OBS 疊層</h3>
+                <p>來源 → 新增 → 瀏覽器 → 貼上網址 → 寬高設成跟畫布一樣, 擺到圖層最上面。
+                背景本來就是透明的, 不用去背、不用調色鍵。也可以改用本機檔案, 雙擊就跑。</p>
+            </div>
+            <div class="card">
+                <h3><span class="ico">📡</span>即時遙控</h3>
+                <p>父頁面隔著 iframe 下指令, 不用重載也不受 CORS 限制:
+                召喚客串、加入或送走成員、天降果實、全員開心跳。接上你的後台或 bot,
+                就能讓使用者用文字指令召喚寶可夢。</p>
+                <code>poke.contentWindow.postMessage(
+  { ns: 'poke-stroll',
+    cmd: 'spawn',
+    id: 143 },
+  '*');</code>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>為什麼可以直接放上去</h2>
+        <p class="sec-note">這一段是給要簽字的人看的。</p>
+        <div class="facts">
+            <div class="fact"><b>0</b><span>依賴套件、建置步驟、後端服務。一包靜態檔, 丟哪都能跑</span></div>
+            <div class="fact"><b>69</b><span>個網址參數。要改行為不必動程式, 也不必重新部署</span></div>
+            <div class="fact"><b>透明</b><span>不鋪任何底色 —— 連夜晚的星空與光暈都做成元素, 天空維持全透明</span></div>
+            <div class="fact"><b>不吃效能</b><span>雨雪與星光走 CSS 動畫循環, 主迴圈只算走路, OBS 掛整天也穩</span></div>
+        </div>
+        <div class="cta">
+            <a class="primary" href="./params.html">📋 參數文件與調校台</a>
+            <a href="./params.html#embed">🖼️ 一鍵嵌入碼</a>
+            <a href="./pokemon_footer_widget.html" target="_blank" rel="noopener">↗ 單獨開 widget</a>
+        </div>
+    </section>
+
+    <footer>
+        <p>寶可夢圖片與身高、屬性、名稱資料來自 <a href="https://pokeapi.co/" target="_blank" rel="noopener">PokeAPI</a> 與其 sprites 資源庫。</p>
+        <p>寶可夢 (Pokémon) 為任天堂 / Creatures Inc. / GAME FREAK inc. 之註冊商標與著作。
+        本專案為粉絲自娛用途, 與上述公司無任何關聯, 請勿用於商業行為。</p>
+    </footer>
+</div>
+
+<div id="toast" role="status">已複製！</div>
+
+<script>
+    // ---------------------------------------------------------
+    // 場景切換:每個按鈕就是一串 query string。
+    // 刻意不做成 widget 裡的「預設檔」——那會在程式裡多一層要維護的名字,
+    // 而參數本來就能自由搭配。這裡只是展示用的連結, 換掉隨時不痛
+    // ---------------------------------------------------------
+    const SCENES = [
+        { label: '🎲 預設', q: '' },
+        { label: '🌿 草地', q: 'theme=grass&themeHeight=24' },
+        { label: '🌧️ 雨天', q: 'theme=grass&themeHeight=24&weatherChance=1' },
+        { label: '🌌 夜晚', q: 'theme=grass&themeHeight=24&sunTime=23:00&nightFireflies=30' },
+        { label: '🔥 火系隊', q: 'team=fire&theme=lava&themeHeight=20' },
+        { label: '👻 幽靈隊', q: 'team=ghost,dark&count=6&sunTime=23:00' },
+        { label: '🎪 大遊行', q: 'count=12&baseSpeed=0.4&baseSize=96' },
+        { label: '✨ 全員色違', q: 'shinyChance=1&count=6' },
+    ];
+
+    const frame = document.getElementById('stage-frame');
+    const urlEl = document.getElementById('scene-url');
+    const nametagBtn = document.getElementById('toggle-nametag');
+    let sceneIndex = 0;
+
+    // 名牌是疊在場景之上的另一個軸, 所以分開存:選了哪個場景 × 要不要名字
+    function currentQuery() {
+        const parts = [];
+        if (SCENES[sceneIndex].q) parts.push(SCENES[sceneIndex].q);
+        if (nametagBtn.getAttribute('aria-pressed') === 'true') parts.push('nametag=on');
+        return parts.join('&');
+    }
+
+    function render() {
+        const q = currentQuery();
+        urlEl.textContent = q ? '?' + q : '(沒有參數, 全都是預設值)';
+        // 先清空再載入:參數沒變時也強制重載, 這樣「重抽」才真的重抽一批
+        frame.src = 'about:blank';
+        requestAnimationFrame(() => {
+            frame.src = './pokemon_footer_widget.html' + (q ? '?' + q : '');
+        });
+    }
+
+    const scenesEl = document.getElementById('scenes');
+    SCENES.forEach((s, i) => {
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.textContent = s.label;
+        b.setAttribute('aria-pressed', String(i === 0));
+        b.addEventListener('click', () => {
+            sceneIndex = i;
+            [...scenesEl.children].forEach((el, k) => el.setAttribute('aria-pressed', String(k === i)));
+            render();
+        });
+        scenesEl.appendChild(b);
+    });
+
+    nametagBtn.addEventListener('click', () => {
+        const on = nametagBtn.getAttribute('aria-pressed') === 'true';
+        nametagBtn.setAttribute('aria-pressed', String(!on));
+        render();
+    });
+    document.getElementById('reroll').addEventListener('click', render);
+
+    // 複製的是「可以直接貼給別人」的完整網址:本機開檔時退回正式站
+    const PROD_BASE = 'https://rd7-ai-gw-02.i17game.net/poke-stroll/';
+    const toast = document.getElementById('toast');
+    let toastTimer;
+    document.getElementById('copy-url').addEventListener('click', e => {
+        const base = location.protocol.startsWith('http')
+            ? new URL('.', location.href).href
+            : PROD_BASE;
+        const q = currentQuery();
+        const text = base + (q ? '?' + q : '');
+        const done = () => {
+            const r = e.currentTarget.getBoundingClientRect();
+            toast.style.left = Math.max(8, r.left) + 'px';
+            toast.style.top = Math.max(8, r.top - 44) + 'px';
+            toast.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toast.classList.remove('show'), 1000);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+        } else {
+            fallbackCopy(text, done);
+        }
+    });
+    function fallbackCopy(text, done) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (err) { /* 剪貼簿不可用就算了 */ }
+        ta.remove();
+        done();
+    }
+
+    render();
+</script>
+</body>
+</html>

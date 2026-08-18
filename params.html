@@ -252,8 +252,19 @@
         white-space: nowrap;
         padding: 6px 8px;
     }
-    #hero-snippet, #doc-embed-snippet { white-space: pre; line-height: 1.6; } /* 保留 iframe 範例的多行排版 */
     .recipe .row { display: flex; gap: 8px; margin-top: auto; }
+    /* 一鍵嵌入碼：橋接卡的來源設定（下拉 + 網址輸入格）。
+       多行的程式碼片段一律用 .codeblock（不要再掛 .q——.recipe .q 的
+       white-space: nowrap 會贏過它，多行就被壓成一行） */
+    .embed-ctl {
+        font: 13.5px var(--mono);
+        color: var(--ink);
+        background: var(--paper-deep);
+        border: 2px solid var(--ink);
+        padding: 7px 8px;
+        min-width: 0;
+    }
+    #embed-bridge-src { flex: 1 1 260px; }
 
     /* ---- 調校台：一參數一列，左邊拉、右邊立刻看 ----
        格線四欄：名稱 / 拉桿 / 數值 / 復原。窄螢幕塌成兩欄，
@@ -463,14 +474,14 @@
             </div>
         </div>
         <p class="lead">嵌入 PokéStroll 前後會用到的一切都在這: <b>參數總表</b>(網址掛 query string 客製行為,
-        不用改任何程式或設定檔)、<b>iframe 嵌入範例</b>、<b>postMessage 遙控</b>, 用下方頁籤切換。
+        不用改任何程式或設定檔)、<b>一鍵嵌入碼</b>(調好的參數直接變成可貼的片段)、<b>postMessage 遙控</b>, 用下方頁籤切換。
         旁邊那塊是<b>即時預覽區</b>——每個參數、每道食譜、每道遙控指令都能一鍵丟進去看效果。
         位置用標題旁的按鈕挑: <b>上／下</b>是一條橫軌(跟嵌入頁尾的實際樣子一致),
         <b>左／右</b>是文件、預覽對半分(滿高畫面, 測飛行軌跡用), 選<b>無</b>就整塊關掉。</p>
         <nav class="tabs" role="tablist" aria-label="文件分頁">
             <button class="tab-btn" role="tab" id="tab-params" aria-controls="panel-params" aria-selected="true">📋 參數總表</button>
             <button class="tab-btn" role="tab" id="tab-tuner" aria-controls="panel-tuner" aria-selected="false">🎚️ 調校台</button>
-            <button class="tab-btn" role="tab" id="tab-embed" aria-controls="panel-embed" aria-selected="false">🖼️ iframe 嵌入範例</button>
+            <button class="tab-btn" role="tab" id="tab-embed" aria-controls="panel-embed" aria-selected="false">🖼️ 一鍵嵌入碼</button>
             <button class="tab-btn" role="tab" id="tab-remote" aria-controls="panel-remote" aria-selected="false">📡 postMessage 遙控</button>
         </nav>
     </header>
@@ -538,24 +549,66 @@
 
     <div class="tab-panel" id="panel-embed" role="tabpanel" aria-labelledby="tab-embed" hidden>
     <section id="embed-sec">
-        <h2>iframe 嵌入範例</h2>
-        <p class="sec-note">兩種嵌入對象: 上面是 <b>widget 本體</b>(要當疊層, 所以固定底部、點擊穿透),
-        下面是<b>這份說明文件</b>(要互動, 所以規則正好相反)。</p>
+        <h2>一鍵嵌入碼</h2>
+        <p class="sec-note">四種上線方式各一張卡, 全部吃<b>預覽區當下的參數</b>——
+        去調校台拉一拉、或直接改預覽區上方的網址列, 下面每一段程式碼都會立刻跟著變。
+        複製下來就是你剛才看到的那個樣子, 不用自己拼網址、不用自己記 URL 編碼。</p>
+
+        <div class="card recipe" style="margin-bottom:20px">
+            <span class="label">🎛️ 目前帶的參數</span>
+            <code class="q" id="embed-query">(沒有帶參數, 用 config.js 的預設值)</code>
+            <p class="hint" style="margin:0">要改就去 <b>🎚️ 調校台</b>頁籤(一參數一根拉桿), 或直接編輯預覽區上方的網址列。</p>
+        </div>
+
         <div class="card recipe" style="margin-bottom:16px">
-            <span class="label">嵌 widget 本體(網頁角落的散步隊伍)</span>
-            <code class="q" id="hero-snippet">&lt;iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/?count=5&amp;baseSize=120"
-        style="position:fixed; bottom:0; left:0; width:100%; height:200px;
-               border:none; pointer-events:none; color-scheme:light;"&gt;&lt;/iframe&gt;</code>
-            <div class="row"><button class="btn" data-copy-el="hero-snippet">📋 複製嵌入碼</button></div>
+            <span class="label">① 一般網頁: iframe 疊在頁尾</span>
+            <code class="codeblock" id="embed-iframe"></code>
+            <div class="row"><button class="btn primary" data-copy-el="embed-iframe">📋 複製嵌入碼</button></div>
             <p class="hint" style="margin:0">背景透明、<code>pointer-events:none</code> 讓點擊穿透,
             不會擋到頁面上的任何按鈕; 參數直接掛在網址後面, 各專案互不影響。
             想讓訪客戳、抓寶可夢就拿掉 <code>pointer-events:none</code>, 但整個 iframe 矩形都會開始攔截點擊, 請自行取捨。
             <code>color-scheme:light</code> 是透明背景的保險: iframe 內外的配色方案不一致時,
             瀏覽器會在後面墊不透明底——你的頁面若宣告過 <code>color-scheme: dark</code>, 這一句能讓內外對齊。</p>
         </div>
+
+        <div class="card recipe" style="margin-bottom:16px">
+            <span class="label">② OBS: 瀏覽器來源</span>
+            <code class="q" id="embed-obs"></code>
+            <div class="row"><button class="btn primary" data-copy-el="embed-obs">📋 複製網址</button></div>
+            <p class="hint" style="margin:0">來源 → 新增 → <b>瀏覽器</b> → 網址貼上面那一串 →
+            寬高設成跟畫布一樣(例如 1920 × 1080) → 擺到圖層最上面。背景本來就是透明的, 不用調。
+            也可以改勾「本機檔案」選 <code>pokemon_footer_widget.html</code>, 那就改設定 <code>config.js</code>
+            (改完在來源的屬性視窗按「重新整理目前頁面的快取」)。
+            <b>OBS 沒有滑鼠</b>, 所以想讓名字上鏡要明講 <code>nametag=on</code>——預設的 hover 在這裡永遠不會觸發。</p>
+        </div>
+
+        <div class="card recipe" style="margin-bottom:16px">
+            <span class="label">③ 要即時遙控: iframe + postMessage</span>
+            <code class="codeblock" id="embed-remote"></code>
+            <div class="row"><button class="btn primary" data-copy-el="embed-remote">📋 複製範例</button></div>
+            <p class="hint" style="margin:0">指令表與回執欄位見 <b>📡 postMessage 遙控</b>頁籤, 那裡還能直接按按鈕試打。</p>
+        </div>
+
+        <div class="card recipe" style="margin-bottom:16px">
+            <span class="label">④ 要接外部訊息來源: 指令橋接 bridge.html</span>
+            <div class="row" style="flex-wrap:wrap; margin-top:0">
+                <select class="ctl embed-ctl" id="embed-bridge-mode" aria-label="橋接方式">
+                    <option value="ws">ws: WebSocket 長連線</option>
+                    <option value="poll">poll: 定時輪詢 JSON</option>
+                </select>
+                <input class="embed-ctl" id="embed-bridge-src" type="text" spellcheck="false"
+                       aria-label="來源網址" value="wss://your-service.example/stream">
+            </div>
+            <code class="q" id="embed-bridge"></code>
+            <div class="row"><button class="btn primary" data-copy-el="embed-bridge">📋 複製網址</button></div>
+            <p class="hint" style="margin:0">把你的來源網址填進上面那格就好。widget 的參數會自動編碼進
+            <code>q=</code> 一起帶走(bridge 再轉交給裡面的 widget), 不用自己算 URL 編碼。
+            參數表與訊息格式見下方<b>📡 postMessage 遙控</b>頁籤的「指令橋接」一節。</p>
+        </div>
+
         <div class="card recipe">
-            <span class="label">嵌這份說明文件(團隊 wiki / 開發者後台適用)</span>
-            <code class="q" id="doc-embed-snippet">&lt;iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/params.html"
+            <span class="label">⑤ 嵌這份說明文件(團隊 wiki / 開發者後台適用)</span>
+            <code class="codeblock" id="doc-embed-snippet">&lt;iframe src="https://rd7-ai-gw-02.i17game.net/poke-stroll/params.html"
         title="PokéStroll 參數文件"
         style="width:100%; height:80vh; min-height:600px; border:none;"
         loading="lazy"&gt;&lt;/iframe&gt;</code>
@@ -654,7 +707,7 @@
                     <tr>
                         <td class="name">roster</td>
                         <td class="range">—</td>
-                        <td class="desc"><b>查詢</b>目前常駐陣容, 不動畫面。回執帶 <code>count</code>(總數)與 <code>roster</code> 陣列, 每隻是 <code>{ id, shiny, size }</code>(圖鑑編號 / 是否色違 / 體型倍率 0.6 小、0.8 中、1 大)。要做陣容面板、投票名單之類的整合, 資料從這裡拿</td>
+                        <td class="desc"><b>查詢</b>目前常駐陣容, 不動畫面。回執帶 <code>count</code>(總數)與 <code>roster</code> 陣列, 每隻是 <code>{ id, name, shiny, size }</code>(圖鑑編號 / 繁體中文名 / 是否色違 / 體型倍率 0.6 小、0.8 中、1 大)。要做陣容面板、投票名單之類的整合, 資料從這裡拿</td>
                     </tr>
                 </tbody>
             </table>
@@ -783,6 +836,7 @@
     </div>
 
     <footer>
+        <p>還沒看過它長什麼樣子? <a href="./home.html">回展示頁</a>——真的在跑的 demo, 一鍵換場景。</p>
         <p>寶可夢圖片來自 <a href="https://github.com/PokeAPI/sprites">PokeAPI sprites</a>; Pokémon 為任天堂 / Creatures Inc. / GAME FREAK inc. 之註冊商標。本專案為粉絲自娛用途。</p>
     </footer>
 </div>
@@ -849,6 +903,10 @@
           desc: '只在 bubblePosition=side 生效：本體邊緣與對話框的左右空隙。單位是點陣圖像素，會乘上放大倍率（小/中 2x、大 3x）。預設為負數 = 往身體上疊，搭配 bubbleLayer=front 才像在講話；0 = 貼齊邊緣；正數 = 完全不重疊。也會影響「快出畫面翻到內側」的判斷' },
         { name: 'bubbleSideLift', type: 'int',   range: '-50 ~ 100',     def: '2',      group: '發呆與對話框', sample: 'bubbleSideLift=12',
           desc: '只在 bubblePosition=side 生效：垂直微調 px。對話框底邊本來錨在身高六成處，這個值再往上加（負數往下）。單位是螢幕 px、不乘放大倍率' },
+        { name: 'nametag',        type: 'enum',  range: 'off / hover / on', def: 'hover', group: '名牌', sample: 'nametag=on',
+          desc: '名牌：頭頂上的「No.25 皮卡丘」（繁體中文官方譯名，對照表 pokemon_names.js 隨 widget 一起送，不打 API）。認得出名字才有話題；編號則是給嵌入方看的——想把牠釘進陣容就是 ?ids=25 的那個 25，滑鼠移上去就抄得到。hover = 滑鼠移到那一隻身上才浮出來（預設）：OBS 與 pointer-events: none 的 iframe 本來就沒有滑鼠碰得到，等於預設不出現、畫面維持乾淨。on = 一直掛著（OBS 沒有滑鼠，想讓名字上鏡就用這個；導覽與活動看板也適用）。off = 完全不做（連元素都不會產生）。名牌自帶深色底 + 淺色字，白底深底都讀得到；色違的名字是金色的。與 bubblePosition=top 搭配時，對話框會自動往上讓開一層（僅 on 模式；hover 模式的名牌在上層，滑過去蓋住的是對話框而不是名字）' },
+        { name: 'nametagSize',    type: 'int',   range: '6 ~ 40',        def: '11',     group: '名牌', sample: 'nametag=on&nametagSize=18',
+          desc: '名牌字級 px。不跟體型縮放——名字是拿來讀的，小隻的名字更小只會更難讀。OBS 疊在 1080p 畫面上時建議放大到 14 ~ 18' },
         { name: 'shinyChance',    type: 'float', range: '0 ~ 1',         def: '1/100',  group: '色違', sample: 'shinyChance=1',
           desc: '每一隻獨立擲骰出現色違的機率（預設調得比正作的 1/4096 高很多，直播才熱鬧）。色違登場時必定亮出金色閃光對話框 + 星星四散特效，且該對話框有 4 秒保護期，不會被隨後的心情或被戳的愛心蓋掉' },
         { name: 'shinyBurstDuration', type: 'int', range: '100 ~ 10000', def: '1500',   group: '色違', sample: 'shinyChance=1&shinyBurstDuration=3000',
@@ -999,6 +1057,10 @@
         { label: '深夜（只剩腳下的接地影）', query: 'sunTime=0' },
         { label: '深夜且完全不要影子', query: 'sunTime=0&ambientShadow=0' },
         { label: '關掉日照、回到固定的腳下影子', query: 'sunShadow=off' },
+        { label: '名牌一直掛著（OBS 沒有滑鼠，想讓名字上鏡就用這個）', query: 'nametag=on' },
+        { label: '名牌放大（疊 1080p 畫面看得清楚）', query: 'nametag=on&nametagSize=18' },
+        { label: '看名牌配色違金字（全員色違）', query: 'nametag=on&shinyChance=1&count=6' },
+        { label: '完全不要名牌', query: 'nametag=off' },
         { label: '掙扎更激烈（抓在手上扭得更兇）', query: 'dragStruggleRate=4' },
         { label: '純觀賞（不給抓，右鍵仍可戳）', query: 'drag=off' },
     ];
@@ -1016,7 +1078,8 @@
     }
     function applyPreview(q) {
         if (q !== undefined) queryInput.value = q;
-        syncTuner(); // 調校台跟著網址走：手動編輯、食譜卡都同一個真相
+        syncTuner();     // 調校台跟著網址走：手動編輯、食譜卡都同一個真相
+        refreshEmbeds(); // 嵌入碼也跟著走：複製到的永遠是你眼前看到的那一版
         const src = './pokemon_footer_widget.html' + (currentQuery() ? '?' + currentQuery() : '');
         ensureDockVisible(); // 預覽被關掉時按了套用 → 自動叫回來，不然看不到效果
         // 先清空再載入：即使 query 沒變也強制重載（= 重抽一批）
@@ -1073,16 +1136,68 @@
         if (document.body.classList.contains('dock-none')) setDockPos('right');
     }
 
-    // 嵌入碼：部署環境用「目前網址的目錄」當 base，本機 file:// 則退回正式站網址
-    function embedSnippet() {
-        const base = location.protocol.startsWith('http')
+    // 部署環境用「目前網址的目錄」當 base，本機 file:// 則退回正式站網址
+    function embedBase() {
+        return location.protocol.startsWith('http')
             ? new URL('.', location.href).href
             : PROD_BASE;
+    }
+    function embedSnippet() {
         const q = currentQuery();
-        return `<iframe src="${base}${q ? '?' + q : ''}"\n` +
+        return `<iframe src="${embedBase()}${q ? '?' + q : ''}"\n` +
                `        style="position:fixed; bottom:0; left:0; width:100%; height:200px;\n` +
                `               border:none; pointer-events:none; color-scheme:light;"></iframe>`;
     }
+    // 遙控版：iframe 給個 id，附一段最小可用的下指令與收回執
+    function remoteSnippet() {
+        const q = currentQuery();
+        return `<iframe id="poke" src="${embedBase()}${q ? '?' + q : ''}"\n` +
+               `        style="position:fixed; bottom:0; left:0; width:100%; height:200px;\n` +
+               `               border:none; pointer-events:none; color-scheme:light;"></iframe>\n` +
+               `<script>\n` +
+               `    const poke = document.getElementById('poke');\n` +
+               `    function pokeCmd(cmd, extra = {}) {\n` +
+               `        poke.contentWindow.postMessage({ ns: 'poke-stroll', cmd, ...extra }, '*');\n` +
+               `    }\n` +
+               `    pokeCmd('spawn', { id: 143 });   // 例: 客串一隻卡比獸高速飛過\n\n` +
+               `    // 回執(除錯與確認送達用)\n` +
+               `    window.addEventListener('message', e => {\n` +
+               `        if (e.data?.ns === 'poke-stroll' && e.data.re) console.log(e.data);\n` +
+               `    });\n` +
+               `<\/script>`;
+    }
+    // 橋接版：來源網址 + widget 參數。q= 是「參數的參數」，
+    // 必須整串編碼過才不會被外層的 query 切斷——手算很容易錯，交給機器
+    function bridgeUrl() {
+        const mode = document.getElementById('embed-bridge-mode').value;
+        const src = document.getElementById('embed-bridge-src').value.trim();
+        const q = currentQuery();
+        let url = `${embedBase()}bridge.html?${mode}=${encodeURIComponent(src)}`;
+        if (mode === 'poll') url += '&pollInterval=3000';
+        if (q) url += `&q=${encodeURIComponent(q)}`;
+        return url;
+    }
+
+    // 四張卡都吃「預覽區當下的參數」：調校台拉一拉、網址列改一改，
+    // 這裡立刻跟著變（applyPreview 每次都會叫這一支）
+    function refreshEmbeds() {
+        const q = currentQuery();
+        document.getElementById('embed-query').textContent =
+            q ? '?' + q : '(沒有帶參數, 用 config.js 的預設值)';
+        document.getElementById('embed-iframe').textContent = embedSnippet();
+        document.getElementById('embed-obs').textContent = widgetUrl();
+        document.getElementById('embed-remote').textContent = remoteSnippet();
+        document.getElementById('embed-bridge').textContent = bridgeUrl();
+    }
+    document.getElementById('embed-bridge-mode').addEventListener('change', e => {
+        // 兩種來源的網址長得不一樣，切換時把還沒動過的預設值換成對的那一組
+        const srcEl = document.getElementById('embed-bridge-src');
+        const presets = { ws: 'wss://your-service.example/stream',
+                          poll: 'https://your-service.example/latest.json' };
+        if (Object.values(presets).includes(srcEl.value.trim())) srcEl.value = presets[e.target.value];
+        refreshEmbeds();
+    });
+    document.getElementById('embed-bridge-src').addEventListener('input', refreshEmbeds);
 
     // ---------------------------------------------------------
     // 複製 + 「已複製！」像素泡泡
@@ -1450,6 +1565,7 @@
         tunerGroupsEl.classList.toggle('only-changed', e.currentTarget.checked);
     });
     syncTuner();
+    refreshEmbeds(); // 開頁先產一次，四張卡不會是空的
 </script>
 </body>
 </html>

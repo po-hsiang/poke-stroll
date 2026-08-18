@@ -90,6 +90,42 @@
             pointer-events: none;
         }
 
+        /* 名牌（nametag 參數）：頭頂上的「No.25 皮卡丘」，元素由 js/nametag.js 產生。
+           深色藥丸底 + 淺色字是刻意的：背景透明是這個 widget 的前提，名字會疊在
+           誰家的網頁上（白底、深底、OBS 場景都可能），只有自帶底色才穩讀得到。
+           不跟著本體鏡像——翻面的是容器裡的 <img>，名牌掛在容器上，所以字永遠是正的 */
+        .nametag {
+            position: absolute;
+            bottom: calc(100% + 2px);
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3; /* 對話框（2）之上：名字被心情蓋掉就沒意義了 */
+            padding: 1px 5px;
+            border-radius: 3px;
+            background: rgba(16, 24, 40, 0.78);
+            color: #eef2fa;
+            font-family: 'Noto Sans TC', 'Microsoft JhengHei', system-ui, sans-serif;
+            font-size: 11px; /* 由 JS 依 nametagSize 覆寫 */
+            line-height: 1.45;
+            white-space: nowrap;
+            /* 名牌不擋滑鼠：抓、戳、丟果實都要能穿過去，
+               它自己也就不會攔截 hover（不然會跟本體互搶、閃個不停） */
+            pointer-events: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .nametag .dex {
+            opacity: 0.55; /* 編號退到後面，視線先落在名字上 */
+            margin-right: 3px;
+            font-size: 0.85em;
+        }
+        .nametag.shiny { color: #ffd84d; } /* 色違：跟星星特效同一組金 */
+        /* hover 模式：平常收著，滑鼠移到那一隻身上才浮出來。
+           OBS 與 pointer-events: none 的 iframe 本來就沒有滑鼠碰得到，
+           等於預設不出現，畫面維持乾淨 */
+        .nametag.on-hover { display: none; }
+        .pokemon-container:hover > .nametag.on-hover { display: block; }
+
         /* 客串事件：從畫面外高速橫越的飛行系/傳說寶可夢。
            不可點擊（飛太快，也不是常駐成員）、蓋在所有散步成員上方 */
         .cameo {
@@ -352,6 +388,7 @@
     <script src="./config.js"></script>
     <script src="./pokemon_heights.js"></script>
     <script src="./pokemon_types.js"></script>
+    <script src="./pokemon_names.js"></script>
     <script src="./pokemon_cameo.js"></script>
 
     <!-- 主程式（js/ 資料夾）：一個檔案一個職責，載入順序 = 依賴順序（由上而下）。
@@ -368,6 +405,7 @@
     <script src="./js/night.js"></script>
     <script src="./js/reflect.js"></script>
     <script src="./js/roster.js"></script>
+    <script src="./js/nametag.js"></script>
     <script src="./js/pokemon.js"></script>
     <script src="./js/flyby.js"></script>
     <script src="./js/feeding.js"></script>

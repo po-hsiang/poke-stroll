@@ -150,6 +150,8 @@ const sandbox = {
         POKE_CONFIG: null, // 下面注入
         POKE_HEIGHTS: { 25: 4, 143: 21 }, // 皮卡丘 0.4m（小）、卡比獸 2.1m（大）
         POKE_TYPES: { 25: 'electric', 143: 'normal' },
+        // 名牌用的對照表同樣給假的：真表在第 38 組另外驗（含與身高/屬性表的交叉比對）
+        POKE_NAMES: { 25: '皮卡丘', 143: '卡比獸' },
         // postMessage 遙控會掛 message 監聽器；測試從 listeners 取出直接餵假事件
         listeners: {},
         addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
@@ -183,7 +185,7 @@ for (const f of jsFiles) {
 // 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
 // global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
 vm.runInContext(
-    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne };',
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -1552,9 +1554,10 @@ group('19. 色違星星特效定時重播');
         send({ ns: 'poke-stroll', cmd: 'roster' });
         const rep = lastReply();
         check('roster → ok 且 count = 2', rep?.ok === true && rep?.re === 'roster' && rep?.count === 2);
-        check('回報每隻的 id / 色違 / 體型', JSON.stringify(rep?.roster) === JSON.stringify([
-            { id: 25, shiny: false, size: 0.6 },
-            { id: 143, shiny: true, size: 1 },
+        // 名字一併給：串接方要做陣容面板不必自己再備一張對照表
+        check('回報每隻的 id / 名字 / 色違 / 體型', JSON.stringify(rep?.roster) === JSON.stringify([
+            { id: 25, name: '皮卡丘', shiny: false, size: 0.6 },
+            { id: 143, name: '卡比獸', shiny: true, size: 1 },
         ]), JSON.stringify(rep?.roster));
         check('查詢不動畫面（沒人起跳、狀態不變）', r1.jumpV === 0 && r2.jumpV === 0
             && r1.state === 'WALKING' && r2.state === 'WALKING');
@@ -3236,6 +3239,163 @@ group('19. 色違星星特效定時重播');
             notFlying.length === 0, notFlying.slice(0, 10).join(', '));
         check('客串名單的隻數與「兩槽都算」的飛行系一致',
             cameoAll.length === flyBoth.length, `客串 ${cameoAll.length} / 飛行 ${flyBoth.length}`);
+    }
+
+    // =====================================================
+    group('38. 名牌（頭頂的「No.25 皮卡丘」）');
+    {
+        const savedMode = CONFIG.nametag;
+        const savedSize = CONFIG.nametagSize;
+        const tagOf = p => p.el.children.find(c => String(c.className).startsWith('nametag'));
+
+        check("config.js 預設 nametag = 'hover'", savedMode === 'hover', String(savedMode));
+        check('config.js 預設 nametagSize = 11', savedSize === 11, String(savedSize));
+
+        // 查表與退路
+        check('pokeName 查得到名字', T.pokeName(25) === '皮卡丘', T.pokeName(25));
+        check('查不到的編號退回 No.編號，不開天窗', T.pokeName(999) === 'No.999', T.pokeName(999));
+
+        // hover 模式（預設）：元素造出來但掛 on-hover，由 CSS 決定何時現身
+        CONFIG.nametag = 'hover';
+        const pHover = newPokemon(25);
+        const tagHover = tagOf(pHover);
+        check('預設會掛名牌元素', !!tagHover && pHover.nametag === tagHover);
+        check("hover 模式掛 on-hover class（平常收著）",
+            tagHover.className.includes('on-hover'), tagHover.className);
+        check('名牌內容 = 編號 + 名字兩段',
+            tagHover.children.length === 2
+            && tagHover.children[0].className === 'dex'
+            && tagHover.children[0].textContent === 'No.25'
+            && tagHover.children[1].textContent === '皮卡丘',
+            JSON.stringify(tagHover.children.map(c => c.textContent)));
+        check('字級吃 nametagSize', tagHover.style.fontSize === '11px', tagHover.style.fontSize);
+
+        // 常駐模式
+        CONFIG.nametag = 'on';
+        const pOn = newPokemon(143);
+        check("nametag='on' 不掛 on-hover（一直看得到）",
+            !tagOf(pOn).className.includes('on-hover'), tagOf(pOn).className);
+
+        // 關掉：連元素都不產生（OBS 掛整天不必為關掉的功能付錢）
+        CONFIG.nametag = 'off';
+        const pOff = newPokemon(25);
+        check("nametag='off' 連元素都不產生", !tagOf(pOff) && pOff.nametag === null);
+
+        // 色違：名字用金色（class 決定顏色，這裡驗 class）
+        CONFIG.nametag = 'on';
+        const pShiny = newPokemon(25, { shiny: true });
+        check('色違的名牌掛 shiny class（金色字）',
+            tagOf(pShiny).className.includes('shiny'), tagOf(pShiny).className);
+        const pNormal = newPokemon(25);
+        check('非色違不掛 shiny class', !tagOf(pNormal).className.includes('shiny'));
+
+        // 字級可調（OBS 疊 1080p 時要放大）
+        CONFIG.nametagSize = 18;
+        check('nametagSize 改大後跟著變', tagOf(newPokemon(25)).style.fontSize === '18px');
+        CONFIG.nametagSize = 999; // 超出範圍：夾住，別讓手改 config.js 的人做出滿版的字
+        check('nametagSize 夾在上限 40', tagOf(newPokemon(25)).style.fontSize === '40px');
+        CONFIG.nametagSize = savedSize;
+
+        // 頭頂讓位：bubblePosition='top' 時對話框與名牌搶同一個位置
+        const savedPos = CONFIG.bubblePosition;
+        CONFIG.bubblePosition = 'top';
+        CONFIG.nametag = 'on';
+        const pTop = newPokemon(25);
+        pTop.nametag.offsetHeight = 17; // 真瀏覽器才量得到高度，這裡手動塞
+        pTop.showEmote('heart');
+        // 名牌高 17px、上下各留 2px → 對話框從 100% + 21px 起算
+        check("nametag='on' 時 top 對話框往上讓開一層",
+            pTop.bubble.style.bottom === 'calc(100% + 21px)', pTop.bubble.style.bottom);
+        CONFIG.nametag = 'hover';
+        const pTopHover = newPokemon(25);
+        pTopHover.nametag.offsetHeight = 17;
+        pTopHover.showEmote('heart');
+        check("hover 模式不讓位（名牌平常不在，不為它永遠空一排）",
+            pTopHover.bubble.style.bottom === 'calc(100% + 2px)', pTopHover.bubble.style.bottom);
+        CONFIG.bubblePosition = savedPos;
+        CONFIG.nametag = savedMode;
+    }
+
+    // =====================================================
+    // 跟第 37 組同一個理由：上面用的是假名字表，真表產壞了不會有人發現。
+    // 名字表的錯法特別安靜——抓錯語言欄位（簡體、日文）看起來還是一份
+    // 合法的 JS，只有拿繁簡有差的字去對才驗得出來
+    group('39. 名字對照表的資料健全性（真的那張表）');
+    {
+        const box = { window: {} };
+        vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'pokemon_names.js'), 'utf8'), box);
+        vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'pokemon_heights.js'), 'utf8'), box);
+        vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'pokemon_types.js'), 'utf8'), box);
+        const names = box.window.POKE_NAMES;
+
+        check('名字表 1~1025 一隻都不缺', Object.keys(names || {}).length === 1025,
+            String(Object.keys(names || {}).length));
+        const gaps = [];
+        for (let id = 1; id <= 1025; id++) if (!names[id]) gaps.push(id);
+        check('編號連續無空洞、沒有空字串', gaps.length === 0, gaps.slice(0, 10).join(', '));
+
+        // 三張靜態表的編號集合必須一致：任何一張重產時漏掉一段都會在這裡現形
+        const keysOf = t => Object.keys(t).map(Number).sort((a, b) => a - b).join(',');
+        check('編號集合與身高表、屬性表完全一致',
+            keysOf(names) === keysOf(box.window.POKE_HEIGHTS)
+            && keysOf(names) === keysOf(box.window.POKE_TYPES));
+
+        // 黃金樣本挑「繁簡有差」的字：抓到簡體（妙蛙种子）或日文會在這裡爆
+        const GOLDEN = { 1: '妙蛙種子', 6: '噴火龍', 25: '皮卡丘', 94: '耿鬼',
+                         133: '伊布', 143: '卡比獸', 448: '路卡利歐', 1025: '桃歹郎' };
+        const wrong = Object.entries(GOLDEN).filter(([id, want]) => names[id] !== want);
+        check('黃金樣本全中（繁體，不是簡體或日文）', wrong.length === 0,
+            wrong.map(([id, want]) => `#${id} 期望 ${want} 實際 ${names[id]}`).join('; '));
+
+        // 名牌是純文字排版，字串本身要安全：引號會把 JS 字串截斷，
+        // 拉丁字母混進來代表某些編號悄悄退回了英文名
+        const unsafe = Object.keys(names).filter(id => /["\\\r\n]/.test(names[id]));
+        check('沒有引號或換行（不會把字串截斷）', unsafe.length === 0, unsafe.slice(0, 5).join(', '));
+        const latin = Object.keys(names).filter(id => /[A-Za-z]/.test(names[id]));
+        check('沒有半形拉丁字母（沒有悄悄退回英文名）', latin.length === 0,
+            latin.slice(0, 5).map(id => `${id}=${names[id]}`).join(', '));
+        const tooLong = Object.keys(names).filter(id => names[id].length > 8);
+        check('名字都在 8 字以內（名牌是一行，太長會撐爆版面）', tooLong.length === 0,
+            tooLong.slice(0, 5).map(id => `${id}=${names[id]}`).join(', '));
+    }
+
+    // =====================================================
+    group('40. 展示著陸頁（home.html）');
+    {
+        const home = fs.readFileSync(path.join(ROOT, 'home.html'), 'utf8');
+        const dockerfile = fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8');
+
+        check('舞台上跑的是 widget 本體（不是影片或截圖）',
+            /id="stage-frame"[\s\S]{0,120}src="\.\/pokemon_footer_widget\.html"/.test(home));
+        check('舞台的 iframe 元素釘了 color-scheme: light（本頁是 dark，不對齊就被墊底色）',
+            /\.stage iframe\s*\{[^}]*color-scheme:\s*light/.test(home));
+        check('有連到參數文件（看完想串接的人要有下一步）', /href="\.\/params\.html"/.test(home));
+        check('home.html 會進 image',
+            /COPY[^\n]*home\.html[^\n]*\/usr\/share\/nginx\/html\//.test(dockerfile));
+
+        // 根路徑是「已經發出去的網址」：現有嵌入方與 OBS 來源都指著它。
+        // 著陸頁不能搶——搶了人家的頁尾就變成一整頁店面
+        check('根路徑仍然出 widget 本體，不是著陸頁',
+            /cp \/usr\/share\/nginx\/html\/pokemon_footer_widget\.html \/usr\/share\/nginx\/html\/index\.html/
+                .test(dockerfile)
+            && !/home\.html \/usr\/share\/nginx\/html\/index\.html/.test(dockerfile));
+
+        // 場景是手寫的 query string，打錯字會安靜地沒效果（白名單外的參數直接無視）。
+        // 這裡把每個場景的參數逐一比對白名單，錯字當場現形
+        const known = new Set([...Object.keys(T.QUERY_PARAMS), 'ids', 'team']);
+        const scenes = [...home.matchAll(/\{ label: '[^']*', q: '([^']*)' \}/g)].map(m => m[1]);
+        check('場景清單解析得出來（至少 5 個）', scenes.length >= 5, String(scenes.length));
+        const badKeys = [];
+        for (const q of scenes) {
+            for (const pair of q.split('&').filter(Boolean)) {
+                const key = pair.split('=')[0];
+                if (!known.has(key)) badKeys.push(`${key}（${q}）`);
+            }
+        }
+        check('每個場景的參數都在白名單上（打錯字的場景會靜靜地沒效果）',
+            badKeys.length === 0, badKeys.join(', '));
+        check('名牌是疊在場景之上的另一個軸，不寫死在每個場景裡',
+            /nametag=on/.test(home) && !scenes.some(q => q.includes('nametag')));
     }
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
