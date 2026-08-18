@@ -904,7 +904,7 @@
         { name: 'bubbleSideLift', type: 'int',   range: '-50 ~ 100',     def: '2',      group: '發呆與對話框', sample: 'bubbleSideLift=12',
           desc: '只在 bubblePosition=side 生效：垂直微調 px。對話框底邊本來錨在身高六成處，這個值再往上加（負數往下）。單位是螢幕 px、不乘放大倍率' },
         { name: 'nametag',        type: 'enum',  range: 'off / hover / on', def: 'hover', group: '名牌', sample: 'nametag=on',
-          desc: '名牌：頭頂上的「No.25 皮卡丘」（繁體中文官方譯名，對照表 pokemon_names.js 隨 widget 一起送，不打 API）。認得出名字才有話題；編號則是給嵌入方看的——想把牠釘進陣容就是 ?ids=25 的那個 25，滑鼠移上去就抄得到。hover = 滑鼠移到那一隻身上才浮出來（預設）：OBS 與 pointer-events: none 的 iframe 本來就沒有滑鼠碰得到，等於預設不出現、畫面維持乾淨。on = 一直掛著（OBS 沒有滑鼠，想讓名字上鏡就用這個；導覽與活動看板也適用）。off = 完全不做（連元素都不會產生）。名牌自帶深色底 + 淺色字，白底深底都讀得到；色違的名字是金色的。與 bubblePosition=top 搭配時，對話框會自動往上讓開一層（僅 on 模式；hover 模式的名牌在上層，滑過去蓋住的是對話框而不是名字）' },
+          desc: '名牌：頭頂上的「No.25 皮卡丘」（繁體中文官方譯名，對照表 pokemon_names.js 隨 widget 一起送，不打 API）。認得出名字才有話題；編號則是給嵌入方看的——想把牠釘進陣容就是 ?ids=25 的那個 25，滑鼠移上去就抄得到。hover = 滑鼠移到那一隻身上才浮出來（預設）：OBS 與 pointer-events: none 的 iframe 本來就沒有滑鼠碰得到，等於預設不出現、畫面維持乾淨。on = 一直掛著（OBS 沒有滑鼠，想讓名字上鏡就用這個；導覽與活動看板也適用）。off = 完全不做（連元素都不會產生）。名牌自帶深色底 + 淺色字，白底深底都讀得到；色違的名字是金色的。⚠️ 站得近時左邊那隻的名牌會被右邊鄰居的身體壓住——每一隻的堆疊層級按 X 座標排，名牌只在「同一隻的本體之間」保證在最上層（跟對話框同一個限制，見 bubbleLayer）。count 開很大又想讓名字都看得到，就把 personalSpace 調大讓牠們站散一點。與 bubblePosition=top 搭配時，對話框會自動往上讓開一層（僅 on 模式；hover 模式的名牌在上層，滑過去蓋住的是對話框而不是名字）' },
         { name: 'nametagSize',    type: 'int',   range: '6 ~ 40',        def: '11',     group: '名牌', sample: 'nametag=on&nametagSize=18',
           desc: '名牌字級 px。不跟體型縮放——名字是拿來讀的，小隻的名字更小只會更難讀。OBS 疊在 1080p 畫面上時建議放大到 14 ~ 18' },
         { name: 'shinyChance',    type: 'float', range: '0 ~ 1',         def: '1/100',  group: '色違', sample: 'shinyChance=1',
