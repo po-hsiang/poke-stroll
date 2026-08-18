@@ -1017,6 +1017,14 @@ group('19. 色違星星特效定時重播');
     // 排程照鏈，恢復可見後照常生成。皮卡丘在 stub 身高表裡，不會打網路
     sandbox.window.POKE_FLYING = [25];
     CONFIG.flybyChance = 1; // 每次擲骰必中，測的是可見度那一關
+    // 另外兩層機率也一併釘死：這一組只想驗「分頁看不見時不生東西」。
+    // 放任它們的話，5% 的機率會抽到「傳說池」——而主 sandbox 刻意沒有
+    // POKE_LEGENDARY（見上一組的斷言），抽到就直接 return 不生客串，
+    // 於是每幾百輪就冒一次莫名的紅燈
+    const savedLegend = CONFIG.flybyLegendaryChance;
+    const savedDelivery = CONFIG.flybyDeliveryChance;
+    CONFIG.flybyLegendaryChance = 0;
+    CONFIG.flybyDeliveryChance = 0;
     T.scheduleFlyby();
     sandbox.document.hidden = true;
     advance(60000); // 至少擲了 3 次骰
@@ -1030,6 +1038,8 @@ group('19. 色違星星特效定時重播');
     // advance 都空轉——信使鳥空投不需要名單池，光刪 POKE_FLYING 擋不住
     // 預設 flybyDeliveryChance 的擲骰，客串會隨機亂入後面的測試
     CONFIG.flybyChance = 0;
+    CONFIG.flybyLegendaryChance = savedLegend;
+    CONFIG.flybyDeliveryChance = savedDelivery;
     delete sandbox.window.POKE_FLYING;
 
     // =====================================================
@@ -1875,10 +1885,6 @@ group('19. 色違星星特效定時重播');
         while (!T.getSnatch() && guard++ < 2000) {
             T.updateBerries(16);
             witness.update(16, T.pokemons);
-            // 賊鳥一出現就停在「進場那一幀」：下面幾項驗的是進場幾何（高度要
-            // 落在客串的飛行高度帶裡）。多推一幀牠已經開始俯衝，起始高度剛好
-            // 抽在帶子下緣時就會掉出去 —— 每一百多輪偶發一次紅燈的真正原因
-            if (T.getSnatch()) break;
             T.updateSnatch(16);
         }
         const s = T.getSnatch();
@@ -1897,8 +1903,14 @@ group('19. 色違星星特效定時重播');
         // 賊鳥的進場幾何與速度（預設倍率：俯衝 1.6、遠走 1.8）
         check('從果實那一側的畫面外進場（右半邊 → 右側、面向左）',
             s.x > 1920 && s.direction === -1, `x=${s.x}`);
+        // 進場高度改用 startBottom：bottom 是「現在的」高度，而 updateSnatch
+        // 建好賊鳥之後會在同一個 tick 就推牠一幀（見 js/snatch.js 結尾），
+        // 起始高度剛好抽在帶子下緣時，讀 bottom 就會掉出帶子外——
+        // 每一兩百輪偶發一次紅燈的真正原因。startBottom 是進場那一刻的存檔
         check('進場高度在客串的飛行高度帶（視窗高 45%~75%）',
-            s.bottom >= 90 && s.bottom <= 150, `bottom=${s.bottom}`);
+            s.startBottom >= 90 && s.startBottom <= 150, `startBottom=${s.startBottom}`);
+        check('進場後就開始往下俯衝了（bottom 已經比進場點低）',
+            s.bottom <= s.startBottom, `${s.bottom} vs ${s.startBottom}`);
         check('俯衝 = 巡航 × snatchDiveRate 1.6（±10%）',
             s.speed >= 5 * 1.6 * 0.9 - 1e-9 && s.speed <= 5 * 1.6 * 1.1 + 1e-9,
             `speed=${s.speed}`);
