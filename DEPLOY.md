@@ -6,23 +6,23 @@
 
 ```bash
 # 建置(版本號與 .env 的 VERSION 一致)
-docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.44.0 .
+docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0 .
 
 # 本機試跑
-docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.44.0
+docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0
 # 瀏覽器 / OBS 瀏覽器來源開 http://localhost:8080/ 即可看到 widget
 ```
 
 ## 推上 Google Artifact Registry
 
 ```bash
-docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.44.0
+docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0
 ```
 
 ## 雲端主機部署
 
 ```bash
-docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.44.0
+docker pull asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0
 docker compose up -d
 ```
 
@@ -67,7 +67,7 @@ Docker 建置 + 容器冒煙測試(每個靜態檔 200、快取標頭正確、RE
 
 ## 設計筆記(為什麼這樣設)
 
-- **快取策略(nginx.conf)**:widget HTML 與 `config.js` 給 `no-cache`——不是「不快取」,而是每次都帶 ETag 協商(304 很便宜),改版部署後訪客重新整理立刻拿到新版,不會有新舊版混用的混沌期;兩張圖鑑對照表幾乎不變,快取一天。
+- **快取策略(nginx.conf)**:widget HTML 與 `config.js` 給 `no-cache`——不是「不快取」,而是每次都帶 ETag 協商(304 很便宜),改版部署後訪客重新整理立刻拿到新版,不會有新舊版混用的混沌期;三張圖鑑對照表(身高/屬性/名稱)幾乎不變,快取一天。
 - **釘定基底版本**:`FROM nginx:1.29-alpine` 而非浮動的 `nginx:alpine`,半年後重 build 也是同一顆 nginx。要升版就改 Dockerfile,讓升版是「看得見的 diff」。
 - **healthcheck + restart**:`wget --spider` 打本機 80(busybox 內建,免裝 curl);`restart: unless-stopped` 放頂層而非 `deploy.restart_policy`(後者非 Swarm 支援度不一),主機重開機容器自動回來。
 - **Traefik 埠改 v2 正式寫法**:舊範本的 `traefik.basic.port` 是 v1 語法,v2 閘道不吃,先前能動全靠自動偵測 EXPOSE 埠;已改成 `traefik.http.services.<name>.loadbalancer.server.port` 明示。

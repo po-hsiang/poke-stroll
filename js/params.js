@@ -79,6 +79,7 @@ const QUERY_PARAMS = {
     nightGlow:        { path: ['nightGlow'],        type: 'float', min: 0,  max: 1 },
     nightFade:        { path: ['nightFade'],        type: 'int',   min: 0,  max: 180 },
     nightRoster:      { path: ['nightRoster'],      type: 'float', min: 0,  max: 1 },
+    nightSleep:       { path: ['nightSleep'],       type: 'float', min: 0,  max: 1 },
 };
 
 // 'HH:MM'（17:30）或小數時數（17.5）→ 小數時數。看不懂就回 NaN，

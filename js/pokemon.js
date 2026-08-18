@@ -252,19 +252,22 @@ class Pokemon {
     }
 
     walk(deltaTime) {
-        // 以 60fps 為基準做時間校正，移動速度不受螢幕更新率影響
+        // 以 60fps 為基準做時間校正，移動速度不受螢幕更新率影響。
+        // 夜裡走慢一點（見 js/circadian.js）——追果實用的是 seekBerry
+        // 自己的小跑速度，不吃這個折扣
         const dt = deltaTime / (1000 / 60);
-        this.x += this.speed * this.direction * dt;
+        this.x += this.speed * moveScale() * this.direction * dt;
 
-        // 用 |sin| 波模擬小跳步，速度越快的跳越頻繁
+        // 用 |sin| 波模擬小跳步，速度越快的跳越頻繁（夜裡跳得低一點）
         this.walkPhase += deltaTime * CONFIG.hopFrequency * (this.speed / CONFIG.baseSpeed);
-        this.bobY = Math.abs(Math.sin(this.walkPhase)) * this.hopHeight;
+        this.bobY = Math.abs(Math.sin(this.walkPhase)) * this.hopHeight * hopScale();
 
-        // 隨機決定是否停下來看鏡頭
-        if (Math.random() < CONFIG.idleChance) {
+        // 隨機決定是否停下來看鏡頭（夜裡停得更頻繁、也站得更久）
+        if (Math.random() < idleChanceNow()) {
             this.state = 'IDLE';
             // 設定發呆時間
-            this.idleTimer = randomInt(CONFIG.lookTime.min, CONFIG.lookTime.max);
+            this.idleTimer = Math.round(
+                randomInt(CONFIG.lookTime.min, CONFIG.lookTime.max) * idleTimeScale());
             this.maybeShowEmote();
         }
     }
@@ -633,7 +636,15 @@ class Pokemon {
 
     // 只有站定發呆時才有機會冒心情對話框；走路中不觸發
     maybeShowEmote() {
-        if (Math.random() >= (CONFIG.bubbleChance ?? 0.5)) return;
+        // 夜裡先擲一次「就這樣睡著了」：中了直接掛 Zzz 到發呆結束。
+        // 先擲是關鍵——不然 Zzz 只是八種心情裡的八分之一，
+        // 睡意再濃也只是偶爾冒一次（見 js/circadian.js）
+        if (Math.random() < sleepEmoteChance()) {
+            this.showEmote('zzz');
+            return;
+        }
+        // 其他心情：夜裡整體壓低，白天照 config.js 的 bubbleChance
+        if (Math.random() >= moodChanceNow()) return;
         const names = Object.keys(EMOTE_ICONS);
         this.showEmote(names[randomInt(0, names.length - 1)]);
     }
@@ -744,8 +755,9 @@ class Pokemon {
                 // 站位以兩隻中心的中點為基準往外讓開：
                 // 中心距 = 半身寬相加 + 空隙，身體才不會疊在一起；
                 // 目標都夾回活動範圍，貼著邊界相遇也讓得開
+                // 夜裡不太有心情社交（除 Zzz 以外的對話框都跟著壓低）
                 if (this.canGreet() && other.canGreet()
-                    && Math.random() < (CONFIG.greetChance ?? 0)) {
+                    && Math.random() < greetChanceNow()) {
                     const duration = randomInt(1600, 2600);
                     const wa = this.img.offsetWidth || CONFIG.baseSize * this.sizeScale;
                     const wb = other.img.offsetWidth || CONFIG.baseSize * other.sizeScale;
@@ -776,9 +788,9 @@ class Pokemon {
         if (this.bobY < 0.1) this.bobY = 0;
 
         // 發呆亂跳：站穩在地上時，機率性原地開心跳一下
-        // （落地才擲骰，不會在半空中連鎖二段跳）
+        // （落地才擲骰，不會在半空中連鎖二段跳；夜裡幾乎不跳了）
         if (this.jumpY === 0 && this.jumpV === 0
-            && Math.random() < (CONFIG.idleJumpChance ?? 0)) {
+            && Math.random() < idleJumpChanceNow()) {
             this.jump();
         }
 
