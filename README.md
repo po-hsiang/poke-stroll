@@ -219,6 +219,34 @@ node test/widget.test.js
 - **canvas stub 記錄每一次 `fillRect`**,所以對話框外框、尾巴鏡像、心情圖示是
   直接比對「畫出來的像素」,不是靠眼睛看。
 
+另外一支只驗文件有沒有漂移——`config.js`、白名單、`PARAMS.md`、`params.html`
+四方逐一比對每個參數的預設值與允許範圍:
+
+```bash
+node test/params-doc.test.js
+```
+
+參數的預設值與範圍只有這一支在守,所以 `widget.test.js` 裡不再抄
+`CONFIG.x === 3` 這類斷言,只驗「旋鈕怎麼變成行為」。
+
+### 覆蓋率
+
+```bash
+node --test --experimental-test-coverage --test-coverage-exclude='test/**' test/widget.test.js
+```
+
+用 Node 22 內建的覆蓋率,同樣不用裝東西。目前 **行 96.7%、函式 96.2%、分支 86.3%**,
+CI 設了 95 / 95 / 84 的門檻,掉下去就紅燈。widget 自己的 js/ 幾乎都是滿的
+(`params.js`、`sun.js`、`roster.js`、`ground.js`、`weather.js`、`circadian.js`、
+`nametag.js`、`sprites.js` 都 100%),缺的那 3% 集中在兩處:
+
+- **`bridge.js` 60%** —— 它只在 `bridge.html` 裡跑,不進 widget。純函式(解析
+  網址、翻譯文字指令、冷卻表)全都測了;沒測的是 `startBridge()` 那段連線輪詢,
+  要真的 `fetch` 與真的 iframe。
+- 零星幾行是**要真環境才走得到的退路**:真的打 PokéAPI 查身高、GIF 載入失敗
+  退回靜態圖、找不到 `config.js` 時的主控台提示、冷卻名單超過 500 個 sender
+  才會做的清理。
+
 需要真瀏覽器才驗得到的部分(CSS 實際套用結果、GIF 載入、視覺上好不好看)不在範圍內,
 那些還是得自己開檔案看一眼。
 

@@ -61,6 +61,17 @@ jobs:
       - run: node test/widget.test.js
       - name: 文件同步檢查（QUERY_PARAMS ↔ PARAMS.md ↔ params.html）
         run: node test/params-doc.test.js
+      # 覆蓋率門檻設在實測值下方約 1.5 個百分點：測試裡有隨機成分
+      # （抽陣容、擲天氣的骰），分支覆蓋率每輪會小幅浮動，貼太緊會變成偶發紅燈。
+      # 現況約 行 96.7 / 分支 86.3 / 函式 96.2
+      - name: 覆蓋率門檻（行 95 / 分支 84 / 函式 95）
+        run: |
+          node --test --experimental-test-coverage \
+            --test-coverage-exclude='test/**' \
+            --test-coverage-lines=95 \
+            --test-coverage-branches=84 \
+            --test-coverage-functions=95 \
+            test/widget.test.js
 
   docker:
     name: Docker 建置 + 冒煙測試

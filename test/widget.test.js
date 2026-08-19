@@ -2,6 +2,7 @@
 // PokéStroll 單元測試
 //
 //   執行：node test/widget.test.js   （不需要 npm install，零依賴）
+//   覆蓋率：node --test --experimental-test-coverage --test-coverage-exclude='test/**' test/widget.test.js
 //
 // widget 是純靜態 HTML + js/ 底下的一組傳統 <script src>（一檔一職責）。
 // 這支測試照 HTML 的標籤順序把每個檔案逐一丟進同一個 Node vm context，
@@ -16,12 +17,24 @@
 //
 // 沒有涵蓋的部分（需要真的瀏覽器）：CSS 實際套用結果、GIF 載入、
 // requestAnimationFrame 的真實時序、視覺上好不好看。
+//
+// 分工（別在這裡重蓋一次）：
+//   設定值本身（每個參數的預設值、允許範圍、白名單登記）交給
+//   test/params-doc.test.js —— 它把 config.js、js/params.js 的白名單、
+//   PARAMS.md、params.html 四方逐一比對，一次涵蓋全部參數。
+//   這裡只驗「設定值怎麼變成行為」：改了旋鈕，畫面/狀態要跟著變。
+//   在這裡抄一行 `CONFIG.x === 3` 沒有任何額外保障，只會讓改預設值的人
+//   多一個地方要改。
 // =========================================================
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
+// vm 的 filename 一律給 file:// 絕對網址，這樣 V8 才認得它是磁碟上的檔案：
+//   node --test --experimental-test-coverage test/widget.test.js
+// 才量得到 js/ 底下主程式的覆蓋率（給相對路徑的話整份會被報表略過）。
+const srcUrl = rel => require('url').pathToFileURL(path.join(ROOT, rel)).href;
 const html = fs.readFileSync(path.join(ROOT, 'pokemon_footer_widget.html'), 'utf8');
 
 // ---- 從 HTML 讀出主程式清單（js/ 底下；載入順序的真理來源是 HTML 本身）----
@@ -150,7 +163,7 @@ const sandbox = {
         POKE_CONFIG: null, // 下面注入
         POKE_HEIGHTS: { 25: 4, 143: 21 }, // 皮卡丘 0.4m（小）、卡比獸 2.1m（大）
         POKE_TYPES: { 25: 'electric', 143: 'normal' },
-        // 名牌用的對照表同樣給假的：真表在第 38 組另外驗（含與身高/屬性表的交叉比對）
+        // 名牌用的對照表同樣給假的：真表在第 39 組另外驗（含與身高/屬性表的交叉比對）
         POKE_NAMES: { 25: '皮卡丘', 143: '卡比獸' },
         // postMessage 遙控會掛 message 監聽器；測試從 listeners 取出直接餵假事件
         listeners: {},
@@ -159,33 +172,30 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 
-// 載入真正的 config.js（同時驗證它語法正確、預設值正確）
+// 載入真正的 config.js（同時驗證它語法正確；預設值本身由文件同步檢查守）
 vm.createContext(sandbox);
 const configSrc = fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8');
-vm.runInContext(configSrc, sandbox, { filename: 'config.js' });
+vm.runInContext(configSrc, sandbox, { filename: srcUrl('config.js') });
 const CONFIG = sandbox.window.POKE_CONFIG;
 
-// config 預設的地面主題另存一份給第 17 組驗證，隨即釘回 'none'：
-// 主程式一載入就會跑 init() → initGround(CONFIG.theme)，預設的 'random'
-// 會讓 groundLevel 隨機，果實落點、抓取高度……一票斷言全會翻車
-const DEFAULT_THEME = CONFIG.theme;
+// 地面主題釘回 'none'：主程式一載入就會跑 init() → initGround(CONFIG.theme)，
+// 預設的 'random' 會讓 groundLevel 隨機，果實落點、抓取高度……一票斷言全會翻車
 CONFIG.theme = 'none';
 
 // 同理，日照預設是「跟著本機時鐘」——影子的長短方向會隨著跑測試的時間變，
 // 所有斷言影子字串的地方都會看時間臉色。整份測試釘死在正午（投射影為 0，
 // 就是原本那圈腳下影子），第 31 組要驗日照時再自己改 sunTime
-const DEFAULT_SUN_TIME = CONFIG.sunTime;
 CONFIG.sunTime = 12;
 
 // 照 HTML 的載入順序逐檔執行主程式——跟瀏覽器一樣一個檔案一個 script，
 // 跨檔的載入順序問題（load 時就呼叫後面檔案的東西）在這裡會直接炸
 for (const f of jsFiles) {
-    vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
+    vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: srcUrl(f) });
 }
 // 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
 // global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
 vm.runInContext(
-    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance };',
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance, gameLoop };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -209,12 +219,10 @@ function newPokemon(id, { shiny = false, direction = 1, scale = 1 } = {}) {
 }
 
 // =========================================================
-group('1. config.js 預設值');
-check('count = 4', CONFIG.count === 4, `實際 ${CONFIG.count}`);
-check('hopHeight = 3', CONFIG.hopHeight === 3, `實際 ${CONFIG.hopHeight}`);
-check('shinyChance = 1/100', Math.abs(CONFIG.shinyChance - 0.01) < 1e-12, `實際 ${CONFIG.shinyChance}`);
-check("bubblePosition = 'side'", CONFIG.bubblePosition === 'side');
-check('baseSize = 128', CONFIG.baseSize === 128);
+// 唯一還在這裡驗的設定值：sizeTiers 是巢狀陣列、沒有對應的 URL 參數，
+// 所以文件同步檢查（只掃白名單裡的參數）碰不到它，而下面一整串體型、
+// 對話框倍率、保底值的斷言全部建立在這張表的形狀上
+group('1. sizeTiers 體型分級表（文件同步檢查唯一碰不到的設定）');
 check('sizeTiers scale = 0.6 / 0.8 / 1',
     JSON.stringify(CONFIG.sizeTiers.map(t => t.scale)) === '[0.6,0.8,1]',
     JSON.stringify(CONFIG.sizeTiers.map(t => t.scale)));
@@ -327,7 +335,7 @@ CONFIG.bubblePosition = 'side';
     check('已收起 → 轉向不重擺', p.bubble.src === '__SENTINEL2__');
 }
 
-group("5. top 擺位維持原樣（尾巴用預設朝向）");
+group("5. top 擺位：置中於頭頂（尾巴用預設朝向）");
 CONFIG.bubblePosition = 'top';
 {
     const p = newPokemon(143, { direction: 1 });
@@ -389,7 +397,7 @@ CONFIG.bubblePosition = 'side';
     check('解鎖後 hideEmote 有效', p.bubble.style.display === 'none');
 }
 
-group('7. 非色違不受影響');
+group('7. 非色違：登場不冒泡，被戳才有反應');
 {
     const p = newPokemon(25, { shiny: false, scale: 0.6 });
     check('非色違登場不冒泡', p.bubble.style.display === 'none');
@@ -420,7 +428,7 @@ CONFIG.bubblePosition = 'none';
 CONFIG.bubblePosition = 'side';
 
 // =========================================================
-group('9. 體型分級（新 baseSize / sizeTiers）');
+group('9. 體型分級（baseSize × sizeTiers → sprite 高度與對話框倍率）');
 {
     const p = newPokemon(143, { scale: 1 });
     check('大體型 sprite 高度 = 128px', p.img.style.height === '128px');
@@ -431,7 +439,7 @@ group('9. 體型分級（新 baseSize / sizeTiers）');
 }
 
 // =========================================================
-group('10. 星星特效未被波及');
+group('10. 色違星星特效（10 顆、飛散半徑、不會被底邊裁掉）');
 {
     const p = newPokemon(143, { shiny: true });
     const before = p.el.children.length;
@@ -440,7 +448,6 @@ group('10. 星星特效未被波及');
     check('炸出 10 顆星星', stars.length === 10, `實際 ${stars.length}`);
     check('時長吃 shinyBurstDuration',
         stars.every(s => s.style.animationDuration === `${CONFIG.shinyBurstDuration}ms`));
-    check('config.js 預設 shinyBurstDuration = 1500', CONFIG.shinyBurstDuration === 1500);
     check('每顆都有 --dx / --dy 飛行向量',
         stars.every(s => /px$/.test(s.style._props['--dx'] || '') && /px$/.test(s.style._props['--dy'] || '')));
     // 弧線刻意從水平線下方一點開始（-0.15π ~ 1.15π），所以少數星星會略往下飛；
@@ -452,7 +459,6 @@ group('10. 星星特效未被波及');
 
     // 飛散範圍倍率：2x 的最小半徑要明顯大於 0.5x 的最大半徑
     //（大體型基礎半徑 26~42 × 1.2：2x 落在 62~101、0.5x 落在 16~26）
-    check('config.js 預設 shinyBurstScale = 1.5', CONFIG.shinyBurstScale === 1.5);
     const radius = s => Math.hypot(
         parseInt(s.style._props['--dx'], 10), parseInt(s.style._props['--dy'], 10));
     const savedBurstScale = CONFIG.shinyBurstScale;
@@ -472,7 +478,7 @@ group('10. 星星特效未被波及');
 }
 
 // =========================================================
-group('11. 保底值不再寫死舊數字');
+group('11. 保底值都跟著設定走（查不到身高 / config 缺 key）');
 {
     check('查不到身高的保底 = sizeTiers 的中間一級 0.8', T.fallbackSizeScale() === 0.8,
         `實際 ${T.fallbackSizeScale()}`);
@@ -573,8 +579,6 @@ CONFIG.bubblePosition = 'side';
 group('13. bubbleLayer：對話框在本體之上／之下');
 CONFIG.bubblePosition = 'side';
 {
-    check("config.js 預設 = 'front'", CONFIG.bubbleLayer === 'front', `實際 ${CONFIG.bubbleLayer}`);
-
     const saved = CONFIG.bubbleLayer;
     const p = newPokemon(143, { direction: 1 });
     p.showEmote('heart');
@@ -616,9 +620,6 @@ CONFIG.bubblePosition = 'side';
 group('14. bubbleSideGap：side 對話框的左右空隙');
 CONFIG.bubblePosition = 'side';
 {
-    check('config.js 預設 = -5（往身體上疊）', CONFIG.bubbleSideGap === -5,
-        `實際 ${CONFIG.bubbleSideGap}`);
-
     const saved = CONFIG.bubbleSideGap;
     // 設定值是點陣圖 px，乘上放大倍率：大體型 3x、小體型 2x
     const big = newPokemon(143, { scale: 1 });      // bubbleScale 3
@@ -689,8 +690,6 @@ CONFIG.bubblePosition = 'side';
 group('15. bubbleSideLift：side 對話框的垂直微調');
 CONFIG.bubblePosition = 'side';
 {
-    check('config.js 預設 = 2', CONFIG.bubbleSideLift === 2, `實際 ${CONFIG.bubbleSideLift}`);
-
     const saved = CONFIG.bubbleSideLift;
     const p = newPokemon(143, { direction: 1 });
     p.showEmote('heart');
@@ -788,7 +787,6 @@ group('16. URL 參數白名單的完整性（整張表一起掃）');
 // =========================================================
 group('17. theme 主題地面');
 {
-    check("config.js 預設 theme = 'random'（每次載入隨機抽一種）", DEFAULT_THEME === 'random');
     const spec = T.QUERY_PARAMS?.theme;
     check('每種地形都有主題定義（none / random 除外）',
         (spec?.values ?? []).filter(v => v !== 'none' && v !== 'random').every(v => T.GROUND_THEMES[v]));
@@ -818,7 +816,6 @@ group('17. theme 主題地面');
         T.GROUND_THEMES.random === undefined);
 
     // 鋪草地：元素進場、抬高量 = 地面高度 - 踩入深度 × 倍率
-    check("config.js 預設 themeHeight = 6", CONFIG.themeHeight === 6);
     // 預設 6px = 3 列的最小畫布；草的踩入深度（inset 3 × 2px）吃滿高度 → 抬高 0
     const thinLift = T.initGround('grass');
     const thin = appEl.children[appEl.children.length - 1];
@@ -894,13 +891,8 @@ group('18. 客串事件（飛行系/傳說高速橫越）');
     check('主 sandbox 沒有名單 → 排程器不啟動（本測試的前提）',
         !sandbox.window.POKE_FLYING && !sandbox.window.POKE_LEGENDARY);
 
-    // config 預設
-    check('flybyDelay 預設 15~20 秒', CONFIG.flybyDelay.min === 15000 && CONFIG.flybyDelay.max === 20000);
-    check('flybyChance 預設 0.25', CONFIG.flybyChance === 0.25);
-    check('flybyLegendaryChance 預設 0.05（極低）', CONFIG.flybyLegendaryChance === 0.05);
-    check('flybySpeed 預設 5', CONFIG.flybySpeed === 5);
-
-    // URL 參數白名單
+    // 白名單的下限不是預設值，是「使用者最低只能設到這裡」的地板。
+    // 文件同步檢查只比對文件與白名單一不一致，比不出這塊地板被拆掉
     check('delay 下限 1000ms（防 setTimeout 轟炸）',
         T.QUERY_PARAMS.flybyDelayMin.min >= 1000 && T.QUERY_PARAMS.flybyDelayMax.min >= 1000);
 
@@ -969,9 +961,6 @@ group('18. 客串事件（飛行系/傳說高速橫越）');
 // =========================================================
 group('19. 色違星星特效定時重播');
 {
-    check('config 預設重播間隔 15~20 秒',
-        CONFIG.shinyBurstDelay.min === 15000 && CONFIG.shinyBurstDelay.max === 20000);
-
     const p = newPokemon(25, { shiny: true });
     p.img.dispatch('load'); // 本體現身 → 放第一輪
     const stars = () => p.el.children.filter(el => el.className === 'burst-star').length;
@@ -1044,10 +1033,6 @@ group('19. 色違星星特效定時重播');
 
     // =====================================================
     group('21. postMessage 遙控');
-
-    // 參數登記 + config 預設
-    check("config.js 預設 remote = 'on'", CONFIG.remote === 'on');
-    check('config.js 預設 remoteRateLimit = 10', CONFIG.remoteRateLimit === 10);
 
     // 監聽器真的掛在 window 上（不是只寫了函式沒註冊）
     const handlers = sandbox.window.listeners.message ?? [];
@@ -1218,8 +1203,7 @@ group('19. 色違星星特效定時重播');
     const savedIdleChance = CONFIG.idleChance;
     CONFIG.idleChance = 0;
 
-    // 參數登記 + config 預設 + 果實圖
-    check("config.js 預設 berry = 'on'", CONFIG.berry === 'on');
+    // 果實點陣圖
     check('果實點陣圖每列同寬', new Set(T.BERRY_ART.map(r => r.length)).size === 1);
     check('果實點陣圖只用調色盤上的字',
         [...T.BERRY_ART.join('')].every(ch => ch === '.' || T.BERRY_PALETTE[ch]));
@@ -1338,8 +1322,6 @@ group('19. 色違星星特效定時重播');
         const savedGreet = CONFIG.greetChance;
         CONFIG.idleChance = 0;
 
-        check('config 預設 greetChance = 0.1', CONFIG.greetChance === 0.1);
-
         // 場面：兩隻面對面走近（前一組留下的果實與陣容先清乾淨）
         T.getBerries().slice().forEach(x => T.removeBerry(x));
         T.pokemons.length = 0;
@@ -1455,8 +1437,6 @@ group('19. 色違星星特效定時重播');
         CONFIG.idleChance = 0;
         CONFIG.shinyChance = 0;
 
-        check('config 預設 flybyDeliveryChance = 0.2', CONFIG.flybyDeliveryChance === 0.2);
-
         // 場面：一隻有空的皮卡丘等著接收
         T.pokemons.length = 0;
         const eater = newPokemon(25, { scale: 0.6 });
@@ -1565,12 +1545,6 @@ group('19. 色違星星特效定時重播');
         const savedRate = CONFIG.dragStruggleRate;
         CONFIG.idleChance = 0;  // 發呆是每幀擲骰，會把「拖曳中狀態不變」的斷言弄翻
         CONFIG.greetChance = 0;
-
-        // 參數登記 + config 預設
-        check("config.js 預設 drag = 'on' / 掙扎 2 倍速",
-            CONFIG.drag === 'on' && CONFIG.dragStruggleRate === 2);
-        check('沒有長按門檻參數（按下即抓，門檻是 0.30.0 的教訓）',
-            T.QUERY_PARAMS?.dragHoldTime === undefined && CONFIG.dragHoldTime === undefined);
 
         // 拖曳的事件全掛在 document 上（游標移動快過重繪時會滑出本體）
         const doc = sandbox.document.listeners;
@@ -1814,13 +1788,6 @@ group('19. 色違星星特效定時重播');
         CONFIG.idleChance = 0;   // 隨機發呆/寒暄會把狀態斷言弄翻，整組關掉
         CONFIG.greetChance = 0;
         CONFIG.shinyChance = 0;
-
-        // 參數登記 + config 預設
-        check('config.js 預設 snatchChance = 0.25 / snatchDistance = 150',
-            CONFIG.snatchChance === 0.25 && CONFIG.snatchDistance === 150);
-        check('config.js 預設四段倍率 = 俯衝 1.6 / 遠走 1.8 / 縮小 1 / 變淡 1',
-            CONFIG.snatchDiveRate === 1.6 && CONFIG.snatchFleeRate === 1.8
-            && CONFIG.snatchShrinkRate === 1 && CONFIG.snatchFadeRate === 1);
 
         // 場面：一近一遠；追果實速度釘死 1px/幀，觸發時序才可斷言
         T.getBerries().slice().forEach(b => T.removeBerry(b));
@@ -2238,10 +2205,6 @@ group('19. 色違星星特效定時重播');
         const savedWC = CONFIG.weatherChance;
         const savedWD = CONFIG.weatherDensity;
 
-        // 參數登記 + config 預設
-        check('config.js 預設 weatherChance = 0.5 / weatherDensity = 1',
-            CONFIG.weatherChance === 0.5 && CONFIG.weatherDensity === 1);
-
         // 主題 → 天氣對照：每一種地形都配了天氣
         check('對照表：雨（草地/水域/岩地/土徑）、雪、風沙、火星',
             T.THEME_WEATHER.grass === 'rain' && T.THEME_WEATHER.water === 'rain'
@@ -2369,22 +2332,13 @@ group('19. 色違星星特效定時重播');
         const savedOvercast = CONFIG.overcastShadow;
         const at = h => { CONFIG.sunTime = h; T.refreshSun(); };
 
-        // ---- 載入與參數登記 ----
+        // ---- 載入順序與 auto 這個特例 ----
         check('sun.js 在載入清單裡，且排在用到它的 pokemon.js 之前',
             jsFiles.includes('js/sun.js')
             && jsFiles.indexOf('js/sun.js') < jsFiles.indexOf('js/pokemon.js'));
         check('只有 sunTime 收 auto（日出日落沒有「跟著時鐘」這種值）',
             T.QUERY_PARAMS.sunTime.auto === true
             && !T.QUERY_PARAMS.sunrise.auto && !T.QUERY_PARAMS.sunset.auto);
-
-        // ---- config 預設 ----
-        check("config.js 預設 sunShadow = 'on'", CONFIG.sunShadow === 'on');
-        check('config.js 預設日照 06:00 ~ 18:00', CONFIG.sunrise === 6 && CONFIG.sunset === 18);
-        check('config.js 預設 sunTime = null（跟著觀看端的本機時鐘）',
-            DEFAULT_SUN_TIME === null);
-        check('config.js 預設 shadowStretch = 3', CONFIG.shadowStretch === 3);
-        check('config.js 預設 ambientShadow = 0.55', CONFIG.ambientShadow === 0.55);
-        check('config.js 預設 overcastShadow = 0.35', CONFIG.overcastShadow === 0.35);
 
         // ---- 時間字串的解析 ----
         check("parseTimeParam：'17:30' → 17.5", T.parseTimeParam('17:30') === 17.5);
@@ -2896,12 +2850,10 @@ group('19. 色違星星特效定時重播');
         const savedWave = CONFIG.reflectWave;
         const findReflection = p => p.el.children.find(c => c.className === 'reflection');
 
-        // ---- 載入與參數登記 ----
+        // ---- 載入順序與鏡射軸的前提 ----
         check('reflect.js 在載入清單裡，且排在用到它的 pokemon.js 之前',
             jsFiles.includes('js/reflect.js')
             && jsFiles.indexOf('js/reflect.js') < jsFiles.indexOf('js/pokemon.js'));
-        check("config.js 預設 reflect = 'on' / 濃度 0.35 / 水紋 1 倍速",
-            CONFIG.reflect === 'on' && CONFIG.reflectOpacity === 0.35 && CONFIG.reflectWave === 1);
         check('腳底離容器底邊的 1px 與 CSS 對得上（鏡射軸算得準的前提）',
             T.SPRITE_FOOT_GAP === 1 && /\.sprite\s*\{[^}]*margin-bottom:\s*1px/.test(html));
 
@@ -3001,7 +2953,7 @@ group('19. 色違星星特效定時重播');
         const bridgeBox = { console, URLSearchParams, Math, Number, JSON, Date, String, Array, Object };
         vm.createContext(bridgeBox);
         vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/bridge.js'), 'utf8'),
-            bridgeBox, { filename: 'js/bridge.js' });
+            bridgeBox, { filename: srcUrl('js/bridge.js') });
         vm.runInContext('globalThis.__B = { parseBridgeConfig, parseBridgeLine, bridgeCommand,'
             + ' bridgeMessageToCommand, makeBridgeGate, BRIDGE_CMDS };', bridgeBox);
         const B = bridgeBox.__B;
@@ -3101,24 +3053,9 @@ group('19. 色違星星特效定時重播');
             /for \(const p of PARAMS\.filter\(x => x\.group === g\)\)/.test(page));
         check('預覽區的網址一改，調校台就跟著同步（單一真相）',
             /function applyPreview[\s\S]{0,200}syncTuner\(\)/.test(page));
-
-        // 拉桿是從 range 欄位「a ~ b」推出來的，所以數值型參數的這一欄
-        // 必須長得標準——寫成別的格式會靜靜地退化成一個文字框
-        const rows = [...page.matchAll(
-            /name:\s*'(\w+)',\s*type:\s*'(\w+)',\s*range:\s*'([^']*)'/g)];
-        check(`參數表解析出 ${rows.length} 列（type + range 都在）`, rows.length >= 60);
-        const badNumeric = rows
-            .filter(([, , type]) => type === 'int' || type === 'float')
-            .filter(([, , , range]) => !/^\s*-?[\d.]+\s*~\s*-?[\d.]+/.test(range))
-            .map(m => m[1]);
-        check('每個數值型參數都有「a ~ b」的範圍（拉桿才生得出來）',
-            badNumeric.length === 0, badNumeric.join(', '));
-        const badEnum = rows
-            .filter(([, , type]) => type === 'enum')
-            .filter(([, , , range]) => !/^[\w.-]+( \/ [\w.-]+)*$/.test(range))
-            .map(m => m[1]);
-        check('每個 enum 參數的允許值都用 / 分隔（下拉才生得出來）',
-            badEnum.length === 0, badEnum.join(', '));
+        // 拉桿與下拉是從 range 欄位（「a ~ b」與「a / b / c」）推出來的。
+        // 那一欄的格式由 test/params-doc.test.js 逐列比對白名單的 min/max
+        // 與 values，格式寫壞在那裡就會紅燈，這裡不再抄一份規則
     }
 
     // =====================================================
@@ -3192,9 +3129,6 @@ group('19. 色違星星特效定時重播');
         const savedMode = CONFIG.nametag;
         const savedSize = CONFIG.nametagSize;
         const tagOf = p => p.el.children.find(c => String(c.className).startsWith('nametag'));
-
-        check("config.js 預設 nametag = 'hover'", savedMode === 'hover', String(savedMode));
-        check('config.js 預設 nametagSize = 11', savedSize === 11, String(savedSize));
 
         // 查表與退路
         check('pokeName 查得到名字', T.pokeName(25) === '皮卡丘', T.pokeName(25));
@@ -3350,8 +3284,6 @@ group('19. 色違星星特效定時重播');
         const savedSleep = CONFIG.nightSleep;
         const savedRandom = Math.random;
         const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol;
-
-        check('config.js 預設 nightSleep = 1', savedSleep === 1, String(savedSleep));
 
         // 前面幾組為了逼出對話框，把 bubbleChance 之類的旋鈕改過了。
         // 這一組要拿「同一顆骰子」比白天與夜裡，所以先釘死一組已知值——
@@ -3525,6 +3457,177 @@ group('19. 色違星星特效定時重播');
         CONFIG.nightSleep = savedSleep;
         Object.assign(CONFIG, pinned);
         T.pokemons.length = 0;
+    }
+
+    // =====================================================
+    // 網址是使用者打的，什麼都可能出現：拼錯的 enum、負數、
+    // 「sunrise 比 sunset 晚」這種逐個看都合法、組合起來卻矛盾的。
+    // PARAMS.md 對外承諾「不合法就忽略、退回預設」，這一組就是那份承諾。
+    // 這些防守分支跑不到的話，壞網址會靜靜地把 NaN 寫進設定裡
+    group('42. 壞網址的防守（忽略不合法、修正互相矛盾）');
+    {
+        const savedSearch = sandbox.location.search;
+        // 防守路徑都會 console.warn 提醒嵌入方，這裡收進陣列：
+        // 一來測試輸出不被警告塞滿，二來「有沒有講」本身就是要驗的事
+        const warns = [];
+        const realWarn = console.warn;
+        const run = search => {
+            sandbox.location.search = search;
+            warns.length = 0;
+            console.warn = msg => warns.push(String(msg));
+            const cfg = JSON.parse(JSON.stringify(CONFIG));
+            try { T.applyQueryOverrides(cfg); } finally { console.warn = realWarn; }
+            return cfg;
+        };
+        const warned = word => warns.some(w => w.includes(word));
+
+        // ---- 逐個參數：型別對不上就整個忽略，不是硬轉 ----
+        const badEnum = run('?theme=草地&bubblePosition=side');
+        check('enum 拼錯 → 忽略並警告，其他參數照收',
+            badEnum.theme === CONFIG.theme && badEnum.bubblePosition === 'side' && warned('theme=草地'),
+            `theme=${badEnum.theme} warns=${warns.length}`);
+        check('enum 大小寫不敏感', run('?theme=GRASS').theme === 'grass');
+
+        const badNum = run('?count=abc');
+        check('數值寫成文字 → 忽略（不會把 NaN 寫進設定）',
+            badNum.count === CONFIG.count && warned('count=abc'), String(badNum.count));
+        check('數值超出上限 → 忽略',
+            (c => c.count === CONFIG.count && warned('count=999'))(run('?count=999')));
+        check('數值低於下限 → 忽略',
+            (c => c.baseSize === CONFIG.baseSize && warned('baseSize=1'))(run('?baseSize=1')));
+        check('合法值照收（防守沒有把好參數一起擋掉）',
+            (c => c.count === 6 && warns.length === 0)(run('?count=6')), warns.join(' | '));
+
+        const badTime = run('?sunTime=25:00');
+        check('時間超出 0 ~ 24 → 忽略', badTime.sunTime === CONFIG.sunTime && warned('sunTime=25:00'));
+        check("時間看不懂（'黃昏'）→ 忽略",
+            (c => c.sunrise === CONFIG.sunrise && warned('sunrise=黃昏'))(run('?sunrise=黃昏')));
+        check("sunTime=auto → 收成 null（跟著本機時鐘，等同沒帶）",
+            run('?sunTime=AUTO').sunTime === null);
+
+        // ---- 清單型的兩個特例 ----
+        const badIds = run('?ids=9999,abc,0');
+        check('ids 全都不合法 → 當作沒帶並警告',
+            badIds.fixedIds === undefined && badIds.count === CONFIG.count && warned('ids 參數'),
+            `fixedIds=${JSON.stringify(badIds.fixedIds)}`);
+        check('ids 夾在 1~1025、上限 50 隻',
+            run(`?ids=${Array(60).fill(25).join(',')}`).fixedIds.length === 50);
+        // team 的解析在第 32 組已經逐條驗過（大小寫、去重、剔除打錯的），
+        // 這裡只補「有沒有跟嵌入方講」——那句警告是它唯一沒被蓋到的分支
+        check('team 打錯的屬性名會警告（不是默默吞掉）',
+            (c => JSON.stringify(c.team) === '["fire"]'
+                && warned('team 忽略不認識的屬性'))(run('?team=fire,水屬性')));
+
+        // ---- 組合起來才矛盾的：逐個都合法，得在載入時修 ----
+        const flipped = run('?minId=800&maxId=100');
+        check('編號範圍顛倒 → 自動對調', flipped.minId === 100 && flipped.maxId === 800);
+        check('發呆時長顛倒 → 自動對調', (c => c.lookTime.min < c.lookTime.max)(
+            run('?lookTimeMin=5000&lookTimeMax=1000')));
+        const noDay = run('?sunrise=18&sunset=6');
+        check('日出晚於日落（白天不存在）→ 退回 6 ~ 18 並警告',
+            noDay.sunrise === 6 && noDay.sunset === 18 && warned('sunrise 必須早於 sunset'));
+        const badBounds = run('?boundsMin=0.9&boundsMax=0.2');
+        check('活動範圍顛倒 → 退回 0.1 ~ 0.9 並警告',
+            badBounds.bounds.min === 0.1 && badBounds.bounds.max === 0.9
+            && warned('boundsMin 必須小於 boundsMax'));
+        const narrow = run('?boundsMin=0.5&boundsMax=0.52');
+        check('活動範圍太窄（塞不下最大體型）→ 退回預設並警告',
+            narrow.bounds.min === 0.1 && narrow.bounds.max === 0.9 && warned('活動範圍太窄'));
+        check('count 夾到可抽的編號數量（3 個編號抽不出 8 隻）',
+            run('?count=8&minId=1&maxId=3').count === 3);
+
+        sandbox.location.search = savedSearch;
+        console.warn = realWarn;
+    }
+
+    // =====================================================
+    // 上面每一組都是直接呼叫子系統（updateBerries、updateSnatch……），
+    // 繞過了 main.js 的 gameLoop —— 於是「新寫的子系統忘了掛進主迴圈」
+    // 這種錯誤沒有人守：函式自己測得好好的，畫面上就是不動。
+    // 這一組只驗接線：推一幀進去，看每個子系統有沒有被推到
+    group('43. 主迴圈的接線（gameLoop 有把每個子系統推一把）');
+    {
+        const savedSun = CONFIG.sunTime;
+        const savedIdle = CONFIG.idleChance;
+        const frame = ms => T.gameLoop(T.frameNow += ms);
+        T.frameNow = 1e6; // 從一個大的時間戳起跳，跟前面幾組的假時鐘無關
+        CONFIG.sunTime = 12;   // 白天：moveScale() = 1，位移才算得準
+        CONFIG.idleChance = 0; // 半路發呆會把位移的斷言弄翻
+
+        // ---- 寶可夢：走路與發呆的狀態機每幀都要被推 ----
+        T.pokemons.length = 0;
+        T.getBerries().slice().forEach(b => T.removeBerry(b));
+        const walker = newPokemon(25, { direction: 1 });
+        walker.state = 'WALKING';
+        walker.x = 400; // 離兩邊界都很遠，位移不會被邊界夾掉
+        T.pokemons.push(walker);
+        // 走一幀該前進多少：speed 是「每 1/60 秒」的量（見 walk 的時間校正）
+        const step = ms => walker.speed * (ms / (1000 / 60));
+        frame(16); // 熱身：lastTime 還是 0，這一幀的 deltaTime 會直接吃到上限
+        const x1 = walker.x;
+        frame(16);
+        check('寶可夢被推進了（pokemons.forEach 有掛上）',
+            Math.abs(walker.x - (x1 + step(16))) < 1e-9,
+            `走了 ${(walker.x - x1).toFixed(3)}px，預期 ${step(16).toFixed(3)}px`);
+
+        // ---- deltaTime 上限 100ms：切走三分鐘再切回來不該瞬移 ----
+        const xBefore = walker.x;
+        frame(180000); // 三分鐘
+        const jump = walker.x - xBefore;
+        check('切回分頁不瞬移（deltaTime 夾在 100ms 內）',
+            Math.abs(jump - step(100)) < 1e-9,
+            `一幀跳了 ${jump.toFixed(1)}px，夾住的話該是 ${step(100).toFixed(1)}px`);
+
+        // ---- 果實：丟下來的要繼續掉 ----
+        check('（前置）丟一顆果實在半空', T.throwBerry(walker.centerX(), 120) === true);
+        const berry = T.getBerries()[0];
+        const bottom0 = berry.bottom;
+        frame(16);
+        check('果實被推進了（updateBerries 有掛上）', berry.bottom < bottom0,
+            `${bottom0} → ${berry.bottom}`);
+        T.getBerries().slice().forEach(b => T.removeBerry(b));
+
+        // ---- 客串：飛完行程的要被移除、元素要拆掉 ----
+        const cameo = new T.Cameo(6, 1);
+        cameo.x = cameo.direction === 1 ? sandbox.window.innerWidth + cameo.margin + 1
+            : -cameo.margin - 1;
+        T.cameos.push(cameo);
+        frame(16);
+        check('飛完的客串被收掉、元素也拆了（cameos 掃描有掛上）',
+            !T.cameos.includes(cameo) && cameo.el.removed === true);
+
+        // ---- 太陽：節流 2 秒，跑滿一輪就該重算全場影子 ----
+        CONFIG.sunTime = 12;
+        T.refreshSun();
+        check('（前置）正午沒有投射影（只剩腳下那圈）', T.sun.stretch === 1,
+            JSON.stringify(T.sun));
+        CONFIG.sunTime = 8; // 早上八點：影子拉長並倒向一側
+        for (let i = 0; i < 25; i++) frame(100); // 25 × 100ms > SUN_TICK_MS
+        check('太陽被推進了（updateSun 有掛上）',
+            T.sun.stretch > 1 && T.sun.dir !== 0,
+            `dir=${T.sun.dir} stretch=${T.sun.stretch}`);
+
+        // ---- 夜色：同樣是節流的，入夜要現身、天亮要收起來 ----
+        // 夜色層在第 33 組就建好了（updateNight 只在第一次真的入夜才建 DOM），
+        // 這裡用 ?. 取值：萬一上游沒建成，要看到紅燈而不是整份測試炸掉
+        const savedNight = CONFIG.night;
+        CONFIG.night = 'on';
+        CONFIG.sunTime = 23;
+        for (let i = 0; i < 25; i++) frame(100);
+        const nightEl = T.getNightEl();
+        check('入夜後夜色現身（updateNight 有掛上）',
+            nightEl?.hidden === false && Number(nightEl?.style.opacity) > 0,
+            `nightEl=${!!nightEl} hidden=${nightEl?.hidden} opacity=${nightEl?.style.opacity}`);
+        CONFIG.sunTime = 12;
+        for (let i = 0; i < 25; i++) frame(100);
+        check('天亮後夜色收起來', nightEl?.hidden === true);
+        CONFIG.night = savedNight;
+
+        CONFIG.sunTime = savedSun;
+        CONFIG.idleChance = savedIdle;
+        T.refreshSun();
+        T.pokemons.length = 0;
+        T.cameos.length = 0;
     }
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
