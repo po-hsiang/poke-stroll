@@ -949,6 +949,10 @@
           desc: '天氣：每次載入擲一次骰，中了整頁就下著這場天氣——種類由主題地面決定：雨（草地/水域/岩地/土徑，斜斜細細長長的藍色雨絲）、雪（雪地，白色小點慢慢飄、左右搖曳）、風沙（沙灘，橫向沙痕順風橫掃）、火星（熔岩，橘黃小火星從低處上飄漸滅）。風向（雨的斜向、沙的走向）每次隨機一邊；粒子全用 CSS 動畫循環，不吃主迴圈效能。theme=none 沒有場景就沒有天氣；0 = 永遠晴天' },
         { name: 'weatherDensity', type: 'float', range: '0.2 ~ 5',       def: '1',      group: '動畫與外觀', sample: 'theme=snow&weatherChance=1&weatherDensity=2',
           desc: '天氣的粒子密度倍率：雨絲/雪花/沙痕/火星的數量 = 基準（依視窗寬換算）× 這個值。2 = 傾盆大雨、0.5 = 毛毛雨' },
+        { name: 'season',         type: 'enum',  range: 'auto / off / spring / summer / autumn / winter', def: 'auto', group: '動畫與外觀', sample: 'season=spring&weatherChance=0',
+          desc: '季節落下物：一年四段各飄一種東西——春櫻花瓣、夏綠葉、秋楓葉、冬雪的結晶。夏與秋刻意共用同一張葉子，大小形狀一模一樣、只有配色換掉，所以夏轉秋那天畫面上是「同一片葉子變色了」；秋天也會落得比夏天密一些。auto = 跟著觀看端的本機時鐘算月份（3-5 春 / 6-8 夏 / 9-11 秋 / 12-2 冬，也就是北半球；南半球把 ?season=autumn 之類釘死就好）。三種情況不演：這次載入有天氣（讓天氣演，兩層粒子疊起來是視覺泥巴；天氣是擲骰的，所以大約一半的載入才看得到季節，想每次都看到就帶 weatherChance=0）、熔岩地（葉子飄進岩漿很怪）、off。刻意「沒有」把 theme=none 排除——落下物是穿過空氣往下掉的，不需要地板，透明背景上飄花瓣疊在 OBS 的遊戲畫面上剛好。掛著好幾個月也會自己換季（每分鐘問一次時鐘，真的換季才重建）' },
+        { name: 'seasonDensity',  type: 'float', range: '0.2 ~ 5',       def: '1',      group: '動畫與外觀', sample: 'season=autumn&weatherChance=0&seasonDensity=2',
+          desc: '季節的粒子密度倍率：落下物的張數 = 基準（依視窗寬換算）× 這個值。不共用 weatherDensity——關掉雨量的人不該連花瓣一起關掉' },
         { name: 'reflect',        type: 'enum',  range: 'on / off',      def: 'on',     group: '動畫與外觀', sample: 'theme=water&themeHeight=40',
           desc: '水面倒影（只在 theme=water 出現）：水面下多一個上下顛倒的自己，面向與跳躍高度都跟著本體走——牠往上跳，水裡的就往下沉。鏡面取「水面」而不是腳底（腳其實泡在水面下），水面那條線兩側才接得起來。能畫的高度就是地面那條帶，所以預設的 6px 地面只留一抹濕痕，把地面拉高才看得出是倒影：?theme=water&themeHeight=40。off = 不畫（連元素都不會產生）' },
         { name: 'reflectOpacity', type: 'float', range: '0 ~ 1',         def: '0.35',   group: '動畫與外觀', sample: 'theme=water&themeHeight=40&reflectOpacity=0.6',
@@ -1026,6 +1030,11 @@
         { label: '雨中散步', query: 'theme=water&weatherChance=1' },
         { label: '大雪紛飛', query: 'theme=snow&weatherChance=1&weatherDensity=2' },
         { label: '永遠晴天（不要天氣）', query: 'weatherChance=0' },
+        { label: '櫻花紛飛（不管現在幾月）', query: 'season=spring&weatherChance=0' },
+        { label: '楓葉落滿地', query: 'season=autumn&weatherChance=0&seasonDensity=2' },
+        { label: '夏綠葉（跟秋楓同一片葉子，只換色）', query: 'season=summer&weatherChance=0' },
+        { label: '透明背景飄花瓣（疊在遊戲畫面上）', query: 'theme=none&season=spring&weatherChance=0' },
+        { label: '不要落下物', query: 'season=off' },
         { label: '海邊戲水（可達鴨一家＋乘龍）', query: 'theme=water&ids=54,55,116,131' },
         { label: '看得出來的水面倒影（水要夠深）', query: 'theme=water&themeHeight=40' },
         { label: '一池死水（倒影不搖）', query: 'theme=water&themeHeight=40&reflectWave=0' },
@@ -1517,7 +1526,10 @@
                 field.className = 'ctl';
                 const blank = document.createElement('option');
                 blank.value = '';
-                blank.textContent = def ? `（預設 ${def}）` : '（不指定）';
+                // def 為空有兩種：文件寫 auto（有預設，就是「跟著時鐘」——
+                // 空著等於選 auto，講出來比「不指定」清楚）與文件寫 —（真的沒有預設）
+                blank.textContent = def ? `（預設 ${def}）`
+                    : (p.def === 'auto' ? '（預設 auto）' : '（不指定）');
                 field.appendChild(blank);
                 for (const v of spec.values) {
                     const o = document.createElement('option');

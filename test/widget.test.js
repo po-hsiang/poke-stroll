@@ -187,6 +187,11 @@ CONFIG.theme = 'none';
 // 就是原本那圈腳下影子），第 31 組要驗日照時再自己改 sunTime
 CONFIG.sunTime = 12;
 
+// 季節同理，預設是「跟著本機時鐘的月份」——八月跑測試會飄綠葉、十二月飄雪，
+// 落下物的張數與圖案都會隨著跑測試的月份變。整份測試釘死成 'off'，
+// 第 44 組要驗季節時再自己開
+CONFIG.season = 'off';
+
 // 照 HTML 的載入順序逐檔執行主程式——跟瀏覽器一樣一個檔案一個 script，
 // 跨檔的載入順序問題（load 時就呼叫後面檔案的東西）在這裡會直接炸
 for (const f of jsFiles) {
@@ -195,7 +200,7 @@ for (const f of jsFiles) {
 // 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
 // global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
 vm.runInContext(
-    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance, gameLoop };',
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance, gameLoop, seasonForMonth, seasonNow, initSeason, buildSeason, updateSeason, getSeasonURI, SEASONS, SEASON_TICK_MS, getSeasonEl: () => seasonEl };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -2287,7 +2292,8 @@ group('19. 色違星星特效定時重播');
 
         // 減速模式（prefers-reduced-motion）整組收起：動不了的雨雪只是一牆斑點
         check('reduced-motion 時 #weather 整組隱藏（CSS 保障）',
-            /@media \(prefers-reduced-motion: reduce\)[\s\S]{0,200}?#weather\s*\{\s*display:\s*none/.test(html));
+            // 選擇器現在是「#weather, #season」（落下物一起收），所以只認前半段
+            /@media \(prefers-reduced-motion: reduce\)[\s\S]{0,200}?#weather[^{]*\{\s*display:\s*none/.test(html));
 
         // random 主題與天氣吃同一個抽選結果：init() 先 resolveTheme 再分頭餵
         check('resolveTheme：具體主題原樣通過', T.resolveTheme('water') === 'water'
@@ -3623,11 +3629,156 @@ group('19. 色違星星特效定時重播');
         check('天亮後夜色收起來', nightEl?.hidden === true);
         CONFIG.night = savedNight;
 
+        // ---- 換季：節流成一分鐘一次，同樣得掛在主迴圈上 ----
+        // 整份測試把 season 釘死成 'off'（見開頭），這裡臨時打開一季，
+        // 讓主迴圈自己跑到下一個節流時點——落下物出現就代表接線在
+        CONFIG.season = 'spring';
+        for (let i = 0; i <= Math.ceil(T.SEASON_TICK_MS / 100); i++) frame(100);
+        check('換季被推進了（updateSeason 有掛上）',
+            T.getSeasonEl()?.id === 'season', String(T.getSeasonEl()));
+        CONFIG.season = 'off';
+        T.buildSeason(); // 收掉，別讓它留到下一組
+
         CONFIG.sunTime = savedSun;
         CONFIG.idleChance = savedIdle;
         T.refreshSun();
         T.pokemons.length = 0;
         T.cameos.length = 0;
+    }
+
+    // =====================================================
+    group('44. 季節落下物（春櫻 / 夏綠葉 / 秋楓 / 冬雪）');
+    {
+        const savedSeason = CONFIG.season;
+        const savedDensity = CONFIG.seasonDensity;
+        const layer = () => T.getSeasonEl();
+        // 場景（地形 + 這次下了什麼天氣）與季節一起給，回傳那一層
+        const build = (themeName, weatherKind, season) => {
+            CONFIG.season = season;
+            T.initSeason(themeName, weatherKind);
+            return layer();
+        };
+        // 像素圖：canvas stub 把畫出來的格子存進 pixelGrids，所以圖案是
+        // 直接比對「畫出來的像素」，不是靠眼睛看（同心情圖示那一套）
+        const gridOf = name => pixelGrids.get(T.getSeasonURI(name)).map(r => r.split('|'));
+        const maskOf = name => gridOf(name).map(r => r.map(c => (c === '.' ? '.' : '#')).join(''));
+
+        // ---- 月份 → 季節：純函式，不看跑測試那天的臉色 ----
+        check('3-5 月是春天', [3, 4, 5].every(m => T.seasonForMonth(m) === 'spring'));
+        check('6-8 月是夏天', [6, 7, 8].every(m => T.seasonForMonth(m) === 'summer'));
+        check('9-11 月是秋天', [9, 10, 11].every(m => T.seasonForMonth(m) === 'autumn'));
+        check('12 / 1 / 2 月是冬天', [12, 1, 2].every(m => T.seasonForMonth(m) === 'winter'));
+        const tally = {};
+        for (let m = 1; m <= 12; m++) tally[T.seasonForMonth(m)] = (tally[T.seasonForMonth(m)] ?? 0) + 1;
+        check('十二個月剛好分成四季、每季三個月（沒有月份掉在外面）',
+            Object.keys(tally).length === 4 && Object.values(tally).every(v => v === 3),
+            JSON.stringify(tally));
+
+        // ---- 三條「不演」的規則 ----
+        check("season=off → 整層不建", build('grass', null, 'off') === null);
+        check('這次有天氣就讓天氣演（雨天不飄花瓣）',
+            build('grass', 'rain', 'spring') === null);
+        check('熔岩地不演（葉子飄進岩漿很怪，而且火星已經在上升）',
+            build('lava', null, 'autumn') === null);
+        check('沒鋪地面照演 ← 刻意與天氣不同（透明背景飄花瓣才是 OBS 的用法）',
+            build('none', null, 'spring') !== null);
+        check('打錯的季節名當作不演（不會炸）', build('grass', null, 'Spring') === null);
+        // auto 是唯一會去問時鐘的路徑。跑測試的月份不能決定成敗，所以這裡
+        // 只驗「一定挑得出四季之一」——不會因為讀時鐘而變成不演或 undefined
+        check('season=auto 一定挑得出四季之一（真的去問了月份）',
+            ['spring', 'summer', 'autumn', 'winter']
+                .includes((build('grass', null, 'auto'), T.seasonNow())),
+            String(T.seasonNow()));
+
+        // ---- 演的時候長什麼樣 ----
+        CONFIG.seasonDensity = 1;
+        const spring = build('grass', null, 'spring');
+        check('容器是 #season', spring.id === 'season');
+        check('張數 = 視窗寬 ÷ 基準 × 密度',
+            spring.children.length === Math.round(1920 / T.SEASONS.spring.base),
+            `${spring.children.length} 片`);
+        const one = spring.children[0];
+        check('三層各司其職：落下 → 搖曳 → 自轉',
+            one.className === 'season-fall'
+            && one.children[0].className === 'season-sway'
+            && one.children[0].children[0].className === 'season-art',
+            `${one.className} > ${one.children[0]?.className} > ${one.children[0]?.children[0]?.className}`);
+        check('每片都有自己的落程、相位、風向、搖幅、自轉週期',
+            spring.children.every(f => /s$/.test(f.style._props['--dur'] ?? '')
+                && (f.style._props['--delay'] ?? '').startsWith('-')
+                && /vh$/.test(f.style._props['--drift'] ?? '')
+                && /px$/.test(f.children[0].style._props['--amp'] ?? '')
+                && /s$/.test(f.children[0].style._props['--sway'] ?? '')
+                && /s$/.test(f.children[0].children[0].style._props['--spin'] ?? '')));
+        check('相位是負的 delay（開頁那一刻就是飄到一半，不會齊步走）',
+            new Set(spring.children.map(f => f.style._props['--delay'])).size > 1);
+        check('全場同一個風向（不是各飄各的）',
+            new Set(spring.children.map(f => f.style._props['--drift'].startsWith('-'))).size === 1);
+        check('圖案用的是那一季的像素圖',
+            one.children[0].children[0].style.backgroundImage === `url(${T.getSeasonURI('spring')})`);
+        check('顯示尺寸 = 點陣尺寸 × 該季的放大倍率',
+            one.children[0].children[0].style.width
+                === `${T.SEASONS.spring.art[0].length * T.SEASONS.spring.scale}px`,
+            one.children[0].children[0].style.width);
+        // 密度是建那一層的時候算的，所以要先收掉再重建（同一季不會重撒）
+        CONFIG.seasonDensity = 3;
+        build('grass', null, 'off');
+        check('密度倍率會放大張數',
+            build('grass', null, 'spring').children.length
+                === Math.round(1920 / T.SEASONS.spring.base * 3));
+        CONFIG.seasonDensity = 1;
+
+        // ---- 夏綠葉與秋楓是「同一片葉子換色」（這一季的重點）----
+        check('夏與秋的葉子形狀、大小完全一樣',
+            JSON.stringify(maskOf('summer')) === JSON.stringify(maskOf('autumn')),
+            maskOf('summer').join(' / '));
+        check('夏與秋共用同一張 art、同一個放大倍率（改一張兩季一起變）',
+            T.SEASONS.summer.art === T.SEASONS.autumn.art
+            && T.SEASONS.summer.scale === T.SEASONS.autumn.scale);
+        check('只有配色不同：夏綠、秋橘',
+            JSON.stringify(gridOf('summer')) !== JSON.stringify(gridOf('autumn'))
+            && gridOf('summer').flat().includes('#5cb94a')
+            && gridOf('autumn').flat().includes('#e8702a'));
+        check('櫻花瓣與葉子是不同形狀（春天不是換色而已）',
+            JSON.stringify(maskOf('spring')) !== JSON.stringify(maskOf('autumn')));
+        check('四季都至少兩個色階（本體 + 深色描邊，淺色畫面上才不會消失）',
+            ['spring', 'summer', 'autumn', 'winter'].every(s =>
+                new Set(gridOf(s).flat().filter(c => c !== '.')).size >= 2));
+
+        // ---- 換季 ----
+        build('grass', null, 'spring');
+        const before = layer();
+        T.updateSeason(T.SEASON_TICK_MS);
+        check('同一季不重建（不會每分鐘重新撒一次）', layer() === before);
+        CONFIG.season = 'autumn';
+        T.updateSeason(T.SEASON_TICK_MS - 1);
+        check('沒到節流間隔就先不動', layer() === before);
+        T.updateSeason(2);
+        check('過了節流間隔才換季、圖案跟著換',
+            layer() !== before
+            && layer().children[0].children[0].children[0].style.backgroundImage
+                === `url(${T.getSeasonURI('autumn')})`);
+        check('舊的那一層有拆掉（不會兩季疊著）', before.removed === true);
+        CONFIG.season = 'off';
+        T.updateSeason(T.SEASON_TICK_MS);
+        check('換到 off 就收掉整層', layer() === null);
+
+        // ---- 載入與 CSS 契約 ----
+        check('season.js 在載入清單裡，且排在用到它的 main.js 之前',
+            jsFiles.includes('js/season.js')
+            && jsFiles.indexOf('js/season.js') < jsFiles.indexOf('js/main.js'));
+        check('#season 與天氣、夜色同層（地面之上、散步成員之下）',
+            /#season\s*\{[^}]*z-index:\s*1;/.test(html));
+        check('三段動畫都定義了（落下 / 搖曳 / 自轉）',
+            /@keyframes season-fall/.test(html)
+            && /@keyframes season-sway/.test(html)
+            && /@keyframes season-spin/.test(html));
+        check('reduced-motion 時整層收起來（跟天氣一起）',
+            html.includes('#weather, #season { display: none; }'));
+
+        CONFIG.season = savedSeason;
+        CONFIG.seasonDensity = savedDensity;
+        T.initSeason('none', null); // 場景與那一層都收回原狀
     }
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);

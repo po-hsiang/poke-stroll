@@ -63,7 +63,7 @@ jobs:
         run: node test/params-doc.test.js
       # 覆蓋率門檻設在實測值下方約 1.5 個百分點：測試裡有隨機成分
       # （抽陣容、擲天氣的骰），分支覆蓋率每輪會小幅浮動，貼太緊會變成偶發紅燈。
-      # 現況約 行 96.7 / 分支 86.3 / 函式 96.2
+      # 現況約 行 97.0 / 分支 86.7 / 函式 96.4
       - name: 覆蓋率門檻（行 95 / 分支 84 / 函式 95）
         run: |
           node --test --experimental-test-coverage \
@@ -86,7 +86,7 @@ jobs:
         run: |
           docker run -d --rm --name smoke -p 8080:80 poke-stroll-ci
           sleep 2
-          for f in "" pokemon_footer_widget.html config.js pokemon_heights.js pokemon_types.js pokemon_names.js pokemon_cameo.js params.html home.html bridge.html js/bridge.js js/night.js js/roster.js js/nametag.js js/circadian.js; do
+          for f in "" pokemon_footer_widget.html config.js pokemon_heights.js pokemon_types.js pokemon_names.js pokemon_cameo.js params.html home.html bridge.html js/bridge.js js/night.js js/roster.js js/nametag.js js/circadian.js js/season.js; do
             code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/$f")
             if [ "$code" != "200" ]; then echo "FAIL: /$f -> $code"; exit 1; fi
           done

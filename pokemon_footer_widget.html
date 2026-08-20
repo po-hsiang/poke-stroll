@@ -161,8 +161,8 @@
         }
         @media (prefers-reduced-motion: reduce) {
             .ground-flow { animation: none; }
-            /* 動不了的雨雪就只是一牆斑點，整組收起來 */
-            #weather { display: none; }
+            /* 動不了的雨雪就只是一牆斑點，整組收起來（落下物同理） */
+            #weather, #season { display: none; }
         }
 
         /* 水面倒影（theme=water）：水面下多一個上下顛倒的自己。分三層各司其職——
@@ -274,6 +274,47 @@
             0%   { transform: translate(0, 0); opacity: 0; }
             15%  { opacity: 1; }
             100% { transform: translate(var(--sway), var(--rise)); opacity: 0; }
+        }
+
+        /* 季節落下物（season）：春櫻、夏綠葉、秋楓、冬雪。三層各司其職——
+           .season-fall 等速落下並順風橫移、.season-sway 左右搖曳、
+           .season-art 自轉（同時是那張像素圖）。三個動畫掛在同一個元素會
+           互相蓋掉 transform，所以一層一件事。圖案與各段時長由 js/season.js
+           逐片算好寫進 style；一樣是生成一次就交給 CSS，主迴圈零負擔 */
+        #season {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 1; /* 與天氣、夜色同層：地面之上、散步成員之下 */
+        }
+        #season > * {
+            position: absolute;
+            top: -12vh; /* 從畫面上緣外出發，落程 130vh 剛好整片穿出下緣 */
+            will-change: transform;
+        }
+        .season-fall {
+            animation: season-fall var(--dur) linear var(--delay) infinite;
+        }
+        @keyframes season-fall {
+            to { transform: translate(var(--drift), 130vh); }
+        }
+        .season-sway {
+            animation: season-sway var(--sway) ease-in-out infinite alternate;
+        }
+        @keyframes season-sway {
+            from { transform: translateX(calc(var(--amp) * -1)); }
+            to   { transform: translateX(var(--amp)); }
+        }
+        .season-art {
+            background-size: 100% 100%;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            animation: season-spin var(--spin) linear infinite;
+        }
+        @keyframes season-spin {
+            to { transform: rotate(360deg); }
         }
 
         /* 夜晚演出（night）：入夜後才出現的星空、螢火蟲、地面光暈。
@@ -401,6 +442,7 @@
     <script src="./js/sprites.js"></script>
     <script src="./js/ground.js"></script>
     <script src="./js/weather.js"></script>
+    <script src="./js/season.js"></script>
     <script src="./js/sun.js"></script>
     <script src="./js/night.js"></script>
     <script src="./js/circadian.js"></script>

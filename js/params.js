@@ -53,6 +53,8 @@ const QUERY_PARAMS = {
     themeHeight:      { path: ['themeHeight'],      type: 'int',   min: 4,  max: 200 },
     weatherChance:    { path: ['weatherChance'],    type: 'float', min: 0,  max: 1 },
     weatherDensity:   { path: ['weatherDensity'],   type: 'float', min: 0.2, max: 5 },
+    season:           { path: ['season'],           type: 'enum',  values: ['auto', 'off', 'spring', 'summer', 'autumn', 'winter'] },
+    seasonDensity:    { path: ['seasonDensity'],    type: 'float', min: 0.2, max: 5 },
     flybyDelayMin:    { path: ['flybyDelay', 'min'], type: 'int',  min: 1000, max: 600000 },
     flybyDelayMax:    { path: ['flybyDelay', 'max'], type: 'int',  min: 1000, max: 600000 },
     flybyChance:      { path: ['flybyChance'],      type: 'float', min: 0,  max: 1 },

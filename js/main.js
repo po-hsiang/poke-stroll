@@ -14,7 +14,10 @@ async function init() {
     groundLevel = groundLift; // 丟下來的果實也落在同一個地面上
     // 場景決定天氣種類，weatherChance 決定下不下；
     // 下起雨雪風沙就把直射光打散（投射影變短變軟，見 sun.js）
-    setSunOvercast(initWeather(themeName));
+    const weatherKind = initWeather(themeName);
+    setSunOvercast(weatherKind);
+    // 季節落下物要知道「這次下了什麼」：有天氣就讓天氣演（見 js/season.js）
+    initSeason(themeName, weatherKind);
 
     // URL 有帶 ?ids= 就用固定清單，否則照 count/minId/maxId 抽
     // （抽選還會吃 team 與夜行偏好，規則全在 js/roster.js）
@@ -42,8 +45,9 @@ function gameLoop(timestamp) {
     const deltaTime = Math.min(timestamp - lastTime, 100);
     lastTime = timestamp;
 
-    updateSun(deltaTime);   // 太陽先走（節流）：影子的方向與長短是全場共用的
-    updateNight(deltaTime); // 夜色跟著時間濃淡（節流）：入夜才建元素，白天整層收起來
+    updateSun(deltaTime);    // 太陽先走（節流）：影子的方向與長短是全場共用的
+    updateNight(deltaTime);  // 夜色跟著時間濃淡（節流）：入夜才建元素，白天整層收起來
+    updateSeason(deltaTime); // 換季才重建落下物（節流成一分鐘一次，掛久了才用得到）
 
     pokemons.forEach(p => p.update(deltaTime, pokemons));
 
