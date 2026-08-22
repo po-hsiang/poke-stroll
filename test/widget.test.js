@@ -3894,6 +3894,45 @@ group('19. 色違星星特效定時重播');
         check('收起來的對話框不動它', p.bubble.style.transform === '__SENTINEL__');
         p.jumpY = 0;
 
+        // 貼在地上的那些幀（絕大多數）不重複寫同一個字串——hover 模式的名牌
+        // 平常還是 display:none，每幀替 50 隻寫一次沒變的值是純浪費。
+        // 這種「有沒有真的去寫」用哨兵值測不出來（守衛的目的就是收斂到正確值），
+        // 所以直接在 style 上裝一個計數器攔 setter
+        const countWrites = style => {
+            let val = style.transform, writes = 0;
+            Object.defineProperty(style, 'transform', {
+                configurable: true,
+                get: () => val,
+                set: v => { writes++; val = v; },
+            });
+            return {
+                get writes() { return writes; },
+                restore() { delete style.transform; style.transform = val; },
+            };
+        };
+        p.jumpY = 0; p.holdY = 0;
+        p.updateDOM();
+        const tagSpy = countWrites(tag.style);
+        p.updateDOM(); p.updateDOM(); p.updateDOM();
+        check('站在地上：連續三幀都沒再寫名牌的 transform', tagSpy.writes === 0,
+            `寫了 ${tagSpy.writes} 次`);
+        p.jumpY = 10;
+        p.updateDOM();
+        check('一離地就寫（值在動，該寫的時候不能省）', tagSpy.writes === 1,
+            `寫了 ${tagSpy.writes} 次`);
+        tagSpy.restore();
+        p.jumpY = 0;
+        p.updateDOM();
+
+        p.showEmote('heart');
+        p.updateDOM();
+        const bubSpy = countWrites(p.bubble.style);
+        p.updateDOM(); p.updateDOM();
+        check('對話框同理：沒離地就不重寫底稿', bubSpy.writes === 0,
+            `寫了 ${bubSpy.writes} 次`);
+        bubSpy.restore();
+        p.hideEmote();
+
         // nametag=off 時連元素都沒有，這段不能炸
         CONFIG.nametag = 'off';
         CONFIG.bubblePosition = 'side';

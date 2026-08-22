@@ -837,17 +837,20 @@ class Pokemon {
         // 只吃「刻意的離地」（被抓、跳躍），不吃走路跳步：3px 的彈跳讓整條字
         // 跟著抖是雜訊不是活潑——這條線跟影子的 airRatio 是同一條。
         // 歸零時把 inline 值清掉（名牌）或寫回底稿（對話框），
-        // 讓 CSS 的原始擺位接手，字串也就跟沒有這段時完全一樣
+        // 讓 CSS 的原始擺位接手，字串也就跟沒有這段時完全一樣。
+        // 值沒變就不寫：絕大多數的幀都是「貼在地上」，而 hover 模式的名牌
+        // 平常還是 display:none——每幀替 50 隻寫一次沒變的字串是純浪費，
+        // 這個 widget 掛在 OBS 裡是以小時計的（同「方向未變 → 不重設擺位」）
         const overlayLift = this.jumpY + this.holdY;
         if (this.nametag) {
-            this.nametag.style.transform = overlayLift
-                ? `translateX(-50%) translateY(${-overlayLift}px)`
-                : '';
+            const tagT = overlayLift ? `translateX(-50%) translateY(${-overlayLift}px)` : '';
+            if (this.nametag.style.transform !== tagT) this.nametag.style.transform = tagT;
         }
         if (this.bubbleBase !== null && this.bubble.style.display !== 'none') {
-            this.bubble.style.transform = overlayLift
+            const bubbleT = overlayLift
                 ? `${this.bubbleBase} translateY(${-overlayLift}px)`
                 : this.bubbleBase;
+            if (this.bubble.style.transform !== bubbleT) this.bubble.style.transform = bubbleT;
         }
 
         // 水裡的那個照抄面向與高度，Y 軸翻過來（掙扎的傾角不抄：
