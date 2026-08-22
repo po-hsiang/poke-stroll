@@ -118,6 +118,9 @@ class Pokemon {
         this.bubbleName = null;   // 目前顯示的圖案（換邊重擺時要重新取圖）
         this.bubbleSide = 0;      // 目前擺在哪一側（1 右 / -1 左），要換邊才重擺
         this.bubbleLocked = false; // 保護期：期間內不被其他心情覆蓋（色違登場用）
+        // placeBubble 算出的左右位移（不含抬升）。updateDOM 每幀把離地高度
+        // 接在它後面——兩者掛同一個 transform，得留一份底稿才組得起來
+        this.bubbleBase = null;
         this.el.appendChild(this.bubble);
 
         this.el.appendChild(this.img);
@@ -371,6 +374,7 @@ class Pokemon {
             this.bubble.style.bottom = `calc(100% + ${2 + tagH}px)`;
         }
         this.bubbleSide = bubbleSide; // 記住實際擺在哪側，換側時才動 DOM
+        this.bubbleBase = this.bubble.style.transform; // 底稿：updateDOM 要接抬升上去
     }
 
     // 起跳：拋物線小跳的共用入口（點擊互動與發呆亂跳都走這裡）
@@ -826,6 +830,25 @@ class Pokemon {
         // 掙扎的傾角接在最後（沒在掙扎時不寫，字串維持原樣）
         const tilt = this.struggleAngle ? ` rotate(${this.struggleAngle.toFixed(1)}deg)` : '';
         this.img.style.transform = `scaleX(${scale}) translateY(${-lift}px)${tilt}`;
+
+        // 名牌與對話框都掛在 container 上，而 container 只吃水平位移——
+        // 離地高度寫在 sprite 自己的 transform 裡，所以這兩塊浮層得自己補上，
+        // 不然抓起來拖到半空時字會留在原地（實測差 100px，身體直接穿過自己的名字）。
+        // 只吃「刻意的離地」（被抓、跳躍），不吃走路跳步：3px 的彈跳讓整條字
+        // 跟著抖是雜訊不是活潑——這條線跟影子的 airRatio 是同一條。
+        // 歸零時把 inline 值清掉（名牌）或寫回底稿（對話框），
+        // 讓 CSS 的原始擺位接手，字串也就跟沒有這段時完全一樣
+        const overlayLift = this.jumpY + this.holdY;
+        if (this.nametag) {
+            this.nametag.style.transform = overlayLift
+                ? `translateX(-50%) translateY(${-overlayLift}px)`
+                : '';
+        }
+        if (this.bubbleBase !== null && this.bubble.style.display !== 'none') {
+            this.bubble.style.transform = overlayLift
+                ? `${this.bubbleBase} translateY(${-overlayLift}px)`
+                : this.bubbleBase;
+        }
 
         // 水裡的那個照抄面向與高度，Y 軸翻過來（掙扎的傾角不抄：
         // 被抓在手上時 lift 早就把倒影沉到水面以下、裁光了）

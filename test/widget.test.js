@@ -3781,6 +3781,135 @@ group('19. 色違星星特效定時重播');
         T.initSeason('none', null); // 場景與那一層都收回原狀
     }
 
+    // =====================================================
+    // 名牌與對話框都掛在 container 上，而 container 的 transform 只有水平位移——
+    // 離地高度寫在 sprite 自己的 transform 裡。這兩塊浮層若不自己補上那段，
+    // 抓起來拖到半空時字會留在原地（真瀏覽器實測差 100px，身體直接穿過
+    // 自己的名字），被戳跳起來時愛心也會脫窗。這一組守住「它們有跟上」
+    group('45. 浮層跟著離地高度走（名牌與對話框不脫窗）');
+    {
+        const savedMode = CONFIG.nametag;
+        const savedPos = CONFIG.bubblePosition;
+        const savedIdle = CONFIG.idleChance;
+        CONFIG.idleChance = 0;
+        CONFIG.nametag = 'on';
+        CONFIG.bubblePosition = 'side';
+        T.pokemons.length = 0;
+
+        const p = newPokemon(143, { direction: 1 });
+        const tag = p.nametag;
+        check('（前置）名牌與本體都在', !!tag && !!p.img);
+
+        // ---- 名牌 ----
+        p.updateDOM();
+        check('站在地上：名牌不寫 inline transform（讓 CSS 的置中接手）',
+            tag.style.transform === '', `實際 ${tag.style.transform}`);
+
+        // 貼近地面按下去（bottom 20），再往上拉 50px。抬升是「游標相對按下
+        // 那一點的位移」，抓與拉同一個高度的話 holdY 會是 0，什麼都測不到。
+        // 上限是視窗高減身高（stub 視窗 200、身高 128 → 天花板 72）
+        p.grab({ x: p.x + 10, bottom: 20 });
+        p.dragTo({ x: p.x + 10, bottom: 70 });
+        p.updateDOM();
+        const held = Math.round(p.holdY);
+        check('抓在半空：名牌跟著升高（置中不能掉）',
+            tag.style.transform === `translateX(-50%) translateY(${-p.holdY}px)`
+            && held === 50,
+            `holdY=${held} transform=${tag.style.transform}`);
+
+        p.release();
+        p.jumpY = 0; p.jumpV = 0; p.holdY = 0;
+        p.updateDOM();
+        check('放手落地：inline transform 清掉，字串跟沒抓過時一模一樣',
+            tag.style.transform === '');
+
+        // 走路跳步（bobY）刻意不跟：3px 的彈跳讓整條字跟著抖是雜訊不是活潑
+        p.state = 'WALKING';
+        p.bobY = 3;
+        p.updateDOM();
+        check('走路跳步不跟（名牌維持不動，只有本體在彈）',
+            tag.style.transform === '' && /translateY\(-3px\)/.test(p.img.style.transform),
+            `tag=${tag.style.transform} img=${p.img.style.transform}`);
+
+        // 被戳跳起來：nametag=on 的人沒有滑鼠也天天遇到的那一種脫窗
+        p.bobY = 0;
+        p.jumpY = 18;
+        p.updateDOM();
+        check('跳起來也跟（被戳那一下同樣不脫窗）',
+            tag.style.transform === 'translateX(-50%) translateY(-18px)',
+            tag.style.transform);
+        check('本體與名牌吃的是同一個高度（差值只剩走路跳步那一項）',
+            /translateY\(-18px\)/.test(p.img.style.transform));
+        p.jumpY = 0;
+        p.updateDOM();
+
+        // ---- 對話框：底稿（左右位移）+ 抬升，接在同一個 transform 上 ----
+        p.showEmote('heart');
+        const base = p.bubbleBase;
+        check('底稿記下來了，就是 placeBubble 算的左右位移',
+            base === `translateX(${p.bubbleMetrics().gap}px)` && base === p.bubble.style.transform,
+            `base=${base}`);
+        p.jumpY = 22;
+        p.updateDOM();
+        check('跳起來：底稿保留、抬升接在後面（不是覆蓋掉左右位移）',
+            p.bubble.style.transform === `${base} translateY(-22px)`,
+            p.bubble.style.transform);
+        p.jumpY = 0;
+        p.updateDOM();
+        check('落地：寫回底稿（字串跟沒有這段功能時完全一樣）',
+            p.bubble.style.transform === base);
+
+        // 左側的 calc 字串最容易被接壞（雙負號、括號沒收），單獨驗一次
+        p.direction = -1;
+        p.updateDOM();
+        const leftBase = p.bubbleBase;
+        check('（前置）換到左側，底稿變成 calc 那一串',
+            leftBase.startsWith('translateX(calc(-100%') && leftBase.endsWith('))'),
+            leftBase);
+        p.jumpY = 9;
+        p.updateDOM();
+        check('左側跳起來：calc 原封不動，抬升接在括號外面',
+            p.bubble.style.transform === `${leftBase} translateY(-9px)`,
+            p.bubble.style.transform);
+        p.jumpY = 0;
+        p.updateDOM();
+
+        // top 擺位（置中於頭頂）同樣要跟
+        CONFIG.bubblePosition = 'top';
+        p.direction = 1;
+        p.showEmote('note');
+        p.jumpY = 12;
+        p.updateDOM();
+        check('top 擺位也跟（底稿是水平置中）',
+            p.bubble.style.transform === 'translateX(-50%) translateY(-12px)',
+            p.bubble.style.transform);
+        p.jumpY = 0;
+        p.updateDOM();
+
+        // 收起來的對話框不必寫（省掉每幀一次無意義的 style 寫入）
+        p.hideEmote();
+        p.bubble.style.transform = '__SENTINEL__';
+        p.jumpY = 15;
+        p.updateDOM();
+        check('收起來的對話框不動它', p.bubble.style.transform === '__SENTINEL__');
+        p.jumpY = 0;
+
+        // nametag=off 時連元素都沒有，這段不能炸
+        CONFIG.nametag = 'off';
+        CONFIG.bubblePosition = 'side';
+        const bare = newPokemon(25, { direction: 1 });
+        check('（前置）nametag=off 真的沒有名牌元素', bare.nametag === null);
+        bare.jumpY = 30;
+        bare.updateDOM();
+        check('沒有名牌時照樣跑得完 updateDOM（不會踩 null）',
+            /translateY\(-30px\)/.test(bare.img.style.transform));
+
+        CONFIG.nametag = savedMode;
+        CONFIG.bubblePosition = savedPos;
+        CONFIG.idleChance = savedIdle;
+        T.pokemons.length = 0;
+    }
+
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
     process.exit(fail ? 1 : 0);
 })();
