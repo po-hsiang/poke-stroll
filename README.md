@@ -242,7 +242,7 @@ node test/params-doc.test.js
 node --test --experimental-test-coverage --test-coverage-exclude='test/**' test/widget.test.js
 ```
 
-用 Node 22 內建的覆蓋率,同樣不用裝東西。目前 **行 97.0%、函式 96.4%、分支 87.0%**,
+用 Node 22 內建的覆蓋率,同樣不用裝東西。目前 **行 97.1%、函式 96.5%、分支 87.2%**,
 CI 設了 95 / 95 / 84 的門檻,掉下去就紅燈。widget 自己的 js/ 幾乎都是滿的
 (`params.js`、`sun.js`、`roster.js`、`ground.js`、`weather.js`、`season.js`、
 `circadian.js`、`nametag.js`、`sprites.js` 都 100%),缺的那 3% 集中在兩處:
