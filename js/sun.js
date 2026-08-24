@@ -44,7 +44,9 @@ function sunHours() {
 }
 
 // 夜色濃度 0 ~ 1：0 = 白天、1 = 全黑的深夜。夜晚演出（星空、螢火蟲、地面
-// 光暈）的濃淡與夜行陣容的判定都讀這一個值，「幾點算晚上」才只有一種答案。
+// 光暈）的濃淡讀這一個值——「天有多黑」只有一種答案。
+// 這一條「只管天色」：牠們自己的作息與夜行陣容改讀下面的 deepNightLevel()，
+// 兩件事的時段刻意不一樣（理由寫在那裡）。
 // 日落「之後」才開始暗（天文上的暮光也是這樣），花 nightFade 分鐘漸暗到底；
 // 日出「之前」反向漸亮，天亮的那一刻剛好歸零。
 // 這是唯一與「晨昏色溫」有關的東西，而且刻意只輸出一個數字——沒有任何
@@ -61,6 +63,32 @@ function nightLevel() {
     // nightFade = 0 就是這條斜坡的極限：日落「那一刻」還是 0，之後直接跳到全黑
     if (fade === 0) return since > 0 ? 1 : 0;
     return Math.min(since / fade, 1);
+}
+
+// 深夜濃度 0 ~ 1：時間曲線的第二條。上面那條管「天有多黑」（夜晚演出在用），
+// 這一條管「牠們自己有多想睡」——作息（js/circadian.js）與夜行陣容
+// （js/roster.js）讀的是這一個。
+// 為什麼要兩條：天色是天文，日落就該暗；但活動力是生活作息，而現代人是夜貓子
+// ——晚上八點到十一點跟白天差不多活潑，真正安靜下來是過了午夜以後的事。
+// 所以 18:00 一到星空與螢火蟲照樣浮出來，但要到 deepStart 才開始睡。
+// 兩條共用 nightFade 的斜坡手感：窗口的兩頭各爬一段，不是午夜一到就集體倒下。
+// 窗口允許跨午夜，也允許整段落在白天（?deepStart=13&deepEnd=15 就是睡午覺）；
+// ?deepStart=18&deepEnd=6 則回到 0.47 之前的行為——天一黑就睡
+function deepNightLevel() {
+    const start = CONFIG.deepStart ?? 0;
+    const end = CONFIG.deepEnd ?? 6;
+    // 寬度 0 = 沒有深夜這段，整天都照白天（要關掉某一項就用 nightSleep / nightRoster）
+    if (start === end) return 0;
+    // 搬到「窗口開始 = 0」的座標系，跨午夜（18 → 6）就不必特判
+    const span = end > start ? end - start : end - start + 24;
+    const into = (sunHours() - start + 24) % 24;
+    if (into >= span) return 0; // 窗口外
+    const fade = Math.min(Math.max(CONFIG.nightFade ?? 45, 0), 180) / 60; // 分 → 小時
+    // fade = 0 是這條斜坡的極限：窗口開始「那一刻」還是 0，之後直接跳到底
+    if (fade === 0) return into > 0 ? 1 : 0;
+    // 兩頭各一段斜坡，取「離窗口外面多遠」。窗口比兩段斜坡加起來還窄時中間
+    // 就到不了 1——那是自己把窗口調窄的結果，不必特別處理
+    return Math.min(into / fade, (span - into) / fade, 1);
 }
 
 // 重算太陽狀態。時間、天氣、參數任一改變都可以直接呼叫

@@ -200,7 +200,7 @@ for (const f of jsFiles) {
 // 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
 // global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
 vm.runInContext(
-    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance, gameLoop, seasonForMonth, seasonNow, initSeason, buildSeason, updateSeason, getSeasonURI, SEASONS, SEASON_TICK_MS, getSeasonEl: () => seasonEl };',
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, deepNightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance, gameLoop, seasonForMonth, seasonNow, initSeason, buildSeason, updateSeason, getSeasonURI, SEASONS, SEASON_TICK_MS, getSeasonEl: () => seasonEl };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -2648,11 +2648,18 @@ group('19. 色違星星特效定時重播');
         const savedSunTime = CONFIG.sunTime;
         CONFIG.nightRoster = 1; // 全中，才能斷言「整批都是夜行系」
         CONFIG.sunTime = 12;
-        check('白天不偏抽（夜色 0 → nightBias 0）', T.nightBias() === 0);
+        check('白天不偏抽（深夜濃度 0 → nightBias 0）', T.nightBias() === 0);
         const noon = T.pickRoster(4, 1, 649);
         check('白天抽出來的還是全範圍', noon.length === 4);
 
+        // 23:00 天早就黑了（星空亮著），但陣容看的是「深夜窗口」而不是天色，
+        // 預設要到 00:00 才開始偏抽。這一條就是 0.47 那次調整的分界線——
+        // 傍晚天剛黑就整批換成幽靈太急，那時候的活動力還照白天
         CONFIG.sunTime = 23;
+        check('天黑了但還沒夜深 → 不偏抽（陣容看深夜窗口，不看天色）',
+            T.nightLevel() === 1 && T.nightBias() === 0,
+            `夜色 ${T.nightLevel()} / bias ${T.nightBias()}`);
+        CONFIG.sunTime = 3;
         check('深夜的 nightBias 就是 nightRoster', T.nightBias() === 1);
         const midnight = T.pickRoster(4, 1, 649);
         check('nightRoster=1 的深夜 → 整批都是夜行系',
@@ -3337,15 +3344,33 @@ group('19. 色違星星特效定時重播');
         check('也不太有心情寒暄了（0.2 倍）',
             near(T.greetChanceNow(), CONFIG.greetChance * 0.2));
 
-        // ---- 黃昏是斜坡，不是開關 ----
-        // 日落 18:00 + nightFade 45 分：18:00 整還完全清醒，18:22.5 剛好一半
-        CONFIG.sunTime = 18;
-        check('日落那一刻還沒睡意（暮光是日落「之後」才開始）', T.sleepiness() === 0);
-        CONFIG.sunTime = 18 + 22.5 / 60;
-        check('日落後半個斜坡 → 睡意 0.5', near(T.sleepiness(), 0.5, 1e-6),
+        // ---- 睡前那幾個小時：天黑了，但活動力完全照白天 ----
+        // 0.47 那次調整的重點：星空 18:00 就浮出來（那是天色），但作息看的是
+        // 深夜窗口（預設 00:00 ~ 06:00）——現代人是夜貓子，睡前跟白天差不多活潑
+        CONFIG.sunTime = 20;
+        check('20:00 天已經全黑了，但完全沒有睡意',
+            T.nightLevel() === 1 && T.sleepiness() === 0,
+            `夜色 ${T.nightLevel()} / 睡意 ${T.sleepiness()}`);
+        CONFIG.sunTime = 23.99;
+        check('午夜前一刻還是白天那一套（移動、跳步、發呆全照 config.js）',
+            T.sleepiness() === 0 && T.moveScale() === 1 && T.hopScale() === 1
+            && near(T.idleChanceNow(), CONFIG.idleChance));
+
+        // ---- 入睡是斜坡，不是開關 ----
+        // 窗口 00:00 開始 + nightFade 45 分：00:00 整還完全清醒，00:22.5 剛好一半
+        CONFIG.sunTime = 0;
+        check('窗口開始那一刻還沒睡意（斜坡是從那之後才走）', T.sleepiness() === 0);
+        CONFIG.sunTime = 22.5 / 60;
+        check('進窗口半個斜坡 → 睡意 0.5', near(T.sleepiness(), 0.5, 1e-6),
             String(T.sleepiness()));
         check('倍率跟著走一半（移動 0.725 = 1 與 0.45 的中間）',
             near(T.moveScale(), 0.725, 1e-6), String(T.moveScale()));
+        // 另一頭也是斜坡：天亮前慢慢醒過來，06:00 剛好歸零
+        CONFIG.sunTime = 6 - 22.5 / 60;
+        check('窗口結束前半個斜坡 → 睡意也是 0.5（反向漸醒）',
+            near(T.sleepiness(), 0.5, 1e-6), String(T.sleepiness()));
+        CONFIG.sunTime = 6;
+        check('窗口結束那一刻睡意歸零', T.sleepiness() === 0);
 
         // ---- 總開關 ----
         CONFIG.sunTime = 3;
@@ -3510,6 +3535,15 @@ group('19. 色違星星特效定時重播');
             (c => c.sunrise === CONFIG.sunrise && warned('sunrise=黃昏'))(run('?sunrise=黃昏')));
         check("sunTime=auto → 收成 null（跟著本機時鐘，等同沒帶）",
             run('?sunTime=AUTO').sunTime === null);
+        check('深夜窗口也收 HH:MM（deepStart=01:30 → 1.5）',
+            run('?deepStart=01:30').deepStart === 1.5);
+        check('深夜窗口超出 0 ~ 24 → 忽略',
+            (c => c.deepEnd === CONFIG.deepEnd && warned('deepEnd=30'))(run('?deepEnd=30')));
+        // 「顛倒」在這裡是合法的：deepStart > deepEnd 就是跨午夜的窗口。
+        // sunrise/sunset 會被修（顛倒會讓白天這段區間不存在），這一組刻意不修
+        check('deepStart 晚於 deepEnd = 合法的跨午夜窗口，不對調也不警告',
+            (c => c.deepStart === 18 && c.deepEnd === 6 && warns.length === 0)
+                (run('?deepStart=18&deepEnd=6')), warns.join(' | '));
 
         // ---- 清單型的兩個特例 ----
         const badIds = run('?ids=9999,abc,0');
@@ -3947,6 +3981,106 @@ group('19. 色違星星特效定時重播');
         CONFIG.bubblePosition = savedPos;
         CONFIG.idleChance = savedIdle;
         T.pokemons.length = 0;
+    }
+
+    // =====================================================
+    // 時間曲線有兩條，這一組驗的是「它們可以在同一時刻給出不同答案」：
+    //   nightLevel()     天色 —— 星空、螢火蟲、地面光暈（日落之後）
+    //   deepNightLevel() 作息 —— 想睡、偏抽夜行系（深夜窗口內）
+    // 分成兩條是 0.47 的調整：天黑跟想睡不是同一件事，現代人是夜貓子，
+    // 18:01 ~ 23:59 的活動力其實跟白天差不多。把這一組改壞了，
+    // 傍晚就會集體倒下（或者深夜反而全都醒著）
+    group('46. 深夜窗口（畫面歸天色、行為歸作息）');
+    {
+        const savedSun = CONFIG.sunTime;
+        const savedFade = CONFIG.nightFade;
+        const savedStart = CONFIG.deepStart;
+        const savedEnd = CONFIG.deepEnd;
+        const savedRoster = CONFIG.nightRoster;
+        const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol;
+        const at = h => { CONFIG.sunTime = h; return T.deepNightLevel(); };
+
+        CONFIG.nightFade = 60; // 一小時的斜坡，換算好對
+        CONFIG.deepStart = 0;
+        CONFIG.deepEnd = 6;
+
+        // ---- 預設窗口 00:00 ~ 06:00 ----
+        check('正午在窗口外', at(12) === 0);
+        check('傍晚剛入夜也在窗口外（那是天色，不是作息）', at(18.5) === 0);
+        check('20:00 與 23:00 都還在窗口外', at(20) === 0 && at(23) === 0);
+        check('窗口開始那一刻是 0（斜坡從那之後才走）', at(0) === 0);
+        check('進窗口半小時 = 一半', near(at(0.5), 0.5), String(at(0.5)));
+        check('進窗口一小時 = 到底', at(1) === 1);
+        check('凌晨三點維持在底', at(3) === 1);
+        check('窗口結束前半小時 = 一半（反向漸醒）', near(at(5.5), 0.5), String(at(5.5)));
+        check('窗口結束那一刻歸零', at(6) === 0);
+        check('天亮之後照白天', at(7) === 0 && at(9) === 0);
+
+        // ---- 兩條曲線在同一時刻可以完全不同：這就是這次調整的全部重點 ----
+        CONFIG.sunTime = 23;
+        check('23:00：天色全黑（畫面照演）但深夜濃度 0（行為照白天）',
+            T.nightLevel() === 1 && T.deepNightLevel() === 0,
+            `夜色 ${T.nightLevel()} / 深夜 ${T.deepNightLevel()}`);
+        CONFIG.sunTime = 3;
+        check('03:00：兩條都到底', T.nightLevel() === 1 && T.deepNightLevel() === 1);
+        CONFIG.sunTime = 12;
+        check('正午：兩條都是 0', T.nightLevel() === 0 && T.deepNightLevel() === 0);
+
+        // ---- 跨午夜的窗口：設成日落日出就完全回到 0.47 之前的行為 ----
+        CONFIG.deepStart = 18;
+        CONFIG.deepEnd = 6;
+        check('窗口設成 18 ~ 6（跨午夜）→ 與天色那條完全重合（回到舊行為）',
+            [18, 18.5, 19, 23, 0.5, 3, 5.5, 6, 12].every(h => {
+                CONFIG.sunTime = h;
+                return T.deepNightLevel() === T.nightLevel();
+            }));
+
+        // ---- 整段落在白天的窗口：午睡也照演，不會因為天亮就不算 ----
+        CONFIG.deepStart = 13;
+        CONFIG.deepEnd = 15;
+        check('窗口 13 ~ 15：14:00 睡得很熟', at(14) === 1);
+        check('窗口 13 ~ 15：午夜反而不睡', at(0) === 0 && at(3) === 0);
+
+        // 作息與陣容真的都讀這一條，不是各自另定一套時段
+        CONFIG.nightRoster = 1;
+        CONFIG.sunTime = 14;
+        check('把窗口搬到下午 → 作息與夜行陣容一起跟著搬',
+            T.sleepiness() === 1 && T.nightBias() === 1,
+            `睡意 ${T.sleepiness()} / bias ${T.nightBias()}`);
+        CONFIG.sunTime = 3;
+        check('搬走之後，凌晨三點兩件事都不作用',
+            T.sleepiness() === 0 && T.nightBias() === 0);
+
+        // ---- 窗口比兩段斜坡加起來還窄：峰值到不了 1，但兩頭仍然歸零 ----
+        CONFIG.deepStart = 1;
+        CONFIG.deepEnd = 2; // 1 小時的窗口，斜坡各 1 小時
+        check('窗口比斜坡還窄 → 峰值只到一半，兩頭仍是 0',
+            near(at(1.5), 0.5) && at(1) === 0 && at(2) === 0, String(at(1.5)));
+
+        // ---- 兩個值相同 = 沒有深夜這一段 ----
+        CONFIG.deepStart = 3;
+        CONFIG.deepEnd = 3;
+        check('deepStart === deepEnd → 整天都照白天',
+            [0, 3, 3.5, 12, 23].every(h => at(h) === 0));
+
+        // ---- config.js 被手改掉這兩個 key：退回預設窗口，不能炸 ----
+        CONFIG.deepStart = undefined;
+        CONFIG.deepEnd = undefined;
+        check('config.js 少了這兩個 key → 退回預設窗口 00:00 ~ 06:00',
+            at(3) === 1 && at(12) === 0 && at(23) === 0);
+
+        // ---- nightFade = 0：沒有斜坡，進窗口就到底 ----
+        CONFIG.deepStart = 0;
+        CONFIG.deepEnd = 6;
+        CONFIG.nightFade = 0;
+        check('nightFade=0 → 窗口開始那一刻仍是 0，之後直接到底',
+            at(0) === 0 && at(0.01) === 1 && at(5.99) === 1 && at(6) === 0);
+
+        CONFIG.nightFade = savedFade;
+        CONFIG.deepStart = savedStart;
+        CONFIG.deepEnd = savedEnd;
+        CONFIG.nightRoster = savedRoster;
+        CONFIG.sunTime = savedSun;
     }
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);
