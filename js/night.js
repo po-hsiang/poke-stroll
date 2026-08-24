@@ -19,6 +19,11 @@
 // 掛在 OBS 裡整晚不動也會自己入夜、自己天亮。
 // 粒子生成一次就交給 CSS 動畫循環（跟天氣同一套做法），主迴圈零負擔；
 // 白天整層 hidden（display: none），不畫也不合成。
+//
+// 「亮幾顆」也跟著夜色走：天剛暗只看得到最亮的那幾顆，越暗越多顆冒出來，
+// 天亮之前反向一顆一顆熄掉（見 litCount / revealNight）。這是真的天空——
+// 亮星先出現，暗的要等天更黑，所以顆數是「加速」冒出來的而不是等速。
+// 順帶省事：黃昏時只有幾顆在跑動畫，其餘 display: none 連合成都不做。
 // ---------------------------------------------------------
 
 // 夜色濃度的重算間隔。跟太陽同一個節奏就好——夜色是分鐘級的變化
@@ -40,6 +45,13 @@ const NIGHT_FLY_COLORS = [
 let nightEl = null;
 let nightClock = NIGHT_TICK_MS; // 第一次 updateNight 就先算一次（半夜開頁立刻是夜景）
 let nightEmpty = false;         // 星星、螢火蟲、光暈全關 → 建不出東西，別每兩秒再試一次
+// 星星與螢火蟲的元素，都照「有多顯眼」由大到小排好（見 buildNight）。
+// revealNight 只亮出前面幾個，天越黑亮越多；已經亮著幾個記在後面兩個變數，
+// 每次只動「跨過門檻」的那幾個——絕大多數的 tick 一個都不必碰
+let nightStarEls = [];
+let nightFlyEls = [];
+let starsLit = 0;
+let fliesLit = 0;
 
 // 生成夜景的粒子與光暈。三樣東西各自可以是 0（就不生成那一種），
 // 全部都 0 就連容器都不建——回傳有沒有東西可看
@@ -54,7 +66,14 @@ function buildNight() {
     nightEl?.remove(); // 防重複（正常流程一頁只會建一次）
     nightEl = document.createElement('div');
     nightEl.id = 'night';
+    nightStarEls = [];
+    nightFlyEls = [];
+    starsLit = 0;
+    fliesLit = 0;
 
+    // 先全部生成，再依「有多顯眼」由大到小排好——revealNight 只亮出前面幾顆，
+    // 所以天剛暗時先出現的是大顆又亮的那幾顆（真的天空就是這個順序）
+    const starList = [];
     for (let i = 0; i < stars; i++) {
         const s = document.createElement('div');
         s.className = 'night-star';
@@ -75,9 +94,17 @@ function buildNight() {
         const dur = 2 + Math.random() * 3.5;
         s.style.setProperty('--dur', `${dur.toFixed(2)}s`);
         s.style.setProperty('--delay', `-${(Math.random() * dur).toFixed(2)}s`);
-        nightEl.appendChild(s);
+        // 顯眼程度 = 大小 × 亮度，決定它排在第幾顆亮起來
+        starList.push({ el: s, weight: size * lit });
+    }
+    starList.sort((a, b) => b.weight - a.weight);
+    for (const { el } of starList) {
+        el.style.display = 'none'; // 亮幾顆由 revealNight 依夜色濃度決定
+        nightEl.appendChild(el);
+        nightStarEls.push(el);
     }
 
+    const flyList = [];
     for (let i = 0; i < flies; i++) {
         const f = document.createElement('div');
         f.className = 'night-firefly';
@@ -92,11 +119,20 @@ function buildNight() {
         const dot = document.createElement('div');
         const c = NIGHT_FLY_COLORS[randomInt(0, NIGHT_FLY_COLORS.length - 1)];
         dot.style.background = c.core;
-        dot.style.boxShadow = `0 0 ${randomInt(4, 8)}px ${randomInt(1, 3)}px ${c.glow}`;
+        const blur = randomInt(4, 8);
+        const spread = randomInt(1, 3);
+        dot.style.boxShadow = `0 0 ${blur}px ${spread}px ${c.glow}`;
         // 明滅的週期跟飄移刻意錯開（不是整數倍），才不會每次都在同一點亮起來
         dot.style.setProperty('--blink', `${(1.1 + Math.random() * 1.9).toFixed(2)}s`);
         f.appendChild(dot);
-        nightEl.appendChild(f);
+        // 螢火蟲的顯眼程度看光暈多大（星星看大小 × 亮度，同一個道理）
+        flyList.push({ el: f, weight: blur + spread });
+    }
+    flyList.sort((a, b) => b.weight - a.weight);
+    for (const { el } of flyList) {
+        el.style.display = 'none';
+        nightEl.appendChild(el);
+        nightFlyEls.push(el);
     }
 
     if (glowBand) {
@@ -120,6 +156,29 @@ function buildNight() {
     return true;
 }
 
+// 這個夜色濃度該亮幾顆。0 → 0、1 → 全部，中間走「平方」而不是等速：
+// 真的天空是亮星先出現、暗的要等天更黑，所以顆數是加速冒出來的。
+// 濃度只要大於 0 就至少亮一顆——日落後的第一顆星本來就該立刻在那裡
+function litCount(total, level) {
+    if (level <= 0) return 0;
+    if (level >= 1) return total;
+    return Math.ceil(total * level * level);
+}
+
+// 把陣列的前 want 個打開、其餘關掉。只動跨過門檻的那幾個，回傳新的已亮數
+function litUpTo(els, want, lit) {
+    for (let i = lit; i < want; i++) els[i].style.display = '';
+    for (let i = lit - 1; i >= want; i--) els[i].style.display = 'none';
+    return want;
+}
+
+// 依夜色濃度亮出前面幾顆（陣列已照顯眼程度排好，所以最亮的先出現）。
+// 光暈不在這裡：它是一整條漸層，濃淡由整層的 opacity 負責，沒有「幾顆」
+function revealNight(level) {
+    starsLit = litUpTo(nightStarEls, litCount(nightStarEls.length, level), starsLit);
+    fliesLit = litUpTo(nightFlyEls, litCount(nightFlyEls.length, level), fliesLit);
+}
+
 // 每一幀由 gameLoop 呼叫，節流成 NIGHT_TICK_MS 一次。
 // 第一次真的入夜才建 DOM：白天開的頁面（絕大多數）連元素都不會產生
 function updateNight(deltaTime) {
@@ -139,4 +198,5 @@ function updateNight(deltaTime) {
     }
     nightEl.hidden = false;
     nightEl.style.opacity = level.toFixed(3);
+    revealNight(level);
 }

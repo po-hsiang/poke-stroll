@@ -200,7 +200,7 @@ for (const f of jsFiles) {
 // 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
 // global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
 vm.runInContext(
-    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, deepNightLevel, updateNight, buildNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance, gameLoop, seasonForMonth, seasonNow, initSeason, buildSeason, updateSeason, getSeasonURI, SEASONS, SEASON_TICK_MS, getSeasonEl: () => seasonEl };',
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, deepNightLevel, updateNight, buildNight, litCount, revealNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance, gameLoop, seasonForMonth, seasonNow, initSeason, buildSeason, updateSeason, getSeasonURI, SEASONS, SEASON_TICK_MS, getSeasonEl: () => seasonEl };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -2786,8 +2786,10 @@ group('19. 色違星星特效定時重播');
             flies.every(f => f.children.length === 1));
         check('沒鋪地面就沒有地面光暈（theme=none）', glows.length === 0);
         check('整層的 opacity 就是夜色濃度', el.style.opacity === '1.000', el.style.opacity);
+        // top 是 (random × 72).toFixed(2)，71.9987 會被寫成 "72.00"——邊界值
+        // 本來就該算「在上半部之內」，原本寫 < 是偶發紅燈的來源（400 輪抽到一次）
         check('星星撒在上半部（不壓到地面與舞台）',
-            stars.every(s => parseFloat(s.style.top) < 72));
+            stars.every(s => parseFloat(s.style.top) <= 72));
         check('每顆星星都有自己的閃爍週期與相位',
             new Set(stars.map(s => s.style.getPropertyValue('--dur')
                 + s.style.getPropertyValue('--delay'))).size > 1);
@@ -2836,6 +2838,74 @@ group('19. 色違星星特效定時重播');
             glowEl.style.background);
         void lift;
         T.initGround('none'); // 收乾淨，後面的組別不該看到地面
+
+        // ---- 亮幾顆也跟著夜色走（漸增漸減）----
+        // 先驗純函式：0 → 0、1 → 全部，中間走「平方」而不是等速——
+        // 真的天空是亮星先出現、暗的要等天更黑，所以顆數是加速冒出來的
+        check('夜色 0 → 一顆都不亮', T.litCount(70, 0) === 0);
+        check('夜色 1 → 全亮', T.litCount(70, 1) === 70);
+        check('日落後的第一顆星立刻就在（濃度再小也至少一顆）',
+            T.litCount(70, 0.0001) === 1);
+        check('顆數是加速冒出來的：半暗只有四分之一', T.litCount(80, 0.5) === 20,
+            String(T.litCount(80, 0.5)));
+        check('八成暗 → 64 顆（0.8² × 100），不是等速的 80 顆',
+            T.litCount(100, 0.8) === 64, String(T.litCount(100, 0.8)));
+        check('本來就沒有星星時不會算出多的', T.litCount(0, 0.5) === 0);
+
+        // 再驗真的接到 DOM 上：生成時全部收著，由夜色決定亮幾個
+        CONFIG.nightStars = 20;
+        CONFIG.nightFireflies = 8;
+        CONFIG.nightGlow = 0;
+        T.getNightEl().remove();
+        check('（前置）重建成 20 顆星 + 8 隻螢火蟲', T.buildNight() === true);
+        const dim = T.getNightEl();
+        const litOf = cls => dim.children
+            .filter(c => c.className === cls && c.style.display !== 'none').length;
+        const litStars = () => litOf('night-star');
+        const litFlies = () => litOf('night-firefly');
+        check('剛生成時全部收著（亮幾顆由 revealNight 決定）',
+            litStars() === 0 && litFlies() === 0, `${litStars()} / ${litFlies()}`);
+        T.revealNight(1);
+        check('全黑 → 20 顆星、8 隻螢火蟲全亮',
+            litStars() === 20 && litFlies() === 8, `${litStars()} / ${litFlies()}`);
+        T.revealNight(0.5);
+        check('回到半暗 → 星星只剩 5 顆、螢火蟲 2 隻（多的自己熄掉）',
+            litStars() === 5 && litFlies() === 2, `${litStars()} / ${litFlies()}`);
+        T.revealNight(0.05);
+        check('剛入夜 → 各只剩一個', litStars() === 1 && litFlies() === 1,
+            `${litStars()} / ${litFlies()}`);
+        T.revealNight(0);
+        check('天亮 → 全熄', litStars() === 0 && litFlies() === 0);
+
+        // 順序是「最顯眼的先亮」——這條是這個效果的靈魂：天剛暗時該出現
+        // 大顆又亮的那幾顆，改壞了就變成幾個隨機小點在閃
+        T.revealNight(1);
+        const starOrder = dim.children.filter(c => c.className === 'night-star');
+        const eye = c => parseFloat(c.style.width) * parseFloat(c.style.getPropertyValue('--lit'));
+        // --lit 進 style 時四捨五入到小數兩位（size 最多 3），所以從 style 反推的
+        // 顯眼程度最多會差 3 × 0.005 = 0.015。排序用的是全精度值，比對得放這點
+        // 寬容——不然 1.9449 與 1.9451 會被讀成 1.94 與 1.95，看起來像排錯了
+        check('星星照「有多顯眼」由大到小排好（先亮的是大顆又亮的）',
+            starOrder.every((c, i) => i === 0 || eye(starOrder[i - 1]) >= eye(c) - 0.02),
+            starOrder.map(c => eye(c).toFixed(2)).join(' '));
+        // 螢火蟲同理，看的是光暈多大（box-shadow 的模糊 + 擴散）
+        const flyOrder = dim.children.filter(c => c.className === 'night-firefly');
+        const glowOf = c => {
+            const m = c.children[0].style.boxShadow.match(/(\d+)px (\d+)px/);
+            return Number(m[1]) + Number(m[2]);
+        };
+        check('螢火蟲照光暈大小由大到小排好',
+            flyOrder.every((c, i) => i === 0 || glowOf(flyOrder[i - 1]) >= glowOf(c)),
+            flyOrder.map(glowOf).join(' '));
+
+        // updateNight 有把它推一把（不是只有手動呼叫才會動）
+        CONFIG.sunTime = 18.25; // 日落後 15 分，nightFade 45 → 濃度 1/3
+        T.updateNight(T.NIGHT_TICK_MS);
+        check('updateNight 自己會依夜色調整顆數（黃昏 1/3 → 20 × 1/9 = 3 顆）',
+            litStars() === 3, `${litStars()} 顆`);
+        CONFIG.sunTime = 23;
+        T.updateNight(T.NIGHT_TICK_MS);
+        check('入夜到底就全亮', litStars() === 20, `${litStars()} 顆`);
 
         // ---- 各自可以關掉 ----
         CONFIG.nightStars = 0;

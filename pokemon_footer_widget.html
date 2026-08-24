@@ -322,7 +322,9 @@
            的網頁，而背景透明是這個 widget 的前提。所以夜色全做成元素——
            粒子與貼著地面的漸層，天空本身維持全透明（詳見 js/night.js）。
            整層的 opacity 由 JS 依日落後經過的時間逐步調整，transition
-           讓兩秒一次的節流看起來是連續變暗的 */
+           讓兩秒一次的節流看起來是連續變暗的。
+           「亮幾顆」也跟著夜色走（見 js/night.js 的 revealNight）：沒亮的那些
+           是 display: none，所以黃昏時連動畫都不跑 */
         #night {
             position: fixed;
             inset: 0;
@@ -347,11 +349,19 @@
         /* 螢火蟲：兩層才有「一邊飄一邊明滅」的感覺——
            外層緩緩游移，內層自己一明一滅（週期刻意跟飄移錯開） */
         .night-firefly {
-            animation: firefly-drift var(--dur) ease-in-out var(--delay) infinite alternate;
-            will-change: transform;
+            animation: firefly-drift var(--dur) ease-in-out var(--delay) infinite alternate,
+                       firefly-in 1.6s ease-out both;
+            will-change: transform, opacity;
         }
         @keyframes firefly-drift {
             to { transform: translate(var(--dx), var(--dy)); }
+        }
+        /* 一隻一隻冒出來時淡入：螢火蟲帶著 8px 的光暈，直接從 display: none
+           蹦出來看得出來。星星只有 1px 不必——而且牠們的 opacity 已經被
+           閃爍動畫佔著，同一個屬性塞兩個動畫只會互相蓋掉 */
+        @keyframes firefly-in {
+            from { opacity: 0; }
+            to   { opacity: 1; }
         }
         .night-firefly > div {
             width: 3px;
