@@ -51,6 +51,7 @@ const QUERY_PARAMS = {
     overcastShadow:   { path: ['overcastShadow'],   type: 'float', min: 0,  max: 1 },
     theme:            { path: ['theme'],            type: 'enum',  values: ['none', 'random', 'grass', 'water', 'snow', 'sand', 'rock', 'dirt', 'lava'] },
     themeHeight:      { path: ['themeHeight'],      type: 'int',   min: 4,  max: 200 },
+    weather:          { path: ['weather'],          type: 'enum',  values: ['live', 'random'] },
     weatherChance:    { path: ['weatherChance'],    type: 'float', min: 0,  max: 1 },
     weatherDensity:   { path: ['weatherDensity'],   type: 'float', min: 0.2, max: 5 },
     season:           { path: ['season'],           type: 'enum',  values: ['auto', 'off', 'spring', 'summer', 'autumn', 'winter'] },

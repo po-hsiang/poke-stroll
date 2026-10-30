@@ -16,9 +16,10 @@
 // 樹果、地面貼片同一套：canvas 畫一次 → dataURL → 全部粒子共用）。
 //
 // 什麼時候不演（三條規則，全部在 seasonNow()）：
-//   1. 這次載入有天氣（雨/雪/風沙/火星）→ 讓天氣演。兩層粒子疊起來是
-//      視覺泥巴，也白吃 CPU。天氣是擲骰的（weatherChance 預設 0.5），
-//      所以一半的載入會看到季節。
+//   1. 正在下天氣（雨/雪/風沙/火星）→ 讓天氣演。兩層粒子疊起來是
+//      視覺泥巴，也白吃 CPU。預設的天氣跟著五股的真實雨量走，
+//      所以晴天看得到季節、下雨那段時間收起來，雨停了再撒回來
+//      （開頁那一兩秒還在問天氣，也先不撒，免得撒了又收）。
 //   2. 熔岩地 → 不演。葉子飄進岩漿很怪，而且火星已經在上升了。
 //   3. season=off → 不演。
 // 刻意「沒有」把 theme=none 排除：天氣的邏輯是「沒場景就沒天氣」，
@@ -115,8 +116,8 @@ function getSeasonURI(name) {
     return seasonCache[name] = canvas.toDataURL();
 }
 
-// 這一頁的場景：地形與「這次載入下了什麼天氣」。initSeason 存進來，
-// 換季重建時還要用（規則會問這兩個）
+// 這一頁的場景：地形與「正在下什麼天氣」。initSeason 存進來（天氣變了由
+// setSeasonWeather 換掉），換季重建時還要用（規則會問這兩個）
 const seasonScene = { theme: 'none', weather: null };
 let seasonEl = null;
 let seasonBuilt = null;         // 目前建的是哪一季（null = 沒建）
@@ -197,9 +198,15 @@ function buildSeason() {
     return true;
 }
 
-// 由 init() 在天氣擲完骰之後呼叫：規則要知道這次下了什麼
+// 由 init() 在天氣決定之後呼叫：規則要知道正在下什麼（live 還在問就是 pending）
 function initSeason(themeName, weatherKind) {
     seasonScene.theme = themeName;
+    seasonScene.weather = weatherKind;
+    buildSeason();
+}
+
+// 變天了（live 天氣每十分鐘問一次）：換掉規則裡的「正在下什麼」，馬上重算
+function setSeasonWeather(weatherKind) {
     seasonScene.weather = weatherKind;
     buildSeason();
 }

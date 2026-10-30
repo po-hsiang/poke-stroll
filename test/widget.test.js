@@ -192,6 +192,11 @@ CONFIG.sunTime = 12;
 // 第 44 組要驗季節時再自己開
 CONFIG.season = 'off';
 
+// 天氣來源預設是 live（向伺服器問五股的真實雨量）——測試不打網路，而且
+// 下不下雨不能看跑測試那天的天色。整份測試釘死成 random，第 47 組換上
+// 假的氣象署再自己開
+CONFIG.weather = 'random';
+
 // 照 HTML 的載入順序逐檔執行主程式——跟瀏覽器一樣一個檔案一個 script，
 // 跨檔的載入順序問題（load 時就呼叫後面檔案的東西）在這裡會直接炸
 for (const f of jsFiles) {
@@ -200,7 +205,7 @@ for (const f of jsFiles) {
 // 把要測的東西掛到 globalThis：頂層 let/const/class 活在同一個
 // global lexical scope（與瀏覽器的傳統 <script> 一致），跨檔拿得到
 vm.runInContext(
-    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, deepNightLevel, updateNight, buildNight, litCount, revealNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance, gameLoop, seasonForMonth, seasonNow, initSeason, buildSeason, updateSeason, getSeasonURI, SEASONS, SEASON_TICK_MS, getSeasonEl: () => seasonEl };',
+    'globalThis.__T = { Pokemon, buildBubbleFrame, getEmoteURI, EMOTE_ICONS, EMOTE_PALETTE, CONFIG, fallbackSizeScale, QUERY_PARAMS, initGround, buildGroundTexture, GROUND_THEMES, Cameo, scheduleFlyby, spawnFlyby, cameos, pokemons, remoteStamps, throwBerry, updateBerries, feedingBusy, removeBerry, BERRY_ART, BERRY_PALETTE, getBerries: () => berries, Snatcher, updateSnatch, getSnatch: () => activeSnatch, getPending: () => pendingSnatch, resolveTheme, initWeather, THEME_WEATHER, updateBerryShadow, sun, refreshSun, updateSun, setSunOvercast, sunShadowTransform, sunHours, parseTimeParam, BERRY_SHADOW_W, SUN_TICK_MS, applyQueryOverrides, groundSurface, attachReflection, reflectTransform, reflectStrength, SPRITE_FOOT_GAP, nightLevel, deepNightLevel, updateNight, buildNight, litCount, revealNight, getNightEl: () => nightEl, NIGHT_TICK_MS, NIGHT_GLOW_RISE, POKE_TYPE_NAMES, NOCTURNAL_TYPES, typePool, rangePool, sampleUnique, nightBias, pickRoster, pickOne, pokeName, attachNametag, sleepiness, circadianScale, idleChanceNow, idleTimeScale, moveScale, hopScale, idleJumpChanceNow, greetChanceNow, moodChanceNow, sleepEmoteChance, gameLoop, seasonForMonth, seasonNow, initSeason, buildSeason, updateSeason, getSeasonURI, SEASONS, SEASON_TICK_MS, getSeasonEl: () => seasonEl, rainTier, readRainTier, askLiveWeather, updateWeather, changeWeather, WEATHER_PENDING, WEATHER_POLL_MS, LIVE_WEATHER_URL, getWeatherEl: () => weatherEl, getWeatherNow: () => weatherNow, getSunOvercast: () => sunOvercast, seasonScene };',
     sandbox,
 );
 const T = sandbox.__T;
@@ -4151,6 +4156,211 @@ group('19. 色違星星特效定時重播');
         CONFIG.deepEnd = savedEnd;
         CONFIG.nightRoster = savedRoster;
         CONFIG.sunTime = savedSun;
+    }
+
+    // =====================================================
+    group('47. 即時天氣（五股的真實雨量 → 下不下、下多大）');
+    {
+        const savedWeather = CONFIG.weather;
+        const savedWC = CONFIG.weatherChance;
+        const savedWD = CONFIG.weatherDensity;
+        const savedSeason = CONFIG.season;
+        const savedFetch = sandbox.fetch;
+        const origRandom = Math.random;
+        const flush = () => new Promise(r => setImmediate(r));
+        // 假的氣象署：回一份只有五股測站的雨量，形狀跟 nginx 代轉出來的一樣
+        const cwa = (past10Min, past1hr) => ({
+            success: 'true',
+            records: { Station: [{ StationName: '五股', StationId: 'C0AI00', RainfallElement: {
+                Past10Min: { Precipitation: String(past10Min) },
+                Past1hr: { Precipitation: String(past1hr) },
+            } }] },
+        });
+        let asked = [];
+        let reply = () => cwa(0, 0); // 下一次被問時怎麼回：資料 / HTTP 狀態碼 / 例外
+        sandbox.fetch = async url => {
+            asked.push(url);
+            const r = reply();
+            if (r instanceof Error) throw r;
+            if (typeof r === 'number') return { ok: false, status: r, json: async () => ({}) };
+            return { ok: true, status: 200, json: async () => r };
+        };
+        const drops = () => T.getWeatherEl()?.children.length ?? 0;
+        // 照 init() 的順序走一遍：天氣 → 太陽 → 季節，再等答案回來
+        const boot = async (themeName, answer) => {
+            reply = answer;
+            const kind = T.initWeather(themeName);
+            T.setSunOvercast(kind);
+            T.initSeason(themeName, kind);
+            await flush();
+            return kind;
+        };
+
+        // ---- random 不問：live 以外的頁面不該對伺服器發任何請求 ----
+        asked = [];
+        T.updateWeather(T.WEATHER_POLL_MS * 2);
+        check('random 模式不會去問（updateWeather 什麼都不做）', asked.length === 0);
+
+        // ---- 雨量 → 雨勢：純函式 ----
+        check('沒有雨量 → 0（晴天）', T.rainTier(0, 0) === 0);
+        check('一小時只翻一格（0.5 mm）→ 不算在下（多半是剛停的尾巴）', T.rainTier(0, 0.5) === 0);
+        check('十分鐘沒翻格、但一小時滿 1 mm → 小雨（0.5 倍）', T.rainTier(0, 1) === 0.5);
+        check('十分鐘 0.5 mm（換算每小時 3 mm）→ 中雨（1 倍）', T.rainTier(0.5, 0.5) === 1);
+        check('十分鐘 2 mm（換算每小時 12 mm）→ 大雨（2 倍）', T.rainTier(2, 2) === 2);
+        check('WMO 分級的邊界：2.5 起算中雨、7.6 起算大雨',
+            T.rainTier(0, 2.4) === 0.5 && T.rainTier(0, 2.5) === 1
+            && T.rainTier(0, 7.5) === 1 && T.rainTier(0, 7.6) === 2);
+        check('十分鐘與一小時取大的那個（陣雨剛開始，一小時的量還沒跟上）',
+            T.rainTier(1.5, 1) === 2);
+
+        // ---- 氣象署的回應 → 雨勢；讀不懂一律 null（交給退路處理）----
+        check('正常回應讀得出雨勢', T.readRainTier(cwa(0.5, 2)) === 1 && T.readRainTier(cwa(0, 0)) === 0);
+        check('缺測（-99）→ null，不當成晴天', T.readRainTier(cwa(-99, 0)) === null
+            && T.readRainTier(cwa(0, -99)) === null);
+        check('格式不對（空物件、沒有測站、數字讀不出來）→ null',
+            T.readRainTier({}) === null && T.readRainTier(null) === null
+            && T.readRainTier({ records: { Station: [] } }) === null
+            && T.readRainTier(cwa('X', 'Y')) === null);
+
+        // ---- 開頁：先 pending（晴天、季節不撒），答案回來才下 ----
+        CONFIG.weather = 'live';
+        CONFIG.weatherChance = 0.5; // 預設值：live 不看機率，只要不是 0
+        CONFIG.weatherDensity = 1;
+        CONFIG.season = 'spring';
+        asked = [];
+        reply = () => cwa(0.5, 2);
+        const first = T.initWeather('grass');
+        T.setSunOvercast(first);
+        T.initSeason('grass', first);
+        check('live 開頁先回 pending（答案還沒回來）', first === T.WEATHER_PENDING);
+        check('問的是同站的 ./api/weather（key 在伺服器那頭補）',
+            asked.length === 1 && asked[0] === T.LIVE_WEATHER_URL && T.LIVE_WEATHER_URL === './api/weather');
+        check('pending 時先不撒花瓣（免得撒了又收）、太陽照常', T.getSeasonEl() === null
+            && T.getSunOvercast() === 1);
+        await flush();
+        check('答案回來：正在下雨 → 下雨', T.getWeatherNow() === 'rain'
+            && T.getWeatherEl()?.id === 'weather' && T.getWeatherEl().children[0].className === 'rain-drop');
+        check('中雨 = 原本的密度（1920 寬 → 120 滴）', drops() === 120, `實際 ${drops()}`);
+        check('下雨了 → 太陽打折（陰天）', T.getSunOvercast() === CONFIG.overcastShadow);
+        check('下雨了 → 季節讓給天氣', T.seasonScene.weather === 'rain' && T.getSeasonEl() === null);
+
+        // ---- 十分鐘後再問：一樣就不動、變了才重撒 ----
+        const sameEl = T.getWeatherEl();
+        const tiltSign = el => Math.sign(parseFloat(el.children[0].style.getPropertyValue('--tilt')));
+        const wind0 = tiltSign(sameEl);
+        await T.askLiveWeather();
+        check('雨勢沒變 → 原封不動（不會每十分鐘重撒一次）',
+            T.getWeatherEl() === sameEl && !sameEl.removed);
+        reply = () => cwa(2, 12);
+        await T.askLiveWeather();
+        check('雨變大 → 重撒成大雨（2 倍，240 滴），舊的那層收掉',
+            drops() === 240 && sameEl.removed === true, `實際 ${drops()}`);
+        check('重撒不翻風向（整頁同一邊）', tiltSign(T.getWeatherEl()) === wind0);
+        reply = () => cwa(0, 1);
+        await T.askLiveWeather();
+        check('變小雨 → 0.5 倍（60 滴）', drops() === 60, `實際 ${drops()}`);
+        CONFIG.weatherDensity = 5;
+        reply = () => cwa(2, 12);
+        await T.askLiveWeather();
+        check('weatherDensity 再乘上雨勢，但上限 5 倍（5 × 大雨也只有 600 滴）', drops() === 600,
+            `實際 ${drops()}`);
+        CONFIG.weatherDensity = 1;
+
+        // ---- 雨停 ----
+        const wetEl = T.getWeatherEl();
+        reply = () => cwa(0, 0);
+        await T.askLiveWeather();
+        check('雨停 → 天氣那層收掉', T.getWeatherNow() === null && T.getWeatherEl() === null
+            && wetEl.removed === true);
+        check('雨停 → 太陽恢復、季節撒回來', T.getSunOvercast() === 1
+            && T.getSeasonEl()?.id === 'season');
+
+        // ---- 下到一半問不到：維持現狀 ----
+        reply = () => cwa(0.5, 2);
+        await T.askLiveWeather();
+        const keepEl = T.getWeatherEl();
+        reply = () => new Error('離線');
+        await T.askLiveWeather();
+        reply = () => 503;
+        await T.askLiveWeather();
+        reply = () => cwa(-99, -99);
+        await T.askLiveWeather();
+        check('之後問不到（離線 / 503 / 缺測）→ 照下，不會因為一次逾時就停',
+            T.getWeatherEl() === keepEl && !keepEl.removed && T.getWeatherNow() === 'rain');
+
+        // ---- 同一趟還沒回來不再發 ----
+        asked = [];
+        reply = () => cwa(0.5, 2);
+        const inflight = T.askLiveWeather();
+        T.askLiveWeather();
+        await inflight;
+        check('上一趟還沒回來就不再發（只問一次）', asked.length === 1, `問了 ${asked.length} 次`);
+
+        // ---- 地形：只演降水 ----
+        await boot('sand', () => cwa(0.5, 2));
+        check('沙灘 → 下雨（live 不颳風沙）', T.getWeatherNow() === 'rain');
+        await boot('lava', () => cwa(0.5, 2));
+        check('熔岩 → 下雨（live 不飄火星）', T.getWeatherNow() === 'rain'
+            && T.getWeatherEl().children[0].className === 'rain-drop');
+        await boot('snow', () => cwa(0.5, 2));
+        check('雪地 → 下雪', T.getWeatherNow() === 'snow'
+            && T.getWeatherEl().children[0].className === 'snow-flake');
+        await boot('water', () => cwa(0, 0));
+        check('晴天開頁 → 沒有天氣、季節照撒', T.getWeatherNow() === null
+            && T.getSeasonEl()?.id === 'season');
+
+        // ---- 開頁就問不到：退回擲骰（跟 random 一樣）----
+        Math.random = () => 0; // 骰子必中
+        await boot('sand', () => new Error('file:// 直接開檔'));
+        check('開頁問不到 → 退回擲骰（沙灘照舊颳風沙）', T.getWeatherNow() === 'sand');
+        Math.random = () => 0.99; // 骰子不中
+        await boot('grass', () => 503);
+        check('開頁 503（伺服器沒設 key）→ 擲骰沒中就晴天、季節撒出來',
+            T.getWeatherNow() === null && T.getSeasonEl()?.id === 'season');
+        Math.random = origRandom;
+
+        // ---- 關掉天氣的網址照樣關著 ----
+        asked = [];
+        check('weatherChance=0 → live 也永遠晴天，而且根本不問',
+            (CONFIG.weatherChance = 0, T.initWeather('grass')) === null && asked.length === 0);
+        CONFIG.weatherChance = 0.5;
+        check("theme='none' → 沒有場景就沒有天氣，也不問",
+            T.initWeather('none') === null && asked.length === 0);
+
+        // ---- 十分鐘重問一次，而且接在主迴圈上 ----
+        await boot('grass', () => cwa(0, 0));
+        asked = [];
+        T.updateWeather(T.WEATHER_POLL_MS - 1);
+        check('還沒滿十分鐘 → 不問', asked.length === 0);
+        T.updateWeather(1);
+        check('滿十分鐘 → 問一次', asked.length === 1);
+        await flush();
+        T.frameNow = 2e7;
+        T.gameLoop(T.frameNow); // 熱身：讓 lastTime 對上
+        asked = [];
+        for (let i = 0; i <= T.WEATHER_POLL_MS / 100; i++) T.gameLoop(T.frameNow += 100);
+        check('主迴圈跑滿十分鐘就重問（updateWeather 有掛上）', asked.length === 1,
+            `問了 ${asked.length} 次`);
+        await flush();
+
+        // ---- 授權碼只活在伺服器：前端檔案裡不准出現 ----
+        const frontFiles = ['config.js', 'pokemon_footer_widget.html', ...jsFiles];
+        const leaked = frontFiles.filter(f =>
+            /CWA-[0-9A-F]{8}-/i.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+        check('前端檔案裡沒有任何 CWA 授權碼', leaked.length === 0, leaked.join(', '));
+        const nginxConf = fs.readFileSync(path.join(ROOT, 'nginx.conf'), 'utf8');
+        check('nginx 代轉的路徑就是前端問的那一條（./api/weather ↔ location = /api/weather）',
+            nginxConf.includes('location = /api/weather {'));
+        check('nginx 的 key 只從環境變數來（template 展開），檔案裡沒寫死',
+            nginxConf.includes('"${CWA_API_KEY}"') && !/CWA-[0-9A-F]{8}-/i.test(nginxConf));
+
+        T.changeWeather(null, 0);
+        CONFIG.season = savedSeason;
+        T.buildSeason();
+        sandbox.fetch = savedFetch;
+        CONFIG.weather = savedWeather;
+        CONFIG.weatherChance = savedWC;
+        CONFIG.weatherDensity = savedWD;
     }
 
     console.log(`\n${'='.repeat(46)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(46)}`);

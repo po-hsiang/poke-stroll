@@ -9,3 +9,6 @@ Desktop.ini
 *.jpg
 *.jpeg
 *.gif
+
+# 機密（CWA 授權碼等）放這支，絕不進版控——.env 是公開的部署設定，會進 git
+.env.secret

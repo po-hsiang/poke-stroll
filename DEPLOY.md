@@ -1,6 +1,7 @@
 # 部署指南(容器化 / GCP + Traefik)
 
-純靜態站(nginx:alpine),無後端、無資料庫、無環境機密。`.env` 直接進版控,主機上 `git pull` 即用。
+純靜態站(nginx:alpine),無後端、無資料庫。`.env` 直接進版控,主機上 `git pull` 即用。
+唯一的機密是即時天氣用的中央氣象署授權碼,放在**不進版控**的 `.env.secret`(見下方「即時天氣的授權碼」)。
 
 ## 本機建置與測試
 
@@ -8,10 +9,26 @@
 # 建置(版本號與 .env 的 VERSION 一致)
 docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0 .
 
-# 本機試跑
-docker run --rm -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0
+# 本機試跑(--env-file 帶入授權碼;不帶也能跑,只是天氣退回擲骰)
+docker run --rm --env-file .env.secret -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0
 # 瀏覽器 / OBS 瀏覽器來源開 http://localhost:8080/ 即可看到 widget
+# 即時天氣的代轉:curl http://localhost:8080/api/weather 應回五股測站的雨量 JSON(沒帶 key 是 503)
 ```
+
+## 即時天氣的授權碼(`.env.secret`)
+
+天氣預設跟著五股的真實雨量,資料由 nginx 代問中央氣象署,授權碼在伺服器端才補上——瀏覽器看不到。
+
+1. 在 repo 根目錄建 `.env.secret`(**本機與雲端主機各放一份**,`git pull` 不會帶過去),內容一行:
+
+   ```bash
+   CWA_API_KEY=CWA-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+   ```
+
+2. `.gitignore` 與 `.dockerignore` 都已擋掉這支,不會進 git、也不會被烘進 image。
+3. `compose.yaml` 會自動讀它;設成 `required: false`,沒有這支照樣啟動(`/api/weather` 回 503,widget 退回擲骰)。
+   這個寫法需要 Docker Compose 2.24 以上。
+4. 換測站(換地點)不必改程式:環境變數 `CWA_STATION_ID`(預設 `C0AI00` 五股)。
 
 ## 推上 Google Artifact Registry
 
@@ -62,7 +79,7 @@ docker compose up -d
 ## CI
 
 每個 push / PR 會自動跑 `.github/workflows/ci.yml`:單元測試(`node test/widget.test.js`)+
-Docker 建置 + 容器冒煙測試(每個靜態檔 200、快取標頭正確、README 不在 image 裡)。
+Docker 建置 + 容器冒煙測試(每個靜態檔 200、快取標頭正確、README 不在 image 裡、沒設授權碼的 `/api/weather` 回 503)。
 紅燈就別 push image 上 GAR。
 
 ## 設計筆記(為什麼這樣設)
@@ -76,4 +93,10 @@ Docker 建置 + 容器冒煙測試(每個靜態檔 200、快取標頭正確、RE
 - **著陸頁不搶根路徑**:`home.html` 是店面,但根路徑 `/poke-stroll/` 維持出 widget 本體。已經上線的 iframe 與 OBS 來源指的都是根路徑,把它換成一頁介紹文,人家的頁尾會瞬間變成一整頁店面——網址一旦發出去就是契約,新功能自己另開檔名。
 - **可嵌入性**:nginx 預設不送 `X-Frame-Options` / `frame-ancestors`,任何網站都能 iframe。若日後要限制,再加 header 白名單即可。
 - **寶可夢圖片來源**:sprite 是「訪客的瀏覽器」直接向 `raw.githubusercontent.com` 抓的,和我們的主機無關;身高/屬性/名稱三張對照表已烘進 image,不打外部 API。
+- **即時天氣走 nginx 代轉,不在前端直打氣象署**:氣象署的 API 雖然允許跨域,但 key 寫在前端,任何看 iframe 的人打開 DevTools 就拿得到。所以瀏覽器只問同站的 `/api/weather`,由 nginx 補上 key 再轉出去:
+  - `nginx.conf` 是 template,容器啟動時由 nginx image 的 entrypoint 用 envsubst 把 `CWA_API_KEY` 填進去——image 裡沒有任何機密,key 只在執行期的環境變數。
+  - 伺服器端快取 10 分鐘(測站本來就 10 分鐘更新一次),觀眾再多,氣象署那邊也只被問一次;快取過期那一刻只放一個請求出去。
+  - 資料集、測站、欄位都寫死在 nginx 裡,瀏覽器帶來的 query 一律丟掉——別人沒辦法借我們的 key 查別的東西。key 走 `Authorization` header 而不是網址,上游出錯時 error log 才不會印出 key。
+  - 上游網域用變數 + `resolver`:DNS 在請求當下才解析。寫死的話 nginx 啟動那一刻查不到 DNS 就整站起不來——為了天氣賠上 widget 不划算。
+  - 沒設 key 時直接回 503(CI 的冒煙測試就驗這個),widget 退回擲骰,其他功能完全不受影響。
 - **調整動畫參數**:`config.js` 烘在 image 裡,改參數需要重新 build。刻意不掛 volume——這站沒有主機端狀態,image 即全部,回滾 = 換 tag。

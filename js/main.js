@@ -12,11 +12,12 @@ async function init() {
     // 主題地面先鋪（none 不鋪）：寶可夢得知道自己該站多高
     const groundLift = initGround(themeName);
     groundLevel = groundLift; // 丟下來的果實也落在同一個地面上
-    // 場景決定天氣種類，weatherChance 決定下不下；
-    // 下起雨雪風沙就把直射光打散（投射影變短變軟，見 sun.js）
+    // 場景決定天氣種類，真實雨量（或 random 的骰子）決定下不下；
+    // 下起雨雪風沙就把直射光打散（投射影變短變軟，見 sun.js）。
+    // live 這一刻還在問（pending），答案回來由 weather.js 自己通知下面兩位
     const weatherKind = initWeather(themeName);
     setSunOvercast(weatherKind);
-    // 季節落下物要知道「這次下了什麼」：有天氣就讓天氣演（見 js/season.js）
+    // 季節落下物要知道「正在下什麼」：有天氣就讓天氣演（見 js/season.js）
     initSeason(themeName, weatherKind);
 
     // URL 有帶 ?ids= 就用固定清單，否則照 count/minId/maxId 抽
@@ -48,6 +49,7 @@ function gameLoop(timestamp) {
     updateSun(deltaTime);    // 太陽先走（節流）：影子的方向與長短是全場共用的
     updateNight(deltaTime);  // 夜色跟著時間濃淡（節流）：入夜才建元素，白天整層收起來
     updateSeason(deltaTime); // 換季才重建落下物（節流成一分鐘一次，掛久了才用得到）
+    updateWeather(deltaTime); // live 天氣十分鐘重問一次（變天才重撒）
 
     pokemons.forEach(p => p.update(deltaTime, pokemons));
 

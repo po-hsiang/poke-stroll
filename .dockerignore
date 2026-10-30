@@ -8,4 +8,5 @@ test
 Dockerfile
 compose.yaml
 .env
+.env.secret
 Snipaste_*.png

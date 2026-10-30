@@ -63,7 +63,7 @@ jobs:
         run: node test/params-doc.test.js
       # 覆蓋率門檻設在實測值下方約 1.5 個百分點：測試裡有隨機成分
       # （抽陣容、擲天氣的骰），分支覆蓋率每輪會小幅浮動，貼太緊會變成偶發紅燈。
-      # 現況約 行 97.1 / 分支 87.2 / 函式 96.5
+      # 現況約 行 97.1 / 分支 87.5 / 函式 96.6
       - name: 覆蓋率門檻（行 95 / 分支 84 / 函式 95）
         run: |
           node --test --experimental-test-coverage \
@@ -86,7 +86,7 @@ jobs:
         run: |
           docker run -d --rm --name smoke -p 8080:80 poke-stroll-ci
           sleep 2
-          for f in "" pokemon_footer_widget.html config.js pokemon_heights.js pokemon_types.js pokemon_names.js pokemon_cameo.js params.html home.html bridge.html js/bridge.js js/night.js js/roster.js js/nametag.js js/circadian.js js/season.js; do
+          for f in "" pokemon_footer_widget.html config.js pokemon_heights.js pokemon_types.js pokemon_names.js pokemon_cameo.js params.html home.html bridge.html js/bridge.js js/night.js js/roster.js js/nametag.js js/circadian.js js/season.js js/weather.js; do
             code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/$f")
             if [ "$code" != "200" ]; then echo "FAIL: /$f -> $code"; exit 1; fi
           done
@@ -96,4 +96,8 @@ jobs:
           # README 這類非執行檔不該被烘進 image
           code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/README.md)
           if [ "$code" != "404" ]; then echo "FAIL: README.md 不該出現在 image 裡 -> $code"; exit 1; fi
+          # 即時天氣的代轉：CI 沒有授權碼 → 503（widget 退回擲骰），而不是整站起不來。
+          # 走得到這一步本身也代表 nginx.conf 的 template 有正確展開
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/weather)
+          if [ "$code" != "503" ]; then echo "FAIL: 沒設授權碼的 /api/weather 應該回 503 -> $code"; exit 1; fi
           docker stop smoke

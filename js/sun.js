@@ -29,7 +29,7 @@ const sun = {
     stretch: 1,  // 長度倍率：1 = 就是腳下那圈接地影，不拉長也不偏移
     alpha: 1,    // 濃度倍率：1 = 正午，跟沒有這套機制時一模一樣
 };
-let sunOvercast = 1;        // 天氣的散射折扣（initWeather 之後由 main 設定）
+let sunOvercast = 1;        // 天氣的散射折扣（init 時由 main 設定，live 變天時由 weather.js 改）
 let sunClock = SUN_TICK_MS; // 第一次 updateSun 就先算一次
 
 const sunRound = v => Math.round(v * 1000) / 1000;
