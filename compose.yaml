@@ -7,6 +7,9 @@ services:
       - path: .env.secret
         required: false
     image: ${IMAGE}
+    # 本機 docker compose build / push 用：tag 直接取上面的 IMAGE（跟著 .env 的 VERSION 走），
+    # 不用手打版號。主機照舊先 docker pull 再 up -d——image 已經在本機就不會重新建置
+    build: .
     container_name: ${CONTAINER_NAME}
     # 刻意不發佈 ports：Traefik 與容器同在一個 docker network，直接連容器的 80。
     # 發佈到主機反而多開一條繞過閘道的直連通道。

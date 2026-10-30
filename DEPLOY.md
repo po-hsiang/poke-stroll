@@ -8,6 +8,8 @@
 ```bash
 # 建置(版本號與 .env 的 VERSION 一致)
 docker build -t asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0 .
+# 或用 compose:tag 直接取 .env 的 IMAGE(跟著 VERSION 走),不用手打版號
+docker compose build
 
 # 本機試跑(--env-file 帶入授權碼;不帶也能跑,只是天氣退回擲骰)
 docker run --rm --env-file .env.secret -p 8080:80 asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0
@@ -34,6 +36,8 @@ docker run --rm --env-file .env.secret -p 8080:80 asia-east1-docker.pkg.dev/blue
 
 ```bash
 docker push asia-east1-docker.pkg.dev/blue-whale-408802/bluewhale-engine/poke-stroll:0.45.0
+# 或
+docker compose push
 ```
 
 ## 雲端主機部署
